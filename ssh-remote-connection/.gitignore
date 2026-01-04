@@ -1,0 +1,2 @@
+# Ignore actual config file (contains secrets)
+config/.env
