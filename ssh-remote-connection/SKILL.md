@@ -1,3 +1,8 @@
+---
+name: ssh-remote-connection
+description: SSH connection to remote servers. Use when you need to execute commands on a remote server, check logs, restart services, or manage Docker containers.
+---
+
 # SSH Remote Connection
 
 Universal skill for connecting to remote servers via SSH.
@@ -5,29 +10,37 @@ Universal skill for connecting to remote servers via SSH.
 ## Usage
 
 ```bash
-# From project root:
-.claude/skills/ssh-remote-connection/scripts/connect.sh
-```
+# Interactive shell
+scripts/connect.sh
 
-Or run commands directly:
-```bash
-.claude/skills/ssh-remote-connection/scripts/connect.sh "docker compose logs backend --tail 50"
+# Run command directly
+scripts/connect.sh "docker compose logs backend --tail 50"
 ```
 
 ## Setup
 
+### For Claude Code (local)
+
 1. Copy config template:
    ```bash
-   cp .claude/skills/ssh-remote-connection/config/.env.example \
-      .claude/skills/ssh-remote-connection/config/.env
+   cp config/.env.example config/.env
    ```
 
-2. Fill in `.env` with actual values
+2. Fill in `config/.env` with actual values
 
 3. Make script executable:
    ```bash
-   chmod +x .claude/skills/ssh-remote-connection/scripts/connect.sh
+   chmod +x scripts/connect.sh
    ```
+
+### For Cloud Runtime
+
+Set environment variables in your cloud configuration:
+- `SSH_HOST` — server hostname or IP
+- `SSH_USER` — SSH username
+- `SSH_KEY_PATH` — path to private key
+- `SSH_KEY_PASSWORD` — key passphrase (optional)
+- `SERVER_PROJECT_PATH` — project directory on server
 
 ## Important Notes
 
@@ -35,21 +48,18 @@ Or run commands directly:
 - **Code location**: Code is in a private repo, changes must be pushed first then pulled by user.
 - **Docker**: Use `docker compose` (not `docker-compose`) on the server.
 
-## Common Commands
+## Example Commands
 
 ```bash
 # View logs
-docker compose logs backend --tail 100
-docker compose logs mcp_ui_control --tail 100
-docker compose logs frontend --tail 100
+scripts/connect.sh "docker compose logs backend --tail 100"
 
-# Restart services
-docker compose restart backend
-docker compose restart mcp_ui_control
+# Restart service
+scripts/connect.sh "docker compose restart backend"
 
 # Rebuild and restart
-docker compose build backend && docker compose up -d backend
+scripts/connect.sh "docker compose build backend && docker compose up -d backend"
 
-# Check Redis
-docker compose exec redis redis-cli KEYS "session:*"
+# Check status
+scripts/connect.sh "docker compose ps"
 ```
