@@ -121,41 +121,58 @@ URI=$(bash scripts/upload.sh --file /path/to/image.png --base64)
 
 ## Presentation Mode
 
+**CRITICAL RULES:**
+- ALWAYS use scripts (`generate.sh`, `edit.sh`, `presentation.sh`). NEVER call curl/API directly.
+- ALWAYS generate style reference FIRST, wait for completion, then generate slides.
+- ALWAYS call `presentation.sh` at the end to combine slides into PDF.
+
 Generate multi-slide presentations as PDF.
 
-### Workflow:
-1. Parse user content into slide blocks
-2. Generate **style reference** first (visual template without content)
-3. Generate all slides in parallel using style reference via `edit.sh`
-4. If logo provided — include as second reference with position instruction
-5. Combine into PDF via `presentation.sh`
+### Mandatory 3-Step Workflow:
 
-### Style Reference Prompt Template:
-```
-Style reference for presentation about {topic}:
-- Visual style: {minimalist/corporate/creative}
-- Color palette, typography style, layout elements, background patterns
-- Do NOT include specific text content, just visual style template
-```
+#### Step 1: Generate Style Reference (REQUIRED — DO NOT SKIP)
 
-### Slide Generation Prompt Template:
-```
-Create {title/content/final} slide with same visual style as first reference.
-{If logo: Place logo from second reference in {position}.}
-Content: {slide_content}
-```
+Generate abstract style template WITHOUT content text:
 
-### Commands:
 ```bash
-# 1. Generate style reference
-bash scripts/generate.sh --prompt "Style reference..." --filename "style_ref" --output-dir "./slides"
+bash scripts/generate.sh \
+  --prompt "Style reference for presentation about {topic}. Visual style: {minimalist/corporate/creative}. Show: color palette, typography style, layout grid, decorative elements, background. Do NOT include any text content." \
+  --aspect-ratio "16:9" \
+  --resolution "1K" \
+  --output-dir "./slides" \
+  --filename "style_ref"
+```
 
-# 2. Generate slides (parallel, via subagents)
-bash scripts/edit.sh --prompt "Create title slide..." --image-urls "style_ref.png" --filename "slide_01" --output-dir "./slides"
-bash scripts/edit.sh --prompt "Create content slide..." --image-urls "style_ref.png,logo.png" --filename "slide_02" --output-dir "./slides"
+**WAIT for this to complete before Step 2!** Parse the output JSON to get the saved file path or URL.
 
-# 3. Combine to PDF
-bash scripts/presentation.sh --slides-dir "./slides" --output "presentation.pdf"
+#### Step 2: Generate Slides (parallel, using style reference)
+
+Launch parallel subagents, each using style reference URL from Step 1:
+
+```bash
+# Each slide via separate Haiku subagent
+bash scripts/edit.sh \
+  --prompt "Create {title/content/final} slide with SAME visual style as reference image. Content: {slide_text}" \
+  --image-urls "URL_FROM_STEP_1" \
+  --aspect-ratio "16:9" \
+  --output-dir "./slides" \
+  --filename "slide_01"
+```
+
+If logo provided — add as second reference:
+```bash
+--image-urls "STYLE_REF_URL,LOGO_URL"
+--prompt "... Place logo from second reference in top-right corner."
+```
+
+#### Step 3: Combine to PDF (REQUIRED — DO NOT SKIP)
+
+After ALL slides are generated:
+
+```bash
+bash scripts/presentation.sh \
+  --slides-dir "./slides" \
+  --output "presentation.pdf"
 ```
 
 ### presentation.sh
