@@ -1,7 +1,7 @@
 {
   "name": "fal-ai-image",
-  "version": "1.0.0",
-  "description": "Generate images using fal.ai nano-banana model",
+  "version": "2.0.0",
+  "description": "Generate images and presentations using fal.ai nano-banana-pro model",
   "author": "polyakov",
   "skills": ["fal-ai-image"]
 }

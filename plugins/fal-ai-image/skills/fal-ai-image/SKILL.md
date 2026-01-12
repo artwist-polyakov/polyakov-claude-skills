@@ -119,6 +119,55 @@ URL=$(bash scripts/upload.sh --file /path/to/image.png)
 URI=$(bash scripts/upload.sh --file /path/to/image.png --base64)
 ```
 
+## Presentation Mode
+
+Generate multi-slide presentations as PDF.
+
+### Workflow:
+1. Parse user content into slide blocks
+2. Generate **style reference** first (visual template without content)
+3. Generate all slides in parallel using style reference via `edit.sh`
+4. If logo provided — include as second reference with position instruction
+5. Combine into PDF via `presentation.sh`
+
+### Style Reference Prompt Template:
+```
+Style reference for presentation about {topic}:
+- Visual style: {minimalist/corporate/creative}
+- Color palette, typography style, layout elements, background patterns
+- Do NOT include specific text content, just visual style template
+```
+
+### Slide Generation Prompt Template:
+```
+Create {title/content/final} slide with same visual style as first reference.
+{If logo: Place logo from second reference in {position}.}
+Content: {slide_content}
+```
+
+### Commands:
+```bash
+# 1. Generate style reference
+bash scripts/generate.sh --prompt "Style reference..." --filename "style_ref" --output-dir "./slides"
+
+# 2. Generate slides (parallel, via subagents)
+bash scripts/edit.sh --prompt "Create title slide..." --image-urls "style_ref.png" --filename "slide_01" --output-dir "./slides"
+bash scripts/edit.sh --prompt "Create content slide..." --image-urls "style_ref.png,logo.png" --filename "slide_02" --output-dir "./slides"
+
+# 3. Combine to PDF
+bash scripts/presentation.sh --slides-dir "./slides" --output "presentation.pdf"
+```
+
+### presentation.sh
+
+| Param | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `--slides-dir` | yes | - | Directory with slide images |
+| `--output` | no | presentation.pdf | Output PDF path |
+| `--order` | no | - | Custom order: "1,2,3,4" |
+
+Uses ImageMagick/GraphicsMagick if available, otherwise provides manual instructions.
+
 ## Parallel Generation
 
 For multiple images — launch several subagents in parallel:
