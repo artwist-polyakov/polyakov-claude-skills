@@ -87,6 +87,22 @@ bash "$SKILL_DIR/scripts/presentation.sh" --slides-dir "./slides"
 
 5. **Report result**
 
+### Background Task Handling
+
+When using `run_in_background: true` with Task tool:
+
+1. **Launch**: Task tool returns `task_id` in response
+2. **Wait**: Use `TaskOutput` tool with `task_id` to get results (blocks until done)
+3. **DO NOT** use `sleep` or manual file checks — use `TaskOutput`
+
+```
+# Launch background task
+Task(run_in_background=true) → returns task_id="abc123"
+
+# Get result when ready
+TaskOutput(task_id="abc123") → returns agent output
+```
+
 ## Scripts
 
 ### generate.sh
