@@ -73,6 +73,30 @@ elif command -v img2pdf &> /dev/null; then
     # shellcheck disable=SC2086
     img2pdf $FILES -o "$OUTPUT"
     echo "Created: $OUTPUT"
+elif python3 -c "from PIL import Image" 2>/dev/null; then
+    echo "Using Python/Pillow..."
+    # shellcheck disable=SC2086
+    python3 -c "
+from PIL import Image
+import sys
+
+files = sys.argv[1:-1]
+output = sys.argv[-1]
+
+images = []
+for f in files:
+    img = Image.open(f)
+    if img.mode == 'RGBA':
+        img = img.convert('RGB')
+    images.append(img)
+
+if images:
+    images[0].save(output, save_all=True, append_images=images[1:], resolution=100.0)
+    print(f'Created: {output}')
+else:
+    print('No images to combine')
+    sys.exit(1)
+" $FILES "$OUTPUT"
 else
     echo "=== NO PDF TOOL FOUND ==="
     echo ""
@@ -86,6 +110,7 @@ else
     echo "  - ImageMagick: brew install imagemagick / apt install imagemagick"
     echo "  - GraphicsMagick: brew install graphicsmagick / apt install graphicsmagick"
     echo "  - img2pdf: pip install img2pdf"
+    echo "  - Pillow: pip install Pillow"
     echo ""
     echo "Then run:"
     echo "  convert $FILES $OUTPUT"
