@@ -23,6 +23,25 @@ Script: `scripts/generate.sh`
 Create images using reference images (up to 14).
 Script: `scripts/edit.sh`
 
+## Setup (REQUIRED before any script execution)
+
+Scripts are located in the skill directory. Before running any script, find the skill path:
+
+```bash
+# Find skill directory
+SKILL_DIR=$(find /Users /home -path "*/fal-ai-image/skills/fal-ai-image" -type d 2>/dev/null | head -1)
+
+# Verify scripts exist
+ls "$SKILL_DIR/scripts/"
+```
+
+**ALWAYS use full path to scripts:**
+```bash
+bash "$SKILL_DIR/scripts/generate.sh" --prompt "..." --output-dir "./slides"
+bash "$SKILL_DIR/scripts/edit.sh" --prompt "..." --output-dir "./slides"
+bash "$SKILL_DIR/scripts/presentation.sh" --slides-dir "./slides"
+```
+
 ## Workflow
 
 **IMPORTANT**: Run generation via Task tool with Haiku subagent to avoid blocking main context.
@@ -72,7 +91,7 @@ Script: `scripts/edit.sh`
 
 ### generate.sh
 ```bash
-bash scripts/generate.sh \
+bash "$SKILL_DIR/scripts/generate.sh" \
   --prompt "infographic about coffee brewing" \
   --aspect-ratio "9:16" \
   --resolution "1K" \
@@ -92,7 +111,7 @@ bash scripts/generate.sh \
 
 ### edit.sh
 ```bash
-bash scripts/edit.sh \
+bash "$SKILL_DIR/scripts/edit.sh" \
   --prompt "combine these into a collage" \
   --image-urls "https://example.com/img1.png,https://example.com/img2.png" \
   --aspect-ratio "16:9" \
@@ -113,10 +132,10 @@ bash scripts/edit.sh \
 ### upload.sh (for local files)
 ```bash
 # Get URL for local file
-URL=$(bash scripts/upload.sh --file /path/to/image.png)
+URL=$(bash "$SKILL_DIR/scripts/upload.sh" --file /path/to/image.png)
 
 # Or get base64 data URI (for small files)
-URI=$(bash scripts/upload.sh --file /path/to/image.png --base64)
+URI=$(bash "$SKILL_DIR/scripts/upload.sh" --file /path/to/image.png --base64)
 ```
 
 ## Presentation Mode
@@ -135,7 +154,7 @@ Generate multi-slide presentations as PDF.
 Generate abstract style template WITHOUT content text:
 
 ```bash
-bash scripts/generate.sh \
+bash "$SKILL_DIR/scripts/generate.sh" \
   --prompt "Style reference for presentation about {topic}. Visual style: {minimalist/corporate/creative}. Show: color palette, typography style, layout grid, decorative elements, background. Do NOT include any text content." \
   --aspect-ratio "16:9" \
   --resolution "1K" \
@@ -143,7 +162,7 @@ bash scripts/generate.sh \
   --filename "style_ref"
 ```
 
-**WAIT for this to complete before Step 2!** Parse the output JSON to get the saved file path or URL.
+**WAIT for this to complete before Step 2!** Style reference will be saved to `./slides/style_ref_*.png`. Parse the output JSON to get URL for Step 2.
 
 #### Step 2: Generate Slides (parallel, using style reference)
 
@@ -151,7 +170,7 @@ Launch parallel subagents, each using style reference URL from Step 1:
 
 ```bash
 # Each slide via separate Haiku subagent
-bash scripts/edit.sh \
+bash "$SKILL_DIR/scripts/edit.sh" \
   --prompt "Create {title/content/final} slide with SAME visual style as reference image. Content: {slide_text}" \
   --image-urls "URL_FROM_STEP_1" \
   --aspect-ratio "16:9" \
@@ -170,7 +189,7 @@ If logo provided — add as second reference:
 After ALL slides are generated:
 
 ```bash
-bash scripts/presentation.sh \
+bash "$SKILL_DIR/scripts/presentation.sh" \
   --slides-dir "./slides" \
   --output "presentation.pdf"
 ```
