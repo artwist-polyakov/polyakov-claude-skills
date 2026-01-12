@@ -163,7 +163,18 @@ URI=$(bash "$SKILL_DIR/scripts/upload.sh" --file /path/to/image.png --base64)
 
 Generate multi-slide presentations as PDF.
 
-### Mandatory 3-Step Workflow:
+### Mandatory 4-Step Workflow:
+
+#### Step 0: Create timestamped directory (REQUIRED)
+
+Each presentation gets its own directory to avoid mixing with old files:
+
+```bash
+SLIDES_DIR="./slides/$(date +%Y%m%d_%H%M%S)"
+mkdir -p "$SLIDES_DIR"
+```
+
+Use `$SLIDES_DIR` for ALL `--output-dir` and `--slides-dir` parameters below.
 
 #### Step 1: Generate Style Reference (REQUIRED — DO NOT SKIP)
 
@@ -174,11 +185,11 @@ bash "$SKILL_DIR/scripts/generate.sh" \
   --prompt "Style reference for presentation about {topic}. Visual style: {minimalist/corporate/creative}. Show: color palette, typography style, layout grid, decorative elements, background. Do NOT include any text content." \
   --aspect-ratio "16:9" \
   --resolution "1K" \
-  --output-dir "./slides" \
+  --output-dir "$SLIDES_DIR" \
   --filename "style_ref"
 ```
 
-**WAIT for this to complete before Step 2!** Style reference will be saved to `./slides/style_ref_*.png`. Parse the output JSON to get URL for Step 2.
+**WAIT for this to complete before Step 2!** Style reference will be saved to `$SLIDES_DIR/style_ref_*.png`. Parse the output JSON to get URL for Step 2.
 
 #### Step 2: Generate Slides (parallel, using style reference)
 
@@ -190,7 +201,7 @@ bash "$SKILL_DIR/scripts/edit.sh" \
   --prompt "Create {title/content/final} slide with SAME visual style as reference image. Content: {slide_text}" \
   --image-urls "URL_FROM_STEP_1" \
   --aspect-ratio "16:9" \
-  --output-dir "./slides" \
+  --output-dir "$SLIDES_DIR" \
   --filename "slide_01"
 ```
 
@@ -206,8 +217,8 @@ After ALL slides are generated:
 
 ```bash
 bash "$SKILL_DIR/scripts/presentation.sh" \
-  --slides-dir "./slides" \
-  --output "presentation.pdf"
+  --slides-dir "$SLIDES_DIR" \
+  --output "$SLIDES_DIR/presentation.pdf"
 ```
 
 ### presentation.sh
