@@ -69,8 +69,8 @@ SUBMIT_RESPONSE=$(curl -s -X POST "$API_BASE" \
     -H "Content-Type: application/json" \
     -d "$JSON_PAYLOAD")
 
-# Extract request_id via grep
-REQUEST_ID=$(echo "$SUBMIT_RESPONSE" | grep -o '"request_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+# Extract request_id via grep (handles optional space after colon)
+REQUEST_ID=$(echo "$SUBMIT_RESPONSE" | grep -oE '"request_id":[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
 
 if [[ -z "$REQUEST_ID" ]]; then
     echo "Error: Failed to submit request"
@@ -89,7 +89,7 @@ while [[ $ATTEMPT -lt $MAX_ATTEMPTS ]]; do
     STATUS_RESPONSE=$(curl -s "$API_BASE/requests/$REQUEST_ID/status" \
         -H "Authorization: Key $FAL_KEY")
 
-    STATUS=$(echo "$STATUS_RESPONSE" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+    STATUS=$(echo "$STATUS_RESPONSE" | grep -oE '"status":[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
 
     case "$STATUS" in
         COMPLETED)
@@ -129,8 +129,8 @@ if [[ -n "$OUTPUT_DIR" ]]; then
     mkdir -p "$OUTPUT_DIR"
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-    # Extract URLs via grep and download
-    URLS=$(echo "$RESULT" | grep -o '"url":"[^"]*"' | cut -d'"' -f4)
+    # Extract URLs via grep and download (handles optional space after colon)
+    URLS=$(echo "$RESULT" | grep -oE '"url":[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
     INDEX=0
 
     echo "Downloading images..."
