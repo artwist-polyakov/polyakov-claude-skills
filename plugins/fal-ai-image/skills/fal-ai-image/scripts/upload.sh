@@ -64,8 +64,8 @@ INITIATE_RESPONSE=$(curl -s -X POST "https://rest.alpha.fal.ai/storage/upload/in
     -H "Content-Type: application/json" \
     -d "{\"file_name\": \"$FILENAME\", \"content_type\": \"$MIME_TYPE\"}")
 
-UPLOAD_URL=$(echo "$INITIATE_RESPONSE" | grep -o '"upload_url":"[^"]*"' | head -1 | cut -d'"' -f4)
-FILE_URL=$(echo "$INITIATE_RESPONSE" | grep -o '"file_url":"[^"]*"' | head -1 | cut -d'"' -f4)
+UPLOAD_URL=$(echo "$INITIATE_RESPONSE" | grep -oE '"upload_url":[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+FILE_URL=$(echo "$INITIATE_RESPONSE" | grep -oE '"file_url":[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
 
 if [[ -z "$UPLOAD_URL" || -z "$FILE_URL" ]]; then
     echo "Error: Failed to get upload URL" >&2
