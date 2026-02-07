@@ -45,7 +45,7 @@
     },
     {
       "name": "fal-ai-image",
-      "description": "Generate images using fal.ai nano-banana model",
+      "description": "Generate images and presentations via fal.ai nano-banana-pro",
       "source": "./plugins/fal-ai-image",
       "category": "productivity"
     },

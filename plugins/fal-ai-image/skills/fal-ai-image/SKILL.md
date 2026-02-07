@@ -1,12 +1,12 @@
 ---
 name: fal-ai-image
-description: "Generate/edit images via fal.ai nano-banana-pro. Supports reference images (Edit mode) and text rendering in any language including Cyrillic. ALWAYS read SKILL.md before first use."
+description: "Generate/edit images and presentations via fal.ai nano-banana-pro. Supports reference images (Edit mode), presentations with consistent style, and text rendering in any language including Cyrillic. ALWAYS read SKILL.md before first use."
 ---
 
 # fal-ai-image
 
-Generate images via fal.ai nano-banana-pro (Gemini 3 Pro Image).
-Best for: infographics, text rendering, complex compositions.
+Generate images and presentations via fal.ai nano-banana-pro (Gemini 3 Pro Image).
+Best for: infographics, text rendering, complex compositions, multi-slide presentations.
 
 ## STOP — Read Before Acting
 
@@ -15,12 +15,14 @@ Best for: infographics, text rendering, complex compositions.
 - **DO NOT** launch general-purpose subagents — use `Task` with `subagent_type: "Bash"` and `model: "haiku"`
 - **DO NOT** skip uploading local files — run `upload.sh` first to get URLs for `edit.sh`
 - **DO NOT** guess script parameters — check the tables below
+- **DO NOT** skip style reference when generating presentations — visual consistency requires it
 
 ## Quick Start Decision
 
 ```
 User gave reference images?  → Edit mode  (upload.sh → edit.sh)
 User wants text-only gen?    → Generate mode (generate.sh)
+User wants a presentation?   → Presentation mode (generate.sh → edit.sh)
 Multiple images needed?      → Parallel Bash/haiku subagents
 ```
 
@@ -42,7 +44,7 @@ No bashisms: `[[ ]]`, `${BASH_SOURCE}`, `source` etc. are NOT used.
 Requires `FAL_KEY` in `config/.env` or environment.
 Get key: https://fal.ai/dashboard/keys
 
-## Two Modes
+## Three Modes
 
 ### 1. Generate (text-to-image)
 Create images from text prompt only.
@@ -51,6 +53,10 @@ Script: `scripts/generate.sh`
 ### 2. Edit (image-to-image)
 Create images using reference images (up to 14).
 Script: `scripts/edit.sh`
+
+### 3. Presentation (multi-slide generation)
+Multi-slide presentations with consistent visual style.
+Scripts: `generate.sh` (style ref) + `edit.sh` (slides)
 
 ## Workflow
 
@@ -96,6 +102,28 @@ Script: `scripts/edit.sh`
 4. **Launch subagent** with `edit.sh`
 
 5. **Report result**
+
+### For Presentation mode:
+
+1. **Create output directory**:
+   ```
+   mkdir -p ./slides/$(date +%Y%m%d_%H%M%S)
+   ```
+
+2. **Generate style reference** via `generate.sh`:
+   - Prompt: abstract visual style (colors, textures, mood) WITHOUT specific content
+   - Example: "Abstract gradient background, corporate blue and white palette, soft lighting, minimalist geometric shapes"
+   - Save to `slides/<timestamp>/style_ref.png`
+
+3. **Upload style reference**: Run `upload.sh` to get URL for the style reference image
+
+4. **Generate slides in parallel** via `edit.sh`:
+   - Use style reference URL as `--image-urls` for each slide
+   - Each slide gets its own prompt with specific content (title, bullet points, diagrams)
+   - Launch parallel Bash/haiku subagents — one per slide
+   - Save to `slides/<timestamp>/slide_01.png`, `slide_02.png`, etc.
+
+5. **Report result**: List all generated slide files. The PNG files in the directory are ready for assembly into PDF by any external tool.
 
 ## Scripts
 
@@ -166,6 +194,8 @@ Each runs independently via Haiku, results collected when done.
 - Edit: **$0.15**/edit
 - 4K resolution: **$0.30** (2x)
 - Web search: **+$0.015**
+
+- Presentation (5 slides): **$0.90** — $0.15 (style ref) + 5 × $0.15 (slides)
 
 Formula: `price = num_images * (resolution == "4K" ? 0.30 : 0.15) + (web_search ? 0.015 : 0)`
 
