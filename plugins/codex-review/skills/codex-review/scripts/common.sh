@@ -12,7 +12,7 @@ guard_recursion() {
     fi
 }
 
-# --- Project root via git ---
+# --- Project root via git (current worktree or main repo) ---
 get_project_root() {
     git rev-parse --show-toplevel 2>/dev/null || {
         echo "ERROR: Not inside a git repository." >&2
@@ -20,21 +20,58 @@ get_project_root() {
     }
 }
 
-# --- State directory (.codex-review/ in project root) ---
-get_state_dir() {
+# --- Main repo root (resolves through worktrees to the original repo) ---
+# In a worktree, --show-toplevel returns the worktree root, but .codex-review/
+# only exists in the main repo (it's excluded from git). This function always
+# returns the main repo root so state files are found regardless of context.
+get_main_repo_root() {
+    local git_common_dir
+    git_common_dir="$(git rev-parse --git-common-dir 2>/dev/null)" || {
+        echo "ERROR: Not inside a git repository." >&2
+        exit 1
+    }
+    # --git-common-dir returns the .git dir of the main repo:
+    #   - in main repo: ".git" (relative)
+    #   - in worktree:  "/abs/path/to/main/.git" (absolute)
+    # Parent of .git dir is the repo root in both cases.
+    (cd "$git_common_dir/.." && pwd)
+}
+
+# --- Current branch name, sanitized for use as directory name ---
+get_branch_slug() {
+    local branch
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || branch="detached"
+    # Replace slashes with dashes: feat/auth/jwt → feat-auth-jwt
+    echo "$branch" | tr '/' '-'
+}
+
+# --- Root .codex-review/ directory (shared config, per-branch subdirs) ---
+get_review_root() {
     local root
-    root="$(get_project_root)"
-    local state_dir="$root/.codex-review"
+    root="$(get_main_repo_root)"
+    local review_root="$root/.codex-review"
+    mkdir -p "$review_root"
+    touch "$review_root/.gitkeep"
+    echo "$review_root"
+}
+
+# --- State directory (per-branch isolation inside .codex-review/) ---
+get_state_dir() {
+    local review_root
+    review_root="$(get_review_root)"
+    local branch
+    branch="$(get_branch_slug)"
+    local state_dir="$review_root/$branch"
     mkdir -p "$state_dir/notes"
-    touch "$state_dir/.gitkeep" "$state_dir/notes/.gitkeep"
+    touch "$state_dir/notes/.gitkeep"
     echo "$state_dir"
 }
 
-# --- Load config (project config.env → env vars → defaults) ---
+# --- Load config (shared config.env → env vars → defaults) ---
 load_config() {
-    local state_dir
-    state_dir="$(get_state_dir)"
-    local config_file="$state_dir/config.env"
+    local review_root
+    review_root="$(get_review_root)"
+    local config_file="$review_root/config.env"
 
     if [[ -f "$config_file" ]]; then
         # shellcheck disable=SC1090
@@ -117,13 +154,17 @@ write_status() {
     max_iter="$(read_state_number "max_iterations")"
     review_status="$(read_state_field "last_review_status")"
 
+    local branch
+    branch="$(get_branch_slug)"
+
     {
         echo "# Active Codex Review"
         echo "- Task: ${task:-not set}"
+        echo "- Branch: ${branch}"
         echo "- Phase: ${phase:-initialized}"
         echo "- Iteration: ${iteration}/${max_iter}"
         echo "- Last status: ${review_status:-pending}"
-        echo "- Journal: \`.codex-review/notes/\`"
+        echo "- Journal: \`.codex-review/${branch}/notes/\`"
     } > "$status_file"
 }
 
@@ -138,6 +179,8 @@ remove_status() {
 archive_previous_session() {
     local state_dir
     state_dir="$(get_state_dir)"
+    local review_root
+    review_root="$(get_review_root)"
     local has_artifacts=false
 
     # Check if there's anything to archive
@@ -153,7 +196,7 @@ archive_previous_session() {
 
     local timestamp
     timestamp="$(date -u +"%Y%m%dT%H%M%SZ")"
-    local archive_dir="$state_dir/archive/$timestamp"
+    local archive_dir="$review_root/archive/${timestamp}"
     mkdir -p "$archive_dir/notes"
 
     # Generate summary.json before moving artifacts (non-critical, must not block archiving)
@@ -208,8 +251,12 @@ generate_archive_summary() {
     # Escape task_desc for JSON (replace " with \", newlines with \n)
     task_desc="$(echo "$task_desc" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')"
 
+    local branch
+    branch="$(get_branch_slug)"
+
     cat > "$archive_dir/summary.json" <<SUMMARY_EOF
 {
+  "branch": "$branch",
   "task_description": "$task_desc",
   "session_id": "$session_id",
   "plan_iterations": $plan_iters,
