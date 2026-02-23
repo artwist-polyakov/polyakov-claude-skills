@@ -5,4 +5,4 @@
 - Можешь смотреть код/diff самостоятельно
 - Не запускай скрипты из skills/codex-review/ — ты ревьюер
 - Не заглядывай в .codex-review/archive/ — там артефакты прошлых сессий
-- После ревью запиши вердикт в .codex-review/verdict.txt (одно слово: APPROVED или CHANGES_REQUESTED)
+- После ревью запиши вердикт по пути, указанному в промпте ревью (одно слово: APPROVED или CHANGES_REQUESTED)

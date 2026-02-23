@@ -90,12 +90,14 @@ load_config
 # --- Main ---
 case "${1:-}" in
     show)   cmd_show ;;
+    dir)    echo "$STATE_DIR" ;;
     reset)  cmd_reset "${2:-}" ;;
     get)    cmd_get "${2:-}" ;;
     set)    cmd_set "${2:-}" "${3:-}" ;;
     *)
-        echo "Usage: codex-state.sh {show|reset|get|set} [args]"
+        echo "Usage: codex-state.sh {show|reset|dir|get|set} [args]"
         echo "  show              Current state (JSON)"
+        echo "  dir               Print state directory path for current branch"
         echo "  reset             Reset iterations/phase (keep session_id)"
         echo "  reset --full      Full reset + delete notes"
         echo "  get <field>       Get a single field"
