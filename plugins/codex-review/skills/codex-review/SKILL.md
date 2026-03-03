@@ -20,6 +20,10 @@ description: |
 
 Все команды ниже используют относительный `scripts/` — подставь полный путь при вызове.
 
+## CRITICAL: Sandbox
+
+Codex CLI использует macOS system API (SCDynamicStore), которые блокируются sandbox Claude Code. **Все вызовы codex-review.sh и codex-state.sh ОБЯЗАНЫ выполняться с `dangerouslyDisableSandbox: true`** в Bash tool. Без этого codex крашится с паникой Rust.
+
 ## Workflow
 
 ### 1. Инициализация сессии

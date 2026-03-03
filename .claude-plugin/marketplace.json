@@ -60,6 +60,12 @@
       "description": "Парсинг выдачи Яндекса через Yandex Cloud Search API v2 (sync + async)",
       "source": "./plugins/yandex-search-api",
       "category": "productivity"
+    },
+    {
+      "name": "yandex-metrika",
+      "description": "Аналитика Yandex Metrika: трафик, конверсии, UTM, поисковые системы",
+      "source": "./plugins/yandex-metrika",
+      "category": "productivity"
     }
   ]
 }

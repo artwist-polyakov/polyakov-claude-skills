@@ -1,0 +1,8 @@
+{
+  "name": "yandex-metrika",
+  "version": "1.0.0",
+  "description": "Yandex Metrika analytics: traffic sources, conversions, UTM, search engines. Cache-first, context-friendly.",
+  "author": {
+    "name": "Polyakov"
+  }
+}
