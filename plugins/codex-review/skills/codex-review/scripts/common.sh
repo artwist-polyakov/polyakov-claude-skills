@@ -319,11 +319,21 @@ find_session_by_marker() {
     echo "$sid"
 }
 
-# --- Check codex is installed ---
+# --- Check codex is installed and not blocked by sandbox ---
 check_codex_installed() {
     if ! command -v codex &>/dev/null; then
         echo "ERROR: 'codex' CLI not found in PATH." >&2
         echo "Install: npm install -g @openai/codex" >&2
+        exit 1
+    fi
+
+    # Preflight: detect sandbox crash (macOS SCDynamicStore panic)
+    local ver_output
+    ver_output=$(codex --version 2>&1) || true
+    if echo "$ver_output" | grep -q "SCDynamicStore\|Attempted to create a NULL object\|dynamic_store\.rs"; then
+        echo "ERROR: codex CLI crashes due to sandbox restrictions (macOS SCDynamicStore)." >&2
+        echo "Claude Code must run codex-review scripts with dangerouslyDisableSandbox: true." >&2
+        echo "This is a known issue: the sandbox blocks macOS system configuration APIs that codex needs." >&2
         exit 1
     fi
 }
