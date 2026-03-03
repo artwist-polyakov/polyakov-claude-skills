@@ -18,6 +18,7 @@
 /plugin install ssh-remote-connection
 /plugin install yandex-wordstat
 /plugin install yandex-search-api
+/plugin install yandex-metrika
 /plugin install codex-review
 /plugin install fal-ai-image
 ```
@@ -217,6 +218,27 @@ SSH подключение к удалённым серверам с agent forwa
 
 ---
 
+### [yandex-metrika](plugins/yandex-metrika/skills/yandex-metrika)
+
+Аналитика Yandex Metrika: трафик, конверсии, UTM, поисковые системы.
+
+- Cache-first стратегия с TSV-индексами для grep
+- Отчёты: трафик по источникам, конверсии по целям, UTM-разметка, поисковые системы
+- Фильтры: устройство, источник, модель атрибуции, без роботов по умолчанию
+- Автоматический пропуск кеша для текущей даты
+
+**Триггеры (RU):**
+- "покажи трафик по счётчику"
+- "конверсии за период"
+- "аналитика метрики"
+
+**Триггеры (EN):**
+- "yandex metrika analytics"
+- "show traffic sources"
+- "conversion report"
+
+---
+
 ## Структура репозитория
 
 ```
@@ -232,7 +254,8 @@ polyakov-claude-skills/
 │   ├── yandex-wordstat/      # Плагин для Wordstat API
 │   ├── codex-review/         # Плагин для кросс-агентного ревью
 │   ├── fal-ai-image/         # Плагин для генерации изображений
-│   └── yandex-search-api/    # Плагин для Yandex Search API
+│   ├── yandex-search-api/    # Плагин для Yandex Search API
+│   └── yandex-metrika/       # Плагин для аналитики Yandex Metrika
 └── README.md
 ```
 
