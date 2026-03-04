@@ -2,6 +2,26 @@
 
 Набор скиллов для Claude Code.
 
+## Содержание
+
+- [Установка](#установка)
+  - [Через маркетплейс (рекомендуется)](#через-маркетплейс-рекомендуется)
+  - [Ручная установка (без маркетплейса)](#ручная-установка-без-маркетплейса)
+  - [Локальное тестирование](#локальное-тестирование)
+- [Доступные скиллы](#доступные-скиллы)
+  - [docx-contracts](#docx-contracts) — заполнение Word шаблонов
+  - [scrapedo-web-scraper](#scrapedo-web-scraper) — веб-скрапинг через Scrape.do
+  - [agent-deck](#agent-deck) — управление сессиями AI агентов
+  - [genome-analizer](#genome-analizer) — анализ генетических данных
+  - [ssh-remote-connection](#ssh-remote-connection) — SSH подключение к серверам
+  - [yandex-wordstat](#yandex-wordstat) — анализ поискового спроса
+  - [codex-review](#codex-review) — кросс-агентное ревью
+  - [fal-ai-image](#fal-ai-image) — генерация изображений
+  - [yandex-search-api](#yandex-search-api) — парсинг выдачи Яндекса
+  - [yandex-metrika](#yandex-metrika) — аналитика Yandex Metrika
+- [Структура репозитория](#структура-репозитория)
+- [Лицензия](#лицензия)
+
 ## Установка
 
 ### Через маркетплейс (рекомендуется)
