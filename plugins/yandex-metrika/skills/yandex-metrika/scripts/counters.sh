@@ -51,11 +51,20 @@ mkdir -p "$CACHE_DIR"
 cp "$TMPFILE" "$CACHE_JSON"
 
 # Generate TSV index: id<TAB>name<TAB>site
-# Parse flat JSON array — each counter has "id", "name", "site" fields
-# We extract them line by line using grep/sed, sanitize tabs/newlines
+# Step 1: strip nested JSON objects (webvisor, code_options, informer, site2)
+#   so that top-level "site" field stays on the same line as "id" and "name".
+# Step 2: split by },{ to get one counter per line.
+# Step 3: extract id/name/site via grep/sed.
+_flat="${METRIKA_TMPDIR}/metrika_counters_flat_$$.json"
+cp "$TMPFILE" "$_flat"
+_pass=0
+while [ "$_pass" -lt 5 ]; do
+    sed 's/,"[^"]*":{[^{}]*}//g; s/"[^"]*":{[^{}]*},//g; s/"[^"]*":{[^{}]*}//g' "$_flat" > "$_flat.2"
+    mv "$_flat.2" "$_flat"
+    _pass=$(( _pass + 1 ))
+done
 {
-    # Extract id/name/site blocks from the counters array
-    tr '{}' '\n' < "$TMPFILE" | while IFS= read -r _line; do
+    sed 's/},{/}\'$'\n''{/g' "$_flat" | while IFS= read -r _line || [ -n "$_line" ]; do
         _id=$(echo "$_line" | grep -o '"id"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | sed 's/.*:[[:space:]]*//')
         _name=$(echo "$_line" | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*:[[:space:]]*"//;s/"$//' | tr '	\n' '  ')
         _site=$(echo "$_line" | grep -o '"site"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*:[[:space:]]*"//;s/"$//' | tr '	\n' '  ')
@@ -65,6 +74,7 @@ cp "$TMPFILE" "$CACHE_JSON"
         fi
     done
 } > "$CACHE_TSV"
+rm -f "$_flat"
 
 # Output
 echo "ID	Name	Site"
