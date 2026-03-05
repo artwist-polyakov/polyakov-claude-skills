@@ -51,6 +51,7 @@ _site=$(json_extract_field "$_info" "site2" || true)
 _create=$(json_extract_field "$_info" "create_time" || true)
 _owner=$(json_extract_field "$_info" "owner_login" || true)
 _code_status=$(json_extract_field "$_info" "code_status" || true)
+_currency_code=$(json_extract_field "$_info" "currency_code" || true)
 
 echo "Counter: $COUNTER"
 echo "Name: $_name"
@@ -58,6 +59,7 @@ echo "Site: $_site"
 echo "Created: $_create"
 echo "Owner: $_owner"
 echo "Code status: $_code_status"
+if [ -n "$_currency_code" ]; then echo "Currency: $_currency_code"; fi
 
 # Show config if exists
 if [ -f "$CONFIG_JSON" ]; then
