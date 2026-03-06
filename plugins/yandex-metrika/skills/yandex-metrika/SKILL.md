@@ -157,6 +157,29 @@ bash scripts/ecommerce.sh \
 ```
 Без `--currency` валюта определяется из кеша counter_info (поле `currency_code`), fallback — RUB.
 
+### direct_clients.sh
+Логины Яндекс Директа, привязанные к счётчику (нужны для отчётов по расходам).
+```bash
+bash scripts/direct_clients.sh --counter 12345
+```
+
+### direct_costs.sh
+Расходы Директа: клики, стоимость, визиты по кампаниям/дням. Автоматически берёт `direct_client_logins` из кеша.
+```bash
+bash scripts/direct_costs.sh \
+  --counter 12345 \
+  --date1 2025-01-01 \
+  --date2 2025-12-31
+
+# Ручной override логинов (если API /clients недоступен)
+bash scripts/direct_costs.sh \
+  --counter 12345 \
+  --date1 2025-01-01 \
+  --direct-client-logins "mylogin"
+```
+Данные по дням (`ym:ad:date`), агрегация по неделям/месяцам — в CSV/Excel.
+Подробнее: [Расходы Директа и PnL](references/DIRECT_COSTS.md).
+
 ### comparison.sh
 Сравнение двух периодов (год-к-году, месяц-к-месяцу).
 ```bash
@@ -190,6 +213,7 @@ bash scripts/comparison.sh \
 - `counter_<id>/info.json` — метаданные (permanent)
 - `counter_<id>/goals.json` + `goals.tsv` — цели
 - `counter_<id>/config.json` — атрибуция, конверсионные цели
+- `counter_<id>/direct_clients.json` — логины Директа
 - `counter_<id>/reports/*.csv` — результаты отчётов
 
 Для поиска по кешу: `grep "text" cache/counters.tsv` или `rg "text" cache/`.
@@ -200,6 +224,7 @@ bash scripts/comparison.sh \
 - [Произвольные отчёты](references/CUSTOM_REPORTS.md)
 - [Справочник dimensions/metrics](references/API_REFERENCE.md)
 - [Сравнение периодов год-к-году](references/PERIOD_COMPARISON.md)
+- [Расходы Директа и PnL](references/DIRECT_COSTS.md)
 
 ## JSON-запросы
 

@@ -81,6 +81,30 @@ IMPORTANT: `ym:pv:` metrics/dimensions CANNOT be mixed with `ym:s:` in one reque
 | `ym:pv:URLPathLevel1` | URL path level 1 (usually just domain) |
 | `ym:pv:URLPathLevel2..N` | Deeper URL path levels |
 
+## Ad Cost Metrics (prefix: ym:ad:)
+
+IMPORTANT: `ym:ad:` metrics require `direct_client_logins` parameter. Cannot mix with `ym:s:` or `ym:pv:`.
+
+| Metric | Description |
+|--------|-------------|
+| `ym:ad:visits` | Visits from Direct ads |
+| `ym:ad:clicks` | Clicks in Direct |
+| `ym:ad:RUBConvertedAdCost` | Ad cost in RUB |
+| `ym:ad:USDConvertedAdCost` | Ad cost in USD |
+| `ym:ad:EURConvertedAdCost` | Ad cost in EUR |
+
+## Ad Cost Dimensions (prefix: ym:ad:)
+
+| Dimension | Description |
+|-----------|-------------|
+| `ym:ad:date` | Date |
+| `ym:ad:directOrder` | Direct campaign |
+| `ym:ad:directBanner` | Ad creative |
+| `ym:ad:directBannerGroup` | Ad group |
+| `ym:ad:directPhraseOrCond` | Keyword / condition |
+| `ym:ad:directPlatformType` | Platform type (search / network) |
+| `ym:ad:directPlatform` | Specific platform |
+
 ## Device & Technology Dimensions
 
 | Dimension | Description |
@@ -133,4 +157,5 @@ Combine with `AND`, `OR`.
 - **searchPhrase + startURL = empty**: combining `lastsignSearchPhrase` and `startURL` dimensions returns 0 rows. Query them separately and correlate.
 - **URL Path Levels**: `startURLPathLevel1` returns only the domain. Deeper levels require drilldown (which doesn't support CSV). Use `startURL` with `=@` filter for section analysis instead.
 - **Pageview vs Visit scopes**: cannot mix `ym:pv:` and `ym:s:` prefixes in one query.
+- **Ad cost scope**: `ym:ad:*` is a separate scope requiring `direct_client_logins`. Cannot mix with `ym:s:` or `ym:pv:` in one query. Get logins via `/management/v1/clients?counters=<id>`.
 - **Search queries**: Yandex hides ~70% of real search phrases. Only ~30% are available via API.
