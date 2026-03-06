@@ -157,28 +157,8 @@ bash scripts/ecommerce.sh \
 ```
 Без `--currency` валюта определяется из кеша counter_info (поле `currency_code`), fallback — RUB.
 
-### direct_clients.sh
-Логины Яндекс Директа, привязанные к счётчику (нужны для отчётов по расходам).
-```bash
-bash scripts/direct_clients.sh --counter 12345
-```
-
-### direct_costs.sh
-Расходы Директа: клики, стоимость, визиты по кампаниям/дням. Автоматически берёт `direct_client_logins` из кеша.
-```bash
-bash scripts/direct_costs.sh \
-  --counter 12345 \
-  --date1 2025-01-01 \
-  --date2 2025-12-31
-
-# Ручной override логинов (если API /clients недоступен)
-bash scripts/direct_costs.sh \
-  --counter 12345 \
-  --date1 2025-01-01 \
-  --direct-client-logins "mylogin"
-```
-Данные по дням (`ym:ad:date`), агрегация по неделям/месяцам — в CSV/Excel.
-Подробнее: [Расходы Директа и PnL](references/DIRECT_COSTS.md).
+### direct_clients.sh / direct_costs.sh
+Расходы Яндекс Директа (`ym:ad:*` scope). Подробнее: [Расходы Директа и PnL](references/DIRECT_COSTS.md).
 
 ### comparison.sh
 Сравнение двух периодов (год-к-году, месяц-к-месяцу).
