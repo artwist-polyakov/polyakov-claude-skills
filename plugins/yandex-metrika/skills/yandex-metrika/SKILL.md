@@ -71,102 +71,26 @@ description: |
 
 ## Scripts
 
-### counters.sh
-Список всех счётчиков с кешем.
+Общий паттерн вызова:
 ```bash
-bash scripts/counters.sh
-bash scripts/counters.sh --search "mysite"
-bash scripts/counters.sh --no-cache
+bash scripts/<script>.sh --counter <ID> --date1 YYYY-MM-DD [--date2 ...] [--group month] [--csv path]
 ```
 
-### goals.sh
-Цели счётчика с кешем.
-```bash
-bash scripts/goals.sh --counter 12345
-```
+| Script | Description | Special params |
+|--------|-------------|----------------|
+| `counters.sh` | Список счётчиков | `--search "query"` |
+| `goals.sh` | Цели счётчика | — |
+| `counter_info.sh` | Метаданные счётчика | — |
+| `traffic_summary.sh` | Трафик по источникам | — |
+| `conversions.sh` | Достижение целей | `--goals "ID,ID"` / `--all-goals`; по умолчанию из `config.json` |
+| `utm_report.sh` | UTM-разбивка | — |
+| `search_engines.sh` | Поисковые системы (organic) | — |
+| `ecommerce.sh` | Покупки, выручка, средний чек | `--currency RUB\|USD\|EUR`; авто из counter_info |
+| `direct_clients.sh` | Логины Директа | — |
+| `direct_costs.sh` | Расходы Директа (`ym:ad:*`) | `--direct-client-logins "login"`; нет `--group`/`--device`/`--source` |
+| `comparison.sh` | Сравнение двух периодов | `--date1a/--date2a/--date1b/--date2b`; `--dimension`, `--metrics` |
 
-### counter_info.sh
-Метаданные счётчика (дата создания, сайт, статус кода).
-```bash
-bash scripts/counter_info.sh --counter 12345
-```
-
-### traffic_summary.sh
-Распределение трафика по источникам.
-```bash
-bash scripts/traffic_summary.sh \
-  --counter 12345 \
-  --date1 2025-01-01 \
-  --date2 2025-12-31 \
-  --group month
-```
-
-### conversions.sh
-Достижение целей. По умолчанию — только конверсионные цели из конфига.
-```bash
-# Конверсионные цели из конфига
-bash scripts/conversions.sh \
-  --counter 12345 \
-  --date1 2025-01-01
-
-# Все цели
-bash scripts/conversions.sh \
-  --counter 12345 \
-  --date1 2025-01-01 \
-  --all-goals
-
-# Конкретные цели
-bash scripts/conversions.sh \
-  --counter 12345 \
-  --date1 2025-01-01 \
-  --goals "111,222"
-```
-
-### utm_report.sh
-Разбивка по UTM-меткам (source + medium + campaign).
-```bash
-bash scripts/utm_report.sh \
-  --counter 12345 \
-  --date1 2025-01-01 \
-  --group month
-```
-
-### search_engines.sh
-Трафик из поисковых систем (только organic).
-```bash
-bash scripts/search_engines.sh \
-  --counter 12345 \
-  --date1 2025-01-01
-```
-
-### ecommerce.sh
-Покупки, выручка, средний чек по источникам трафика.
-```bash
-bash scripts/ecommerce.sh \
-  --counter 12345 \
-  --date1 2025-01-01 \
-  --date2 2025-12-31 \
-  --group month \
-  --source organic
-
-# С явной валютой (конвертированная выручка)
-bash scripts/ecommerce.sh \
-  --counter 12345 \
-  --date1 2025-01-01 \
-  --currency RUB
-```
-Без `--currency` валюта определяется из кеша counter_info (поле `currency_code`), fallback — RUB.
-
-### comparison.sh
-Сравнение двух периодов (год-к-году, месяц-к-месяцу).
-```bash
-bash scripts/comparison.sh \
-  --counter 12345 \
-  --date1a 2025-01-01 --date2a 2025-06-30 \
-  --date1b 2024-01-01 --date2b 2024-06-30 \
-  --dimension "ym:s:lastsignTrafficSource"
-```
-Дополнительные параметры: `--metrics`, `--device`, `--source`, `--attribution`, `--limit`, `--csv`, `--no-cache`.
+Не все скрипты поддерживают все общие параметры — см. **Special params**.
 
 ## Общие параметры отчётных скриптов
 
@@ -190,6 +114,7 @@ bash scripts/comparison.sh \
 - `counter_<id>/info.json` — метаданные (permanent)
 - `counter_<id>/goals.json` + `goals.tsv` — цели
 - `counter_<id>/config.json` — атрибуция, конверсионные цели
+- `counter_<id>/direct_clients.json` — логины Директа
 - `counter_<id>/reports/*.csv` — результаты отчётов
 
 Для поиска по кешу: `grep "text" cache/counters.tsv` или `rg "text" cache/`.
@@ -197,30 +122,11 @@ bash scripts/comparison.sh \
 ## Расширенные сценарии
 
 - [Популярные поисковые запросы](references/SEARCH_QUERIES.md)
-- [Произвольные отчёты](references/CUSTOM_REPORTS.md)
+- [Произвольные отчёты и JSON-запросы](references/CUSTOM_REPORTS.md) (drilldown, metrika_get и др.)
 - [Справочник dimensions/metrics](references/API_REFERENCE.md)
 - [Сравнение периодов год-к-году](references/PERIOD_COMPARISON.md)
-
-## JSON-запросы
-
-Для endpoints, не поддерживающих CSV (например, drilldown), используйте `metrika_get` из `common.sh`:
-
-```sh
-. scripts/common.sh
-load_config
-RESULT=$(metrika_get "/stat/v1/data/drilldown" --data-urlencode "ids=ID" ...)
-```
-
-Подробнее: [Произвольные отчёты](references/CUSTOM_REPORTS.md).
-
-## Известные ограничения API
-
-- **bytime**: максимум ~7 уникальных значений dimension в колонках. Для полного анализа — отдельные запросы по каждому периоду.
-- **searchPhrase + startURL**: возвращает 0 строк при комбинации. Запрашивайте отдельно.
-- **URL Path Levels**: `startURLPathLevel1` = только домен. Для разделов сайта используйте `startURL` с `=@` фильтром.
-- **Поисковые запросы**: Яндекс отдаёт ~30% реальных фраз.
-
-Полный список: [API_REFERENCE.md — Known Limitations](references/API_REFERENCE.md#known-api-limitations).
+- [Расходы Директа и PnL](references/DIRECT_COSTS.md)
+- [Ограничения API](references/API_REFERENCE.md#known-api-limitations) (bytime, scope mixing, drilldown CSV)
 
 ## Лимиты API
 
