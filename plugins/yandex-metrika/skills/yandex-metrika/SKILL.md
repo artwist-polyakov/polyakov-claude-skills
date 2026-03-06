@@ -139,6 +139,35 @@ bash scripts/search_engines.sh \
   --date1 2025-01-01
 ```
 
+### ecommerce.sh
+Покупки, выручка, средний чек по источникам трафика.
+```bash
+bash scripts/ecommerce.sh \
+  --counter 12345 \
+  --date1 2025-01-01 \
+  --date2 2025-12-31 \
+  --group month \
+  --source organic
+
+# С явной валютой (конвертированная выручка)
+bash scripts/ecommerce.sh \
+  --counter 12345 \
+  --date1 2025-01-01 \
+  --currency RUB
+```
+Без `--currency` валюта определяется из кеша counter_info (поле `currency_code`), fallback — RUB.
+
+### comparison.sh
+Сравнение двух периодов (год-к-году, месяц-к-месяцу).
+```bash
+bash scripts/comparison.sh \
+  --counter 12345 \
+  --date1a 2025-01-01 --date2a 2025-06-30 \
+  --date1b 2024-01-01 --date2b 2024-06-30 \
+  --dimension "ym:s:lastsignTrafficSource"
+```
+Дополнительные параметры: `--metrics`, `--device`, `--source`, `--attribution`, `--limit`, `--csv`, `--no-cache`.
+
 ## Общие параметры отчётных скриптов
 
 | Param | Required | Default | Values |
@@ -171,6 +200,27 @@ bash scripts/search_engines.sh \
 - [Произвольные отчёты](references/CUSTOM_REPORTS.md)
 - [Справочник dimensions/metrics](references/API_REFERENCE.md)
 - [Сравнение периодов год-к-году](references/PERIOD_COMPARISON.md)
+
+## JSON-запросы
+
+Для endpoints, не поддерживающих CSV (например, drilldown), используйте `metrika_get` из `common.sh`:
+
+```sh
+. scripts/common.sh
+load_config
+RESULT=$(metrika_get "/stat/v1/data/drilldown" --data-urlencode "ids=ID" ...)
+```
+
+Подробнее: [Произвольные отчёты](references/CUSTOM_REPORTS.md).
+
+## Известные ограничения API
+
+- **bytime**: максимум ~7 уникальных значений dimension в колонках. Для полного анализа — отдельные запросы по каждому периоду.
+- **searchPhrase + startURL**: возвращает 0 строк при комбинации. Запрашивайте отдельно.
+- **URL Path Levels**: `startURLPathLevel1` = только домен. Для разделов сайта используйте `startURL` с `=@` фильтром.
+- **Поисковые запросы**: Яндекс отдаёт ~30% реальных фраз.
+
+Полный список: [API_REFERENCE.md — Known Limitations](references/API_REFERENCE.md#known-api-limitations).
 
 ## Лимиты API
 

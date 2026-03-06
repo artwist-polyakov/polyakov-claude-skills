@@ -50,22 +50,44 @@ metrics=ym:s:visits,ym:s:users
 ### Реферальные источники
 
 ```
-dimensions=ym:s:lastSignReferalSource
+dimensions=ym:s:lastsignReferalSource
 metrics=ym:s:visits,ym:s:users,ym:s:bounceRate
-filters=ym:s:lastSignTrafficSource=='referral' AND ym:s:isRobot=='No'
+filters=ym:s:lastsignTrafficSource=='referral' AND ym:s:isRobot=='No'
 ```
 
 ### Рекламные системы
 
 ```
-dimensions=ym:s:lastSignAdvEngine
+dimensions=ym:s:lastsignAdvEngine
 metrics=ym:s:visits,ym:s:users,ym:s:goal<ID>conversionRate
-filters=ym:s:lastSignTrafficSource=='ad' AND ym:s:isRobot=='No'
+filters=ym:s:lastsignTrafficSource=='ad' AND ym:s:isRobot=='No'
 ```
+
+## JSON-запросы (drilldown и др.)
+
+Для endpoints, не поддерживающих CSV (drilldown), используйте `metrika_get` напрямую:
+
+```sh
+. scripts/common.sh
+load_config
+
+RESULT=$(metrika_get "/stat/v1/data/drilldown" \
+  --data-urlencode "ids=COUNTER_ID" \
+  --data-urlencode "date1=2025-01-01" \
+  --data-urlencode "date2=2025-12-31" \
+  --data-urlencode "metrics=ym:s:visits" \
+  --data-urlencode "dimensions=ym:s:startURLPathLevel1" \
+  --data-urlencode "accuracy=1")
+
+echo "$RESULT"
+```
+
+Результат — JSON. Парсите через grep/sed или сохраняйте в файл.
 
 ## Правила
 
 - Нельзя смешивать visit (ym:s:) и pageview (ym:pv:) префиксы в одном запросе
 - Максимум ~10 dimensions и ~20 metrics в одном запросе
 - Для больших выгрузок используйте `limit` + `offset` для пагинации
+- bytime возвращает максимум ~7 уникальных значений dimension в колонках — для полного анализа используйте `/stat/v1/data` с фильтрами по каждому периоду отдельно
 - Полный справочник: [API_REFERENCE.md](API_REFERENCE.md)
