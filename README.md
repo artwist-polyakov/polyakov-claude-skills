@@ -19,6 +19,7 @@
   - [fal-ai-image](#fal-ai-image) — генерация изображений
   - [yandex-search-api](#yandex-search-api) — парсинг выдачи Яндекса
   - [yandex-metrika](#yandex-metrika) — аналитика Yandex Metrika
+- [telegraph-publisher](#telegraph-publisher) — публикация в Telegraph
 - [Структура репозитория](#структура-репозитория)
 - [Лицензия](#лицензия)
 
@@ -41,6 +42,7 @@
 /plugin install yandex-metrika
 /plugin install codex-review
 /plugin install fal-ai-image
+/plugin install telegraph-publisher
 ```
 
 ### Ручная установка (без маркетплейса)
@@ -259,6 +261,30 @@ SSH подключение к удалённым серверам с agent forwa
 
 ---
 
+### [telegraph-publisher](plugins/telegraph-publisher/skills/telegraph-publisher)
+
+Публикация страниц в Telegraph с поддержкой медиа.
+
+- Создание/редактирование страниц через API
+- Поддержка изображений по URL, YouTube embed
+- Для постоянных картинок и диаграмм предпочитает GitHub + jsDelivr вместо нестабильного Telegraph upload
+- Для GitHub рекомендует отдельный public media repo и отдельный fine-grained PAT только с `Contents: Read and write` на этот repo
+- Хранит связь `Telegraph path -> assets` через manifest для последующего cleanup
+- Auto-split длинных материалов на серию страниц
+- Управление аккаунтом (создание, привязка к браузеру)
+
+**Триггеры (RU):**
+- "опубликуй в Telegraph"
+- "создай страницу в Telegraph"
+- "telegraph публикация"
+
+**Триггеры (EN):**
+- "publish to Telegraph"
+- "create Telegraph page"
+- "telegraph publish"
+
+---
+
 ## Структура репозитория
 
 ```
@@ -275,7 +301,8 @@ polyakov-claude-skills/
 │   ├── codex-review/         # Плагин для кросс-агентного ревью
 │   ├── fal-ai-image/         # Плагин для генерации изображений
 │   ├── yandex-search-api/    # Плагин для Yandex Search API
-│   └── yandex-metrika/       # Плагин для аналитики Yandex Metrika
+│   ├── yandex-metrika/       # Плагин для аналитики Yandex Metrika
+│   └── telegraph-publisher/  # Плагин для публикации в Telegraph
 └── README.md
 ```
 

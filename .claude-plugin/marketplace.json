@@ -66,6 +66,12 @@
       "description": "Аналитика Yandex Metrika: трафик, конверсии, UTM, поисковые системы",
       "source": "./plugins/yandex-metrika",
       "category": "productivity"
+    },
+    {
+      "name": "telegraph-publisher",
+      "description": "Publish pages to Telegraph with images, YouTube embeds, and diagrams",
+      "source": "./plugins/telegraph-publisher",
+      "category": "productivity"
     }
   ]
 }

@@ -1,0 +1,8 @@
+{
+  "name": "telegraph-publisher",
+  "version": "1.0.0",
+  "description": "Publish pages to Telegraph with media support: images, YouTube embeds, diagrams",
+  "author": {
+    "name": "Polyakov"
+  }
+}
