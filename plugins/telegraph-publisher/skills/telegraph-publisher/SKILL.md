@@ -1,6 +1,6 @@
 ---
 name: telegraph-publisher
-description: "Publish pages to Telegraph with images, YouTube embeds, and diagrams. Supports auto-split for long articles. ALWAYS read SKILL.md before first use."
+description: "Publishes content to Telegraph (telegra.ph) via API. Creates and edits pages with images, YouTube embeds, and diagrams. Converts HTML to Telegraph Node format, auto-splits articles exceeding 64KB, and supports permanent media hosting via GitHub + jsDelivr. Use when the user wants to publish a blog post, article, or page to Telegraph, create or edit a telegra.ph page, or embed media in Telegraph content. Triggers: telegraph, telegra.ph, publish article, blog post, create page, telegraph publish, опубликовать в telegraph, создать статью, статья в телеграф."
 ---
 
 # telegraph-publisher
@@ -245,48 +245,18 @@ cat nodes.json | python3 scripts/content_converter.py --split --output-dir /tmp/
 ## Media Support
 
 ### Images
-Preferred workflow: upload local files to a dedicated public GitHub assets repo and serve them via jsDelivr.
 
-Why GitHub is worth connecting:
-- stable permanent URLs for Telegraph pages
-- no dependency on Telegraph's glitchy unofficial upload endpoint
-- predictable asset structure for cleanup
-- easy separation between article content and media storage
+Preferred: GitHub-backed media via `github_upload.sh` (see Config section for setup). Fallback: `upload.sh` (legacy, unstable endpoint).
 
-Fallback workflow: use `upload.sh` only when GitHub-backed hosting is unavailable.
-
-Recommended asset lifecycle:
-1. If a page contains local media, first create a draft/stub Telegraph page to get its final `path`
-2. Upload images/diagrams to GitHub under `pages/<telegraph_path>/...` via `github_upload.sh`
+Asset lifecycle:
+1. Create draft/stub Telegraph page to get its `path`
+2. Upload images to GitHub via `github_upload.sh --file img.webp --page-path <telegraph_path>`
 3. Publish final content with jsDelivr URLs
-4. Store a manifest for that page with uploaded asset paths and GitHub blob SHAs
-5. On page cleanup/removal, run `github_delete_page_assets.sh --page-path <telegraph_path>`
+4. On cleanup: `github_delete_page_assets.sh --page-path <telegraph_path>`
 
-Agent decision rule:
-- if the user wants permanent images, diagrams, or hero art, prefer GitHub-backed media
-- if the page is temporary and the user explicitly accepts risk, `upload.sh` can be used as fallback
-- if the page is being deleted or rebuilt, clean up assets through `github_delete_page_assets.sh`
+Always use Telegraph `path` (not title) as page identifier for manifests and cleanup.
 
-Do not key cleanup only by page title. Titles can change. Use Telegraph `path` as the primary page identifier.
-
-If a two-pass draft flow is not available, use a temporary page key and persist a manifest mapping:
-`telegraph_path -> github asset paths`.
-
-Legacy fallback: upload local files or use public URLs:
-```bash
-# Local file → Telegraph URL
-URL=$(sh scripts/upload.sh --file photo.jpg)
-```
-
-Then embed in HTML:
-```html
-<figure>
-  <img src="https://telegra.ph/file/abc123.jpg">
-  <figcaption>Photo caption</figcaption>
-</figure>
-```
-
-See [references/IMAGE_WORKFLOWS.md](references/IMAGE_WORKFLOWS.md) for workflows.
+See [references/IMAGE_WORKFLOWS.md](references/IMAGE_WORKFLOWS.md) for detailed workflows.
 
 ### YouTube Embeds
 YouTube URLs are automatically normalized to embed format:
@@ -300,53 +270,22 @@ The converter transforms `watch?v=` and `youtu.be/` URLs to `/embed/` format.
 See [references/YOUTUBE_EMBEDS.md](references/YOUTUBE_EMBEDS.md) for details.
 
 ### Diagrams
-Preferred workflow: render PlantUML/Mermaid, store the image in GitHub assets, then publish jsDelivr URL.
+Render PlantUML/Mermaid diagrams via `render_diagram.sh`. Preferred: store in GitHub assets via `--github-page-path`. Legacy fallback: `--upload` to Telegraph.
 
-Legacy fallback: render PlantUML/Mermaid to image and upload:
 ```bash
 # Preferred: render + GitHub upload
-URL=$(sh scripts/render_diagram.sh --type plantuml --file arch.puml --github-page-path my-page-path --github-name arch.png)
+sh scripts/render_diagram.sh --type plantuml --file arch.puml --github-page-path my-page-path --github-name arch.png
 
 # Legacy fallback
-URL=$(sh scripts/render_diagram.sh --type plantuml --file arch.puml --upload)
+sh scripts/render_diagram.sh --type plantuml --file arch.puml --upload
 ```
 
 See [references/DIAGRAMS.md](references/DIAGRAMS.md) for details and privacy considerations.
 
 ### Tables
-Telegraph does not support real HTML tables as native nodes. This skill handles that by converting input HTML tables into a readable monospace `pre` block.
+Telegraph does not support HTML tables natively. Input `<table>` elements are auto-converted to monospace `pre` blocks. Prefer tables for exact values; prefer diagrams for trends/flows. On mobile, keep tables narrow (2 columns max) or use bullet lists instead.
 
-Use tables when:
-- exact values matter more than visual storytelling
-- the user needs a compact spend/domain breakdown
-- the content should stay copyable and stable in Telegraph
-
-Use diagrams when:
-- you need trends, shares, flow, cohorts, or process explanation
-- the user benefits from visual comparison more than exact cell-by-cell reading
-
-Mobile-first rule:
-- do not use `pre` tables for wide tables with 3+ dense columns or long labels
-- on mobile, wide monospace tables wrap badly and become unreadable
-- for mobile-sensitive reports, prefer one of these:
-  - bar/pie/cohort diagram plus a short numeric summary
-  - bullet list or mini-cards: one metric/domain per row
-  - a narrow 2-column table only if the content still fits comfortably
-
-Example input:
-```html
-<table>
-  <thead>
-    <tr><th>Домен</th><th>Расход, руб.</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>metallik.ru</td><td>82 900</td></tr>
-    <tr><td>mir-shtaketnika.ru</td><td>38 367</td></tr>
-  </tbody>
-</table>
-```
-
-This will be published as a boxed monospace table inside a `pre` block.
+See [references/CONTENT_FORMAT.md](references/CONTENT_FORMAT.md) for table vs diagram guidance and mobile-first rules.
 
 ## Optional: Illustrations with fal-ai-image
 

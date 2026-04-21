@@ -1,11 +1,6 @@
 ---
 name: agent-deck
-description: |
-  Управление сессиями AI агентов через agent-deck CLI.
-  Триггеры (RU): "запусти агента", "запусти саб-агента", "создай сессию",
-  "проверь сессию", "проверь статус", "покажи вывод агента", "что агент ответил".
-  Triggers (EN): "launch sub-agent", "create sub-agent", "start session",
-  "check session", "show agent output".
+description: "Creates, monitors, and retrieves output from AI agent sessions using the agent-deck CLI. Launches sub-agent Claude sessions, sends tasks, checks status, collects results, and manages MCP server connections. Use when the user wants to run a sub-agent, launch a parallel Claude session, check agent status, or retrieve agent output. Triggers (RU): запусти агента, запусти саб-агента, создай сессию, проверь сессию, проверь статус, покажи вывод агента, что агент ответил. Triggers (EN): launch sub-agent, create sub-agent, start session, check session, show agent output, agent-deck."
 ---
 
 # Agent Deck CLI
@@ -148,4 +143,12 @@ agent-deck session show "Researcher"
 
 # Если статус ◐ (waiting) — агент закончил, получить результат:
 agent-deck session output "Researcher"
+```
+
+### Проверка подключения после создания
+
+```bash
+# Убедиться что сессия запущена (статус ● running)
+agent-deck session show "Название"
+# Если статус ✕ (error) — проверь путь и конфигурацию, пересоздай сессию
 ```

@@ -1,11 +1,6 @@
 ---
 name: codex-review
-description: |
-  Workflow кросс-агентного ревью с Codex.
-  Triggers (RU): "кодекс ревью".
-  Triggers (EN): "with codex review", "codex review workflow",
-  "start codex review".
-  ВАЖНО: при срабатывании триггера прочитай SKILL.md до любых других шагов.
+description: "Orchestrates cross-agent code review: Claude implements, Codex (GPT) reviews. Sends plans and code descriptions to a Codex session, collects structured verdicts (APPROVED / CHANGES_REQUESTED), and manages iterative review cycles with escalation. Use when the user wants a second-opinion review from Codex, needs cross-agent plan validation, or asks for multi-agent code review. Triggers (RU): кодекс ревью, ревью с кодексом, кросс-агентное ревью, проверь через codex. Triggers (EN): codex review, cross-agent review, start codex review, multi-agent review, review with codex, codex review workflow."
 ---
 
 # Codex Review Workflow
@@ -156,7 +151,7 @@ bash scripts/codex-state.sh set phase implementing  # Обновить фазу
 
 ## Verdict
 
-Codex пишет свой вердикт в `verdict.txt` внутри state-каталога ветки (одно слово: `APPROVED` или `CHANGES_REQUESTED`). **Для чтения вердикта используй `bash scripts/codex-state.sh get verdict`** — helper возвращает `APPROVED`, `CHANGES_REQUESTED` или пустую строку (нет/невалидно). Файл очищается перед каждым запросом ревью. Если Codex не создал файл — скрипт парсит вердикт из текста ответа (fallback). Плагинный хук `ExitPlanMode` дополнительно связывает вердикт с текущей Claude-сессией через `current_session.txt` в том же каталоге — verdict, пришедший из другой сессии, удаляется.
+Read the verdict via `bash scripts/codex-state.sh get verdict` — returns `APPROVED`, `CHANGES_REQUESTED`, or empty string. The verdict file is cleared before each review request. Always use the helper command, not direct file reads.
 
 ## Правила
 
