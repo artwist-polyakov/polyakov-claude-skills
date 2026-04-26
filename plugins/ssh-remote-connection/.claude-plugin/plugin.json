@@ -1,6 +1,6 @@
 {
   "name": "ssh-remote-connection",
-  "description": "SSH подключение к удалённым серверам с agent forwarding",
+  "description": "SSH подключение к удалённым серверам по ключу или паролю",
   "version": "1.0.0",
   "author": {
     "name": "Polyakov"

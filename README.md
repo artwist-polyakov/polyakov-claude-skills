@@ -156,10 +156,11 @@ claude --plugin-dir ./plugins/agent-deck
 
 ### [ssh-remote-connection](plugins/ssh-remote-connection/skills/ssh-remote-connection)
 
-SSH подключение к удалённым серверам с agent forwarding.
+SSH подключение к удалённым серверам по ключу или паролю.
 
 - Выполнение команд на удалённом сервере
 - Agent forwarding (`-A`) для использования локальных SSH ключей
+- Подключение по логину/паролю через `SSH_PASSWORD` при наличии `sshpass` или `expect`
 - Управление Docker контейнерами, просмотр логов
 
 **Триггеры (RU):**
