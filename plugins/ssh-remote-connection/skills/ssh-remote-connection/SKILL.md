@@ -28,6 +28,25 @@ scripts/connect.sh "docker compose logs backend --tail 50"
 
 2. Fill in `config/.env` with actual values
 
+   Key-based authentication:
+   ```bash
+   SSH_HOST=your-server.example.com
+   SSH_USER=ubuntu
+   SSH_AUTH_METHOD=key
+   SSH_KEY_PATH=/absolute/path/to/private/key
+   SSH_KEY_PASSWORD=
+   SERVER_PROJECT_PATH=/path/to/project
+   ```
+
+   Password-based authentication:
+   ```bash
+   SSH_HOST=your-server.example.com
+   SSH_USER=ubuntu
+   SSH_AUTH_METHOD=password
+   SSH_PASSWORD='your account password'
+   SERVER_PROJECT_PATH=/path/to/project
+   ```
+
 3. Make script executable:
    ```bash
    chmod +x scripts/connect.sh
@@ -38,9 +57,16 @@ scripts/connect.sh "docker compose logs backend --tail 50"
 Set environment variables in your cloud configuration:
 - `SSH_HOST` — server hostname or IP
 - `SSH_USER` — SSH username
-- `SSH_KEY_PATH` — path to private key
+- `SSH_PORT` — SSH port (optional)
+- `SSH_AUTH_METHOD` — `auto`, `key`, or `password` (optional, defaults to `auto`)
+- `SSH_KEY_PATH` — path to private key for key authentication
 - `SSH_KEY_PASSWORD` — key passphrase (optional)
+- `SSH_PASSWORD` — SSH account password for password authentication
 - `SERVER_PROJECT_PATH` — project directory on server
+
+For password authentication, the local runtime must have either `sshpass` or `expect`.
+If the host key is not trusted yet, connect once manually or add the host to `known_hosts`
+before running non-interactive commands.
 
 ## Important Notes
 
