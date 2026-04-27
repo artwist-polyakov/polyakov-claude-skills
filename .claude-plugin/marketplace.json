@@ -108,6 +108,12 @@
       "description": "Публикация статических артифактов на SourceCraft Sites (Yandex, работает в России)",
       "source": "./plugins/sourcecraft-publisher",
       "category": "development"
+    },
+    {
+      "name": "reddit-skill",
+      "description": "Reddit API на shell-скриптах: пользователи, сабреддиты, посты, комментарии, поиск, write с двойным предохранителем",
+      "source": "./plugins/reddit-skill",
+      "category": "productivity"
     }
   ]
 }
