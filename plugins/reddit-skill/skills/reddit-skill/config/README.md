@@ -11,42 +11,125 @@
 
 ---
 
-## Шаг 1: Создайте Reddit-приложение
+## Шаг 1: Получите Reddit OAuth-приложение
 
-1. Откройте https://www.reddit.com/prefs/apps (или https://old.reddit.com/prefs/apps — иногда работает стабильнее)
-2. Внизу нажмите **«create another app...»** (или create app)
-3. Заполните:
+С 2024 Reddit изменил порядок выдачи API-доступа. Старый «зашёл в `/prefs/apps` → нажал create app → получил creds» работает не у всех — для новых аккаунтов часто требуется ручное одобрение через форму Reddit Help. Поэтому сначала **проверь, не подойдёт ли что-то из уже существующего**, и только потом подавай заявку.
+
+### Алгоритм (по приоритету)
+
+#### Вариант A — у тебя уже есть Reddit-приложение
+
+**Используй его.** Скиллу нужны только `client_id` + `client_secret` от любого `script` или `web app` приложения — название и исходное назначение неважны.
+
+1. Открой https://old.reddit.com/prefs/apps
+2. Найди существующее приложение в списке
+3. Под названием будет тип в скобках (`personal use script` / `web app`) и серая короткая строка ~14 символов — это **`client_id`**
+4. Чуть ниже поле **`secret`** — это **`client_secret`** (если скрыто, нажми «edit»)
+5. Переходи к Шагу 2
+
+> **Не удаляй старые приложения**, даже если они выглядят неактуальными. По свежим жалобам в r/redditdev после удаления старого app многие не могут получить новый — попадают в новый approval-flow.
+>
+> `installed app` не подходит — у него нет `client_secret`. В этом случае создавай новое (B) или подавай заявку (C).
+
+#### Вариант B — попробовать создать новое через `/prefs/apps`
+
+Иногда форма всё ещё работает — особенно если аккаунт не свежий и не помечен анти-фродом.
+
+1. Открой https://old.reddit.com/prefs/apps (старый интерфейс стабильнее нового)
+2. Жми **«create another app...»** внизу
+3. Заполни:
    - **Name**: `reddit-skill` (или любое)
    - **Type**: см. таблицу ниже
-   - **Description**: пусто или короткое описание
+   - **Description**: пусто или короткое нейтральное описание (см. подсказки ниже про формулировки)
    - **About URL**: можно пусто
    - **Redirect URI**: `http://localhost:8080` (формально требуется; для read-only не используется)
-4. Пройдите капчу и **сразу же** жмите **«create app»** (токен капчи живёт ~2 минуты)
-5. Запомните:
-   - **`client_id`** — короткая строка под названием приложения (под надписью типа «personal use script» или «web app»)
-   - **`secret`** — поле «secret»
+4. Пройди капчу и **сразу же** жми **`create app`** (токен капчи живёт ~2 минуты)
 
-### Какой тип выбрать?
+Если форма принимает запрос — Reddit редиректит на список приложений и показывает новую карточку. Забирай `client_id` + `secret` и переходи к Шагу 2.
 
-| Тип            | Что выдаёт         | client_credentials (read) | password grant (write) | Итого функций скилла |
-|----------------|--------------------|---------------------------|------------------------|----------------------|
-| **`script`**   | client_id + secret | ✅                        | ✅                     | **все 14**           |
-| **`web app`**  | client_id + secret | ✅                        | ❌                     | 10 read-операций     |
-| `installed app`| только client_id   | ❌ (нет secret)           | ❌                     | не подходит          |
+Если форма **молчит / редиректит на Responsible Builder Policy / показывает «You cannot create any more applications»** — это новый approval-flow. Переходи к варианту C.
 
-**Рекомендация:** ставьте `script`. Если форма не сабмитится с `script` (Reddit anti-fraud иногда так реагирует на новые/малоактивные аккаунты) — попробуйте `web app`. Скилл автоматически работает в read-only режиме без `REDDIT_USERNAME`/`REDDIT_PASSWORD`.
+#### Вариант C — заявка через Request API Access
 
-### Если форма не сабмитится
+Reddit официально пишет: для нового Data API доступа нужно подать заявку через форму Reddit Help, и только после одобрения возвращаешься в `/prefs/apps` создавать приложение.
 
-Симптом: жмёшь `create app` — ничего не происходит, в URL ничего не меняется, страница не редиректит.
+1. Открой форму **Request API Access**: https://support.reddithelp.com/hc/en-us/requests/new
+2. В поле «What do you need assistance with?» выбери **«Request API Access»**
+3. Заполни описание use case аккуратно — формулировка решает (см. шаблоны ниже)
+4. Жди одобрения (обычно несколько дней — недели)
+5. После одобрения возвращайся к Варианту B и создавай приложение
 
-Чек-лист:
+### Какой тип приложения выбрать?
+
+| Тип             | Что выдаёт            | `client_credentials` (read) | `password` grant (write) | Функций скилла |
+|-----------------|------------------------|------------------------------|---------------------------|----------------|
+| **`script`**    | client_id + secret    | ✅                           | ✅                        | **все 14**     |
+| **`web app`**   | client_id + secret    | ✅                           | ❌                        | 10 read-операций |
+| `installed app` | только client_id      | ❌ (нет secret)              | ❌                        | не подходит    |
+
+**Рекомендация:** ставь `script`. Если форма не пускает или одобрение получено только под non-personal use — `web app` тоже подойдёт для read-режима (это 90% полезности скилла).
+
+### Формулировка use case (важно)
+
+Reddit разделяет non-commercial и commercial use, и определение коммерческого довольно широкое: использование «by a business» / «on behalf of a business» / «as part of a monetized product or service» уже считается commercial. AI/ML training вообще запрещено без отдельного контракта.
+
+Этот скилл — **read-only research helper**: тянет публичные посты/комментарии, кеширует кратковременно, ничего не публикует, не голосует, не пишет в DM, не используется для тренировки моделей и не перепродаёт данные. Это укладывается в non-commercial профиль, который Reddit одобряет охотнее.
+
+**Что писать в Description / в заявке Request API Access:**
+
+```
+A private, read-only research assistant for monitoring a small set of public
+subreddits and producing internal summaries of public discussions.
+
+The app does NOT:
+  - post, comment, vote, or send messages
+  - automate any user-facing interaction
+  - scrape outside of the official Data API
+  - train or fine-tune AI/ML models on Reddit content
+  - redistribute or resell Reddit data
+
+The app uses a unique User-Agent, OAuth credentials, short-lived response
+caching for operational use only, and removes cached content during routine
+cleanup to comply with Reddit's data retention/deletion requirements.
+```
+
+Если у тебя уже есть существующий Reddit app под другой проект — добавь это в заявку:
+
+```
+I already have an existing Reddit API app and would like to register a
+separate new read-only app for an isolated internal research workflow.
+```
+
+**Чего НЕ писать:**
+
+- «AI agent для генерации идей для канала» / «для блога» — звучит как контент-фарминг
+- «Generates content for…» — Reddit чувствителен к ML/training-кейсам
+- Любые упоминания монетизации, B2B-продукта, SaaS, подписок, перепродажи
+- «Trains a model on…» — это явный трип-вайр, прямо запрещено
+
+**Если use case действительно коммерческий** (канал/консалтинг монетизируется) — Reddit ожидает, что ты заявишь это явно через отдельный канал: https://support.reddithelp.com/hc/en-us/requests/new (выбрать commercial-вариант). Для personal exploration / private research / non-commercial — обычная Request API Access форма.
+
+### Если форма `/prefs/apps` не сабмитится
+
+Симптомы: жмёшь `create app` — ничего не происходит, URL не меняется, или редиректит на Responsible Builder Policy.
+
+Прежде чем подавать заявку через Вариант C — проверь техническое:
+
 1. **Hard reload** (`⌘+Shift+R` / `Ctrl+Shift+R`) — заполни заново и пройди капчу ровно перед кликом
-2. **Инкогнито-режим** — расширения вроде uBlock Origin, Privacy Badger, AdGuard ломают Reddit anti-bot. В инкогнито они выключены.
+2. **Инкогнито-режим** — расширения (uBlock Origin, Privacy Badger, AdGuard) ломают Reddit anti-bot. В инкогнито их нет.
 3. **Старый Reddit** явно — `https://old.reddit.com/prefs/apps`
 4. **Без VPN** — Reddit банит часть VPN-IP с определённых регионов
-5. **Проверь, что приложение случайно не создалось** — иди в `/prefs/apps` без `/create`, посмотри список. Бывает, что один из «молчаливых» сабмитов сработал
-6. **DevTools → Network → XHR** — нажми create, посмотри, был ли запрос. 4xx-ответ покажет реальную причину
+5. **Приложение случайно не создалось** — открой `/prefs/apps` без `/create` и посмотри список. Один из «молчаливых» сабмитов мог сработать
+6. **DevTools → Network → XHR** — нажми create, посмотри запрос. `4xx`-ответ покажет реальную причину
+
+Если после всего этого форма всё равно показывает policy-страницу или ругается «cannot create any more applications» — это approval-flow, технически не обходится. Подавай заявку через Вариант C.
+
+### Чего точно не делать
+
+- ❌ Не использовать reverse-engineered токены официальных мобильных приложений Reddit (в r/redditdev иногда советуют — это нарушение ToS, бан прилетает быстро)
+- ❌ Не шарить чужие creds
+- ❌ Не пытаться обходить approval-flow техническими средствами
+- ❌ Не использовать дефолтный User-Agent из браузера (Reddit банит за это)
 
 ---
 
@@ -142,10 +225,25 @@ Access token живёт ~3600 секунд. Скрипты автоматиче�
 - **Dry-run без сетевого запроса** — `REDDIT_ENABLE_WRITE=1` стоит, но не передан `--confirm`. Это ожидаемое поведение: команда печатает что бы отправила и завершается.
 - Чтобы реально отправить запрос — нужны оба условия одновременно.
 
+### `/prefs/apps` редиректит на Responsible Builder Policy
+- Это новый approval-flow, а не баг формы. Технически не обходится.
+- Подавай заявку через https://support.reddithelp.com/hc/en-us/requests/new → «Request API Access». Шаблон описания — в Шаге 1 → Вариант C.
+- Если у тебя уже есть рабочий старый app — используй его creds, заявка не нужна.
+
+### `You cannot create any more applications`
+- Reddit стал жёстче к новым/малоактивным аккаунтам и в принципе к новым OAuth-приложениям. Иногда показывает эту ошибку, даже если у аккаунта 0 приложений.
+- Не удаляй имеющиеся приложения — после удаления получить новое сложнее.
+- Решение — заявка через Reddit Help (Вариант C в Шаге 1).
+
 ---
 
 ## Дополнительно
 
 - Reddit API docs: https://www.reddit.com/dev/api/
 - OAuth2 wiki: https://github.com/reddit-archive/reddit/wiki/OAuth2
-- Rules: https://github.com/reddit-archive/reddit/wiki/API
+- API rules / User-Agent: https://github.com/reddit-archive/reddit/wiki/API
+- Reddit Data API Terms: https://www.redditinc.com/policies/data-api-terms
+- Developer Terms: https://www.redditinc.com/policies/developer-terms
+- Responsible Builder Policy (что Reddit хочет видеть в use case): https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy
+- Запрос API Access (non-commercial): https://support.reddithelp.com/hc/en-us/requests/new — выбрать «Request API Access»
+- Запрос commercial Data API: https://support.reddithelp.com/hc/en-us/requests/new — отдельный commercial-вариант
