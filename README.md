@@ -26,6 +26,7 @@
   - [x-research](#x-research) — рисерч X/Twitter через xAI Grok API
   - [github-pages-publisher](#github-pages-publisher) — публикация на GitHub Pages
   - [sourcecraft-publisher](#sourcecraft-publisher) — публикация на SourceCraft Sites
+  - [reddit-skill](#reddit-skill) — Reddit API: пользователи, сабреддиты, поиск, посты
 - [Структура репозитория](#структура-репозитория)
 - [Лицензия](#лицензия)
 
@@ -55,6 +56,7 @@
 /plugin install x-research
 /plugin install github-pages-publisher
 /plugin install sourcecraft-publisher
+/plugin install reddit-skill
 ```
 
 ### Ручная установка (без маркетплейса)
@@ -432,6 +434,29 @@ SEO-краулер сайтов на базе Crawl4AI.
 
 ---
 
+### [reddit-skill](plugins/reddit-skill/skills/reddit-skill)
+
+Reddit API на shell-скриптах: пользователи, сабреддиты, посты, комментарии, поиск.
+
+- Прямые вызовы Reddit OAuth2 API через curl (без PRAW и Python-зависимостей)
+- Авто-выбор режима: app-only (`client_credentials`) для read, user (`password`) для write/me
+- Cache-first: токены, юзеры, сабреддиты, листинги
+- Двойной предохранитель для write: `REDDIT_ENABLE_WRITE=1` + `--confirm` (без флага — dry-run)
+- Rate-limit по заголовкам (`x-ratelimit-*`, `Retry-After`)
+- 14 операций: профили, посты/комментарии юзеров, top/popular сабреддитов, search, submission по URL/id, post_create, comment_reply, subscribe/unsubscribe
+
+**Триггеры (RU):**
+- "посты reddit"
+- "комментарии reddit"
+- "парсинг reddit"
+
+**Триггеры (EN):**
+- "reddit api"
+- "reddit subreddit"
+- "reddit user"
+
+---
+
 ## Структура репозитория
 
 ```
@@ -455,7 +480,8 @@ polyakov-claude-skills/
 │   ├── telegram-channel-parser/ # Плагин для парсинга Telegram-каналов
 │   ├── x-research/              # Плагин для рисерча X/Twitter
 │   ├── github-pages-publisher/  # Плагин для публикации на GitHub Pages
-│   └── sourcecraft-publisher/   # Плагин для публикации на SourceCraft Sites
+│   ├── sourcecraft-publisher/   # Плагин для публикации на SourceCraft Sites
+│   └── reddit-skill/              # Плагин для Reddit API
 └── README.md
 ```
 

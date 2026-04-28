@@ -1,0 +1,8 @@
+{
+  "name": "reddit-skill",
+  "version": "1.0.0",
+  "description": "Reddit API skill: users, subreddits, posts, comments, search. Cache-first, OAuth2, optional write operations with double safeguard.",
+  "author": {
+    "name": "Polyakov"
+  }
+}
