@@ -371,7 +371,7 @@ cmd_init() {
         "${MODEL_FLAG[@]}" \
         "${YOLO_FLAG[@]}" \
         -o "$output_file" \
-        "$prompt" > "$log_file" 2>&1 || {
+        "$prompt" </dev/null > "$log_file" 2>&1 || {
         echo "ERROR: Failed to create Codex session." >&2
         cat "$log_file" >&2
         exit 1
@@ -486,7 +486,7 @@ cmd_review() {
         "${YOLO_FLAG[@]}" \
         -o "$output_file" \
         resume "$SESSION_ID" \
-        "$codex_prompt" > "$log_file" 2>&1 || {
+        "$codex_prompt" </dev/null > "$log_file" 2>&1 || {
         local exit_code=$?
         echo "ERROR: Codex exec failed (exit $exit_code)." >&2
         cat "$log_file" >&2
