@@ -1,6 +1,6 @@
 ---
 name: sourcecraft-publisher
-description: Publish static page artifacts to SourceCraft Sites (Yandex infrastructure, works in Russia). Use when a static page/React artifact needs to be deployed to SourceCraft under YYYY/YYYY-MM/page-slug directory layout.
+description: Publish static page artifacts to SourceCraft Sites (Yandex infrastructure, works in Russia), with advisory image optimization and an original-image path. Use when a static page/React artifact needs to be deployed to SourceCraft under YYYY/YYYY-MM/page-slug directory layout.
 ---
 
 # SourceCraft Publisher
@@ -55,15 +55,31 @@ Required: `SOURCECRAFT_TOKEN`, `SOURCECRAFT_REPO`, `SOURCECRAFT_SITE_URL`.
 ## Publishing command
 
 ```bash
-python3 scripts/publish_static.py --source <dir-or-html> --slug <name> [--date YYYY-MM-DD]
+python3 scripts/publish_static.py --source <dir-or-html> --slug <name> [--date YYYY-MM-DD] [--image-max-kb 500]
 ```
 
 The script:
 - Clones the SourceCraft repo (shallow)
 - Ensures `.sourcecraft/sites.yaml` config exists
 - Copies artifact into `YYYY/YYYY-MM/slug/`
+- Optimizes oversized `.jpg`, `.jpeg`, `.png`, and `.webp` images before commit
 - Commits and force-pushes
 - Prints the final public URL
+
+## Image optimization
+
+Image optimization is a recommendation, not a hard requirement. By default, the publishing script tries to keep each raster image under `500KB` by stripping metadata, recompressing, and resizing long edges when needed.
+
+Use `--image-max-kb <kb>` for a different target.
+Use `--keep-large-images` or `--image-max-kb 0` when the user explicitly needs original-size images (for example, a full-resolution infographic, map, or downloadable media asset).
+
+The original `--source` artifact is not changed. Optimization happens only after files are copied into the publish repo target directory. If Pillow/uv is unavailable or optimization fails, continue publishing originals and mention the warning.
+
+Manual console run for a prepared artifact:
+
+```bash
+uv run --with pillow python3 scripts/optimize_images.py <artifact-dir> --max-kb 500
+```
 
 ## Slug rules
 
@@ -80,6 +96,7 @@ Always return the final public URL:
 
 Before pushing, verify:
 - artifact has `index.html` entrypoint
+- oversized raster images are optimized when practical, unless original-size sharing is intentional
 - no absolute local paths in HTML/CSS
 - no secrets in files
 - all local assets reachable from the target folder

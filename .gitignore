@@ -1,5 +1,6 @@
 token.txt
 .DS_Store
+.claude/
 .claude/settings*
 __pycache__/
 
