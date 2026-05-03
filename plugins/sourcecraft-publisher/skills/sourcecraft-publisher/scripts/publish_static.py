@@ -11,6 +11,7 @@ import argparse, os, re, shutil, subprocess, sys, tempfile
 from datetime import datetime
 from pathlib import Path
 
+DEFAULT_IMAGE_MAX_KB = 500
 SITES_YAML = """\
 site:
   root: "."
@@ -29,12 +30,52 @@ def run(cmd, cwd=None):
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
+def pillow_available() -> bool:
+    return subprocess.run(
+        [sys.executable, '-c', 'import PIL'],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
+def optimize_images(target: Path, max_kb: int, keep_large_images: bool):
+    if keep_large_images:
+        print('IMAGE_OPTIMIZATION_SKIPPED keep-large-images')
+        return
+    if max_kb <= 0:
+        print('IMAGE_OPTIMIZATION_DISABLED')
+        return
+
+    script = Path(__file__).resolve().with_name('optimize_images.py')
+    if not script.exists():
+        print(f'IMAGE_OPTIMIZATION_SKIPPED optimizer not found: {script}', file=sys.stderr)
+        return
+
+    cmd = None
+    if pillow_available():
+        cmd = [sys.executable, str(script), str(target), '--max-kb', str(max_kb)]
+    else:
+        uv = shutil.which('uv')
+        if uv:
+            cmd = [uv, 'run', '--quiet', '--with', 'pillow', 'python3', str(script), str(target), '--max-kb', str(max_kb)]
+
+    if cmd:
+        status = subprocess.run(cmd)
+        if status.returncode != 0:
+            print('IMAGE_OPTIMIZATION_SKIPPED optimizer failed; publishing originals', file=sys.stderr)
+        return
+
+    print('IMAGE_OPTIMIZATION_SKIPPED Pillow unavailable; publishing originals', file=sys.stderr)
+
+
 def main():
     ap = argparse.ArgumentParser(description='Publish to SourceCraft Sites')
     ap.add_argument('--source', required=True, help='Path to built static site folder or single html file')
     ap.add_argument('--slug', required=True, help='Page slug (lowercase, hyphens)')
     ap.add_argument('--date', help='ISO date, default today')
     ap.add_argument('--message', help='Commit message')
+    ap.add_argument('--image-max-kb', type=int, default=DEFAULT_IMAGE_MAX_KB, help='Target max size per raster image')
+    ap.add_argument('--keep-large-images', action='store_true', help='Publish original images without optimization')
     args = ap.parse_args()
 
     token = os.environ['SOURCECRAFT_TOKEN']
@@ -89,6 +130,8 @@ def main():
                     shutil.copy2(item, dest)
         else:
             shutil.copy2(src, target / 'index.html')
+
+        optimize_images(target, args.image_max_kb, args.keep_large_images)
 
         if not (target / 'index.html').exists():
             raise SystemExit('index.html not found in published artifact')

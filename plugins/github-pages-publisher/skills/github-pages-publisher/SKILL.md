@@ -1,6 +1,6 @@
 ---
 name: github-pages-publisher
-description: Publish static page artifacts from the publisher workspace to a GitHub Pages repository using a fine-grained token. Use when a React/static page artifact is already prepared and needs to be copied into the Pages repo under a strict year/year-month/page-slug directory layout, then committed and pushed, with a final public artifact URL returned.
+description: Publish static page artifacts from the publisher workspace to a GitHub Pages repository using a fine-grained token, with advisory image optimization and an original-image path. Use when a React/static page artifact is already prepared and needs to be copied into the Pages repo under a strict year/year-month/page-slug directory layout, then committed and pushed, with a final public artifact URL returned.
 ---
 
 # GitHub Pages Publisher
@@ -61,10 +61,34 @@ Prefer the clean directory URL when it resolves correctly.
 2. Create or update target directory:
    - `<year>/<year-month>/<page-slug>/`
 3. Copy artifact files into that directory
-4. Verify there is an entrypoint (`index.html` normally)
-5. Run pre-publish validation (see section above)
-6. Commit and push to the Pages repo using the configured fine-grained token workflow
-7. Return the final public URL
+4. Optimize oversized raster images when practical, unless original-size sharing is intentional
+5. Verify there is an entrypoint (`index.html` normally)
+6. Run pre-publish validation (see section above)
+7. Commit and push to the Pages repo using the configured fine-grained token workflow
+8. Return the final public URL
+
+## Publishing command
+
+```bash
+python3 scripts/publish_static.py --source <dir-or-html> --slug <name> [--date YYYY-MM-DD] [--image-max-kb 500]
+```
+
+The script copies the artifact into `YYYY/YYYY-MM/slug/`, optimizes oversized `.jpg`, `.jpeg`, `.png`, and `.webp` images, commits, pushes, and prints the final public URL.
+
+## Image optimization
+
+Image optimization is a recommendation, not a hard requirement. By default, the publishing script tries to keep each raster image under `500KB` by stripping metadata, recompressing, and resizing long edges when needed.
+
+Use `--image-max-kb <kb>` for a different target.
+Use `--keep-large-images` or `--image-max-kb 0` when the user explicitly needs original-size images (for example, a full-resolution infographic, map, or downloadable media asset).
+
+The original `--source` artifact is not changed. Optimization happens only after files are copied into the publish repo target directory. If Pillow/uv is unavailable or optimization fails, continue publishing originals and mention the warning.
+
+Manual console run for a prepared artifact:
+
+```bash
+uv run --with pillow python3 scripts/optimize_images.py <artifact-dir> --max-kb 500
+```
 
 ## Slug rules
 
@@ -77,6 +101,7 @@ Prefer the clean directory URL when it resolves correctly.
 
 Before pushing, the agent must verify:
 - artifact has `index.html` entrypoint
+- oversized raster images are optimized when practical, unless original-size sharing is intentional
 - no absolute local paths in HTML/CSS
 - no secrets in files
 - all local assets reachable from the target folder

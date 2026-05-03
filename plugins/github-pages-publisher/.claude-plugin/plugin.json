@@ -1,7 +1,7 @@
 {
   "name": "github-pages-publisher",
   "version": "1.0.0",
-  "description": "Publish static page artifacts to a GitHub Pages repository with year/month directory layout and viewport validation",
+  "description": "Publish static page artifacts to a GitHub Pages repository with year/month directory layout, viewport validation, and optional image optimization",
   "author": {
     "name": "Polyakov"
   }
