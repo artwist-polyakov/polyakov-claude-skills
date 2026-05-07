@@ -1,0 +1,16 @@
+# Local build output
+dist/
+
+# Extracted source text and job cache
+cache/*
+!cache/.gitkeep
+
+# Local overrides
+config/defaults.json
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store

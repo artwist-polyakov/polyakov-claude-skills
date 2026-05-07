@@ -1,0 +1,8 @@
+{
+  "name": "knowledge-compiler",
+  "version": "1.0.0",
+  "description": "Compiles books and long sources into personal, source-mapped Claude Code skills",
+  "author": {
+    "name": "Polyakov"
+  }
+}

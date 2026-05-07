@@ -27,6 +27,7 @@
   - [github-pages-publisher](#github-pages-publisher) — публикация на GitHub Pages
   - [sourcecraft-publisher](#sourcecraft-publisher) — публикация на SourceCraft Sites
   - [reddit-skill](#reddit-skill) — Reddit API: пользователи, сабреддиты, поиск, посты
+  - [knowledge-compiler](#knowledge-compiler) — компиляция книг и длинных источников в личные скиллы
 - [Структура репозитория](#структура-репозитория)
 - [Лицензия](#лицензия)
 
@@ -57,6 +58,7 @@
 /plugin install github-pages-publisher
 /plugin install sourcecraft-publisher
 /plugin install reddit-skill
+/plugin install knowledge-compiler
 ```
 
 ### Ручная установка (без маркетплейса)
@@ -457,6 +459,32 @@ Reddit API на shell-скриптах: пользователи, сабредд
 
 ---
 
+### [knowledge-compiler](plugins/knowledge-compiler/skills/knowledge-compiler)
+
+Компиляция книг, PDF/EPUB/TXT/Markdown и длинных прикладных источников в личные Claude Code скиллы.
+
+- Собирает не пересказ, а карту применимых идей: понятия, решающие правила, плейбуки, анти-паттерны
+- Подходит для технических, управленческих, маркетинговых, продуктовых, учебных и внутренних материалов
+- Делает `source-map.json` и `knowledge-manifest.json` для связи тезисов с сегментами источника
+- Для EPUB читает OPF-метаданные и `toc.ncx`/`nav.xhtml`, затем использует точное оглавление как источник сегментации
+- Разведывает структуру через малый `outline-scout.json`, первые/последние выдержки и строки-кандидаты без загрузки всего текста
+- Python-скрипты запускаются через `uv run --script`, зависимости объявлены в самих скриптах
+- Кеширует извлечённый текст и сегменты в `cache/jobs/<job-id>/`; готовый скилл собирает в `dist/<skill-name>/`
+- Проверяет результат через `quality_gate.py`: обязательные файлы, длина `SKILL.md`, JSON и длинные дословные совпадения
+- OCR, публикационный профиль и Go-ускоритель вынесены в бэклог
+
+**Триггеры (RU):**
+- "сделай скилл из книги"
+- "преврати PDF в навык"
+- "собери карту знаний"
+
+**Триггеры (EN):**
+- "book to skill"
+- "compile knowledge"
+- "create skill from PDF"
+
+---
+
 ## Структура репозитория
 
 ```
@@ -481,7 +509,8 @@ polyakov-claude-skills/
 │   ├── x-research/              # Плагин для рисерча X/Twitter
 │   ├── github-pages-publisher/  # Плагин для публикации на GitHub Pages
 │   ├── sourcecraft-publisher/   # Плагин для публикации на SourceCraft Sites
-│   └── reddit-skill/              # Плагин для Reddit API
+│   ├── reddit-skill/            # Плагин для Reddit API
+│   └── knowledge-compiler/      # Плагин для компиляции источников в скиллы
 └── README.md
 ```
 
