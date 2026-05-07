@@ -176,31 +176,43 @@ class HTMLTextExtractor(html.parser.HTMLParser):
 
     def text(self) -> str:
         raw = html.unescape("".join(self.parts))
-        lines = [re.sub(r"[ \t]+", " ", line).strip() for line in raw.splitlines()]
+        lines = [normalize_ws(line) for line in raw.splitlines()]
         return "\n".join(line for line in lines if line)
 
 
-def extract_epub(path: Path) -> tuple[str, str, list[str]]:
+def normalize_ws(value: str) -> str:
+    value = value.replace("\u00a0", " ").replace("\u202f", " ")
+    return re.sub(r"[ \t]+", " ", value).strip()
+
+
+def extract_epub(path: Path) -> tuple[str, str, list[str], dict[str, Any]]:
     warnings: list[str] = []
-    text = extract_epub_stdlib(path)
+    text, epub_info = extract_epub_stdlib(path)
     if text.strip():
-        return text, "stdlib-epub", warnings
+        return text, "stdlib-epub", warnings, epub_info
     raise SystemExit("Could not extract EPUB text.")
 
 
-def extract_epub_stdlib(path: Path) -> str:
+def extract_epub_stdlib(path: Path) -> tuple[str, dict[str, Any]]:
     with zipfile.ZipFile(path) as zf:
         rootfile = epub_rootfile(zf)
         opf_dir = posixpath.dirname(rootfile)
         opf = ElementTree.fromstring(zf.read(rootfile))
         ns = {"opf": "http://www.idpf.org/2007/opf"}
         manifest: dict[str, str] = {}
+        ncx_path = ""
+        nav_path = ""
         for item in opf.findall(".//opf:manifest/opf:item", ns):
             item_id = item.attrib.get("id")
             href = item.attrib.get("href")
             media = item.attrib.get("media-type", "")
+            properties = item.attrib.get("properties", "")
             if item_id and href and ("html" in media or href.endswith((".html", ".xhtml"))):
                 manifest[item_id] = posixpath.normpath(posixpath.join(opf_dir, href))
+            if href and (media == "application/x-dtbncx+xml" or href.endswith(".ncx")):
+                ncx_path = posixpath.normpath(posixpath.join(opf_dir, href))
+            if href and "nav" in properties.split():
+                nav_path = posixpath.normpath(posixpath.join(opf_dir, href))
 
         order = []
         for itemref in opf.findall(".//opf:spine/opf:itemref", ns):
@@ -211,6 +223,8 @@ def extract_epub_stdlib(path: Path) -> str:
             order = sorted(n for n in zf.namelist() if n.endswith((".html", ".xhtml")))
 
         parts = []
+        spine_items = []
+        char_pos = 0
         for name in order:
             try:
                 raw = zf.read(name).decode("utf-8", errors="replace")
@@ -220,8 +234,96 @@ def extract_epub_stdlib(path: Path) -> str:
             parser.feed(raw)
             text = parser.text()
             if text.strip():
+                if parts:
+                    char_pos += 2
                 parts.append(text)
-        return "\n\n".join(parts)
+                spine_items.append(
+                    {
+                        "href": name,
+                        "char_start": char_pos,
+                        "char_end": char_pos + len(text),
+                        "words": len(text.split()),
+                    }
+                )
+                char_pos += len(text)
+        full_text = "\n\n".join(parts)
+        epub_info = {
+            "epub_rootfile": rootfile,
+            "epub_title": opf_text_value(opf, "title"),
+            "epub_author": opf_text_value(opf, "creator"),
+            "epub_spine_items": spine_items,
+            "epub_toc_source": "ncx" if ncx_path else ("nav" if nav_path else ""),
+            "epub_toc": parse_ncx_toc(zf, ncx_path) if ncx_path else parse_nav_toc(zf, nav_path),
+        }
+        return full_text, epub_info
+
+
+def local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1].lower()
+
+
+def opf_text_value(root: ElementTree.Element, wanted: str) -> str:
+    for elem in root.iter():
+        if local_name(elem.tag) == wanted and elem.text:
+            return normalize_ws(elem.text)
+    return ""
+
+
+def parse_ncx_toc(zf: zipfile.ZipFile, ncx_path: str) -> list[dict[str, Any]]:
+    if not ncx_path:
+        return []
+    try:
+        root = ElementTree.fromstring(zf.read(ncx_path))
+    except Exception:
+        return []
+    items: list[dict[str, Any]] = []
+
+    def walk(elem: ElementTree.Element, level: int) -> None:
+        if local_name(elem.tag) == "navpoint":
+            label = ""
+            src = ""
+            for child in elem.iter():
+                name = local_name(child.tag)
+                if name == "text" and child.text and not label:
+                    label = normalize_ws(child.text)
+                elif name == "content" and child.attrib.get("src") and not src:
+                    src = child.attrib["src"]
+            if label:
+                items.append(
+                    {
+                        "label": label,
+                        "href": src,
+                        "level": level,
+                        "order": len(items) + 1,
+                    }
+                )
+            for child in elem:
+                if local_name(child.tag) == "navpoint":
+                    walk(child, level + 1)
+        else:
+            for child in elem:
+                walk(child, level)
+
+    walk(root, 1)
+    return items
+
+
+def parse_nav_toc(zf: zipfile.ZipFile, nav_path: str) -> list[dict[str, Any]]:
+    if not nav_path:
+        return []
+    try:
+        raw = zf.read(nav_path).decode("utf-8", errors="replace")
+    except Exception:
+        return []
+    links = re.findall(r"<a\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", raw, flags=re.I | re.S)
+    items = []
+    for href, label_html in links:
+        parser = HTMLTextExtractor()
+        parser.feed(label_html)
+        label = normalize_ws(parser.text())
+        if label:
+            items.append({"label": label, "href": href, "level": 1, "order": len(items) + 1})
+    return items
 
 
 def epub_rootfile(zf: zipfile.ZipFile) -> str:
@@ -312,7 +414,7 @@ def main() -> int:
         text, method, warnings = extract_pdf(source, args.mode, script_dir)
         units = {"pages": count_pdf_pages(source)}
     elif source_format == "epub":
-        text, method, warnings = extract_epub(source)
+        text, method, warnings, epub_info = extract_epub(source)
         units = {"spine_items": count_epub_spine(source)}
     else:
         text = source.read_text(encoding="utf-8", errors="replace")
@@ -345,12 +447,20 @@ def main() -> int:
         **units,
         **detect_structure(text),
     }
+    if source_format == "epub":
+        metadata.update(epub_info)
     output_meta.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"Job: {job_id}")
     print(f"Format: {source_format}")
     print(f"Method: {method}")
     print(f"Words: {metadata['words']}")
+    if metadata.get("epub_title"):
+        print(f"Title: {metadata['epub_title']}")
+    if metadata.get("epub_author"):
+        print(f"Author: {metadata['epub_author']}")
+    if metadata.get("epub_toc"):
+        print(f"EPUB TOC: {len(metadata['epub_toc'])} items ({metadata.get('epub_toc_source')})")
     print(f"Text: {output_text}")
     print(f"Meta: {output_meta}")
     if warnings:

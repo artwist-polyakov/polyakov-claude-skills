@@ -119,6 +119,9 @@ dist/<skill-name>/
   "source_file": "/path/to/file.pdf",
   "source_sha256": "sha256:...",
   "extraction_method": "pdftotext",
+  "epub_title": "Название из OPF, если есть",
+  "epub_author": "Автор из OPF, если есть",
+  "epub_toc_source": "ncx",
   "created_at": "2026-05-07T12:00:00Z",
   "limitations": ["OCR not performed"]
 }

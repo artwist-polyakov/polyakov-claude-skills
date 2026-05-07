@@ -50,11 +50,28 @@ def clean_title(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()[:140] or "Untitled segment"
 
 
+def normalize_space(value: str) -> str:
+    value = value.replace("\u00a0", " ").replace("\u202f", " ")
+    return re.sub(r"\s+", " ", value).strip()
+
+
 def load_decision(path: str | None) -> dict[str, object]:
     if not path:
         return {}
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     return data.get("model_decision", data)
+
+
+def toc_items_from_decision(decision: dict[str, object]) -> list[dict[str, object]]:
+    items = decision.get("toc_items")
+    if isinstance(items, list):
+        return [item for item in items if isinstance(item, dict) and item.get("label")]
+    observations = decision.get("script_observations")
+    if isinstance(observations, dict):
+        observed = observations.get("epub_toc_items")
+        if isinstance(observed, list):
+            return [item for item in observed if isinstance(item, dict) and item.get("label")]
+    return []
 
 
 def compile_patterns(values: object) -> list[re.Pattern[str]]:
@@ -122,6 +139,122 @@ def split_by_headings(text: str, lines: list[Line], headings: list[Line]) -> lis
             }
         )
     return segments
+
+
+def normalized_index(text: str) -> tuple[str, list[int]]:
+    chars: list[str] = []
+    mapping: list[int] = []
+    prev_space = False
+    for idx, char in enumerate(text):
+        if char in {"\u00a0", "\u202f"} or char.isspace():
+            if not prev_space:
+                chars.append(" ")
+                mapping.append(idx)
+                prev_space = True
+            continue
+        chars.append(char.lower())
+        mapping.append(idx)
+        prev_space = False
+    return "".join(chars), mapping
+
+
+def normalize_for_match(value: str) -> str:
+    normalized, _ = normalized_index(normalize_space(value))
+    normalized = re.sub(r"\s+[0-9ivxlcdm]+$", "", normalized, flags=re.IGNORECASE).strip()
+    return normalized
+
+
+def anchor_variants(label: str) -> list[str]:
+    full = normalize_for_match(label)
+    if not full:
+        return []
+    variants = [full]
+    words = full.split()
+    for count in (14, 10, 7, 5):
+        if len(words) > count:
+            variants.append(" ".join(words[:count]))
+    numbered = re.match(r"^([0-9]+(?:\.[0-9]+)*\.?)\s+(.+)$", full)
+    if numbered:
+        rest = numbered.group(2).split()
+        if rest:
+            variants.append(f"{numbered.group(1)} {' '.join(rest[:5])}")
+            variants.append(numbered.group(1))
+    result = []
+    seen = set()
+    for variant in variants:
+        variant = variant.strip()
+        if len(variant) < 3 or variant in seen:
+            continue
+        seen.add(variant)
+        result.append(variant)
+    return result
+
+
+def split_by_toc(text: str, lines: list[Line], toc_items: list[dict[str, object]]) -> list[dict[str, object]]:
+    norm_text, mapping = normalized_index(text)
+    points: list[tuple[int, str, int, float]] = []
+    search_from = 0
+    for item in toc_items:
+        label = normalize_space(str(item.get("label", "")))
+        if not label:
+            continue
+        found_pos = -1
+        found_variant = ""
+        for variant in anchor_variants(label):
+            pos = norm_text.find(variant, search_from)
+            if pos < 0 and points:
+                pos = norm_text.find(variant, mapping_to_norm_pos(norm_text, mapping, points[-1][0]))
+            if pos >= 0:
+                found_pos = pos
+                found_variant = variant
+                break
+        if found_pos < 0:
+            continue
+        char_start = mapping[found_pos]
+        if points and char_start <= points[-1][0] + 20:
+            continue
+        confidence = 0.92 if found_variant == normalize_for_match(label) else 0.78
+        level = int(item.get("level", 1) or 1)
+        points.append((char_start, label, level, confidence))
+        search_from = min(len(norm_text), found_pos + max(1, len(found_variant)))
+
+    if len(points) < 2:
+        return []
+
+    segments = []
+    for idx, (start, title, level, confidence) in enumerate(points):
+        end = points[idx + 1][0] if idx + 1 < len(points) else len(text)
+        if end <= start:
+            continue
+        body = text[start:end].strip()
+        if not body:
+            continue
+        segments.append(
+            {
+                "title": title,
+                "char_start": start,
+                "char_end": end,
+                "line_start": line_for_char(lines, start),
+                "line_end": line_for_char(lines, max(start, end - 1)),
+                "text": body,
+                "confidence": confidence,
+                "method": "toc",
+                "toc_level": level,
+            }
+        )
+    return segments
+
+
+def mapping_to_norm_pos(norm_text: str, mapping: list[int], char_pos: int) -> int:
+    lo = 0
+    hi = len(mapping) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if mapping[mid] < char_pos:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return min(lo, len(norm_text))
 
 
 def line_for_char(lines: list[Line], char_pos: int) -> int:
@@ -223,6 +356,8 @@ def write_segments(out_dir: Path, source_file: Path, segments: list[dict[str, ob
             "method": seg["method"],
             "source_file": str(source_file.resolve()),
         }
+        if "toc_level" in seg:
+            header["toc_level"] = seg["toc_level"]
         path.write_text(
             "<!-- segment-metadata\n"
             + json.dumps(header, ensure_ascii=False, indent=2)
@@ -264,15 +399,20 @@ def main() -> int:
     decision = load_decision(args.decision)
     scoped_text, char_offset = apply_content_hints(text, decision)
     lines = build_lines(scoped_text)
-    headings = find_headings(lines, decision)
-    configured_patterns = bool(decision.get("chapter_patterns") or decision.get("section_patterns"))
-    min_headings = 1 if configured_patterns else args.min_headings
-    if len(headings) >= min_headings:
-        segments = split_by_headings(scoped_text, lines, headings)
-        method = "headings"
+    toc_items = toc_items_from_decision(decision)
+    segments = split_by_toc(scoped_text, lines, toc_items) if toc_items else []
+    if segments:
+        method = "toc"
     else:
-        segments = split_by_words(scoped_text, lines, args.max_words, args.overlap_words)
-        method = "word windows"
+        headings = find_headings(lines, decision)
+        configured_patterns = bool(decision.get("chapter_patterns") or decision.get("section_patterns"))
+        min_headings = 1 if configured_patterns else args.min_headings
+        if len(headings) >= min_headings:
+            segments = split_by_headings(scoped_text, lines, headings)
+            method = "headings"
+        else:
+            segments = split_by_words(scoped_text, lines, args.max_words, args.overlap_words)
+            method = "word windows"
     shift_segments(segments, char_offset, original_lines)
 
     out_dir = Path(args.out)

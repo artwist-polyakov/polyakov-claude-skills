@@ -22,13 +22,15 @@ sh scripts/doctor.sh
 
 Для PDF желательно `pdftotext` из poppler. Запасные PDF-пакеты `pdfminer.six` и `PyPDF2` объявлены в `extract_source.py` и подтягиваются через `uv`.
 
-EPUB разбирается стандартной библиотекой Python по `META-INF/container.xml`, OPF manifest и spine. Это менее тяжёлый путь без `ebooklib`/`lxml`.
+EPUB разбирается стандартной библиотекой Python по `META-INF/container.xml`, OPF manifest и spine. Это менее тяжёлый путь без `ebooklib`/`lxml`. Скрипт также читает OPF `title`/`creator` и оглавление из `toc.ncx` или `nav.xhtml`; файл с расширением `.zip` принимается, если внутри настоящий EPUB-контейнер.
 
 Сложный технический PDF обрабатывай через `--mode technical`: тогда отдельно запускается `extract_docling.py`, где `docling` объявлен как зависимость. Это сделано специально, чтобы тяжёлый пакет не подтягивался при обычной обработке текстов.
 
 ## Разведка оглавления
 
 `outline_scout.py` запускается через `uv run --script` и пишет рядом с JSON малые файлы `outline-head.txt`, `outline-tail.txt` и `outline-candidates.txt`. Их можно передавать модели или субагенту вместо полного `source.txt`, чтобы определить структуру книги без раздувания контекста.
+
+Если рядом лежит `metadata.json` с EPUB-оглавлением, `outline_scout.py` добавит его в `script_observations.epub_toc_items`. После этого модель может вернуть эти пункты в `model_decision.toc_items`, а `segment_text.py` выполнит точную TOC-сегментацию.
 
 ## Локальные данные
 

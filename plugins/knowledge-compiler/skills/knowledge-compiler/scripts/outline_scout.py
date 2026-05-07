@@ -36,7 +36,18 @@ def line_offsets(text: str) -> list[int]:
 
 
 def normalize_line(line: str) -> str:
+    line = line.replace("\u00a0", " ").replace("\u202f", " ")
     return re.sub(r"\s+", " ", line).strip()
+
+
+def load_neighbor_metadata(source: Path) -> dict[str, object]:
+    meta_path = source.parent / "metadata.json"
+    if not meta_path.exists():
+        return {}
+    try:
+        return json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
 
 
 def candidate_headings(lines: list[str], offsets: list[int], limit: int) -> list[dict[str, object]]:
@@ -128,6 +139,7 @@ def main() -> int:
 
     source = Path(args.input)
     text = source.read_text(encoding="utf-8", errors="replace")
+    metadata = load_neighbor_metadata(source)
     lines = text.splitlines()
     offsets = line_offsets(text)
 
@@ -168,6 +180,8 @@ def main() -> int:
             "chars": len(text),
             "words": len(text.split()),
             "lines": len(lines),
+            "format": metadata.get("format", ""),
+            "extraction_method": metadata.get("extraction_method", ""),
         },
         "sample_policy": {
             "head_chars": args.sample_chars,
@@ -190,6 +204,10 @@ def main() -> int:
             "heading_patterns_seen": patterns_seen(candidates),
             "heading_candidates_count": len(candidates),
             "marker_hits_count": len(markers),
+            "epub_title": metadata.get("epub_title", ""),
+            "epub_author": metadata.get("epub_author", ""),
+            "epub_toc_source": metadata.get("epub_toc_source", ""),
+            "epub_toc_items": metadata.get("epub_toc", [])[:200],
         },
         "marker_hits": markers,
         "candidate_headings": candidates[:40],
@@ -198,6 +216,7 @@ def main() -> int:
             "domain": "technical|management|marketing|sales|product|education|legal|finance|medical|mixed|unknown",
             "structure_strategy": "toc_then_body_headings|body_headings|word_windows|mixed",
             "toc_markers": ["strings or regex-like descriptions"],
+            "toc_items": [{"label": "chapter title from OPF/NCX/nav", "href": "chapter.xhtml"}],
             "chapter_markers": ["strings or regex-like descriptions"],
             "part_markers": ["strings or regex-like descriptions"],
             "chapter_patterns": ["^Глава\\s+\\d+"],

@@ -38,7 +38,7 @@ description: |
    ```bash
    sh scripts/prepare_source.sh --input "/path/to/source.pdf" --mode auto
    ```
-   Скрипт создаст `cache/jobs/<job-id>/source.txt` и `metadata.json`.
+   Скрипт создаст `cache/jobs/<job-id>/source.txt` и `metadata.json`. Для EPUB он читает OPF-метаданные (`title`, `creator`) и оглавление из `toc.ncx`/`nav.xhtml`, даже если файл пришёл с расширением `.zip`, но внутри является EPUB.
 
 3. **Сделай разведку структуры**
    ```bash
@@ -47,6 +47,7 @@ description: |
      --out cache/jobs/<job-id>/outline-scout.json
    ```
    Передай модели или субагенту `metadata.json`, `outline-scout.json`, `outline-head.txt`, `outline-tail.txt` и `outline-candidates.txt`. Его задача — определить, как в источнике обозначены оглавление, части, главы, приложения и хвостовые материалы. Не отправляй весь `source.txt` на этом шаге.
+   Если `outline-scout.json` уже содержит `script_observations.epub_toc_items`, считай это главным кандидатом на структуру: EPUB сам хранит оглавление точнее, чем регулярки по тексту.
 
 4. **Разбей на сегменты**
    ```bash
@@ -55,6 +56,7 @@ description: |
      --out cache/jobs/<job-id>/segments \
      --decision cache/jobs/<job-id>/outline-scout.json
    ```
+   Если в решении есть `toc_items`, сегментатор режет по оглавлению, нормализует неразрывные пробелы и многострочные заголовки, а короткие приложения не склеивает с соседними сегментами.
 
 5. **Создай заготовку будущего навыка**
    ```bash
