@@ -114,6 +114,12 @@
       "description": "Reddit API на shell-скриптах: пользователи, сабреддиты, посты, комментарии, поиск, write с двойным предохранителем",
       "source": "./plugins/reddit-skill",
       "category": "productivity"
+    },
+    {
+      "name": "knowledge-compiler",
+      "description": "Компилятор прикладных знаний из книг и длинных источников в личные скиллы с картой источников",
+      "source": "./plugins/knowledge-compiler",
+      "category": "productivity"
     }
   ]
 }

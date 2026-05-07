@@ -1,0 +1,11 @@
+{
+  "output_dir": "dist",
+  "cache_dir": "cache",
+  "default_focus": "practical-advisor",
+  "max_skill_words": 2000,
+  "segment_max_words": 1800,
+  "quality_gate": {
+    "ngram_words": 18,
+    "max_exact_overlap_words": 90
+  }
+}
