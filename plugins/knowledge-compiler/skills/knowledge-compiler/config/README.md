@@ -20,7 +20,7 @@ sh scripts/doctor.sh
 
 Минимум: `uv`. Python-зависимости объявлены в заголовках `scripts/*.py` и ставятся/кешируются через `uv run --script`.
 
-Для PDF желательно `pdftotext` из poppler. Запасные PDF-пакеты `pdfminer.six` и `PyPDF2` объявлены в `extract_source.py` и подтягиваются через `uv`.
+Для PDF желательно `pdftotext` из poppler. Запасные PDF-пакеты изолированы в отдельных помощниках: `extract_pypdf.py` объявляет `PyPDF2`, а `extract_pdfminer.py` объявляет `pdfminer.six`. Они запускаются только после того, как вход уже определён как PDF и `pdftotext` не сработал.
 
 EPUB разбирается стандартной библиотекой Python по `META-INF/container.xml`, OPF manifest и spine. Это менее тяжёлый путь без `ebooklib`/`lxml`. Скрипт также читает OPF `title`/`creator` и оглавление из `toc.ncx` или `nav.xhtml`; файл с расширением `.zip` принимается, если внутри настоящий EPUB-контейнер.
 
