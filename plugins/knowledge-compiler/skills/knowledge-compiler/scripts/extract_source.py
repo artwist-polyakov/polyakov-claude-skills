@@ -1,10 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.10"
-# dependencies = [
-#   "pdfminer.six>=20231228",
-#   "PyPDF2>=3.0.0",
-# ]
 # ///
 """Extract PDF/EPUB/TXT/Markdown into a resumable local job directory."""
 
@@ -110,41 +106,29 @@ def extract_pdf(path: Path, mode: str, script_dir: Path) -> tuple[str, str, list
         if text:
             return text, "pdftotext", warnings
 
-    try:
-        import PyPDF2
+    text = run_uv_helper(script_dir / "extract_pypdf.py", str(path), timeout=180)
+    if text:
+        return text, "PyPDF2", warnings
 
-        parts = []
-        with path.open("rb") as f:
-            reader = PyPDF2.PdfReader(f)
-            for page in reader.pages:
-                parts.append(page.extract_text() or "")
-        text = "\n\n".join(parts)
-        if text.strip():
-            return text, "PyPDF2", warnings
-    except Exception:
-        pass
-
-    try:
-        from pdfminer.high_level import extract_text
-
-        text = extract_text(str(path))
-        if text.strip():
-            return text, "pdfminer.six", warnings
-    except Exception:
-        pass
+    text = run_uv_helper(script_dir / "extract_pdfminer.py", str(path), timeout=180)
+    if text:
+        return text, "pdfminer.six", warnings
 
     raise SystemExit(
         "Could not extract PDF text. Install poppler pdftotext, PyPDF2, pdfminer.six, or docling."
     )
 
 
-def extract_with_docling(path: Path, script_dir: Path) -> str | None:
-    uv = shutil.which("uv")
+def run_uv_helper(helper: Path, *args: str, timeout: int) -> str | None:
+    uv = os.environ.get("UV") or shutil.which("uv")
     if not uv:
         return None
-    helper = script_dir / "extract_docling.py"
-    text = run_text_command([uv, "run", "--script", str(helper), str(path)], timeout=60 * 30)
+    text = run_text_command([uv, "run", "--script", str(helper), *args], timeout=timeout)
     return text if text and text.strip() else None
+
+
+def extract_with_docling(path: Path, script_dir: Path) -> str | None:
+    return run_uv_helper(script_dir / "extract_docling.py", str(path), timeout=60 * 30)
 
 
 class HTMLTextExtractor(html.parser.HTMLParser):
@@ -346,13 +330,14 @@ def count_pdf_pages(path: Path) -> int:
                         return int(line.split(":", 1)[1].strip())
                     except ValueError:
                         pass
-    try:
-        import PyPDF2
-
-        with path.open("rb") as f:
-            return len(PyPDF2.PdfReader(f).pages)
-    except Exception:
-        return 0
+    helper = Path(__file__).resolve().parent / "extract_pypdf.py"
+    text = run_uv_helper(helper, "--count-pages", str(path), timeout=60)
+    if text:
+        try:
+            return int(text.strip())
+        except ValueError:
+            return 0
+    return 0
 
 
 def count_epub_spine(path: Path) -> int:
