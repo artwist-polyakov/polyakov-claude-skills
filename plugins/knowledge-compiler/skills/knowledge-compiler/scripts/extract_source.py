@@ -120,7 +120,7 @@ def extract_pdf(path: Path, mode: str, script_dir: Path) -> tuple[str, str, list
 
 
 def run_uv_helper(helper: Path, *args: str, timeout: int) -> str | None:
-    uv = shutil.which("uv")
+    uv = os.environ.get("UV") or shutil.which("uv")
     if not uv:
         return None
     text = run_text_command([uv, "run", "--script", str(helper), *args], timeout=timeout)
