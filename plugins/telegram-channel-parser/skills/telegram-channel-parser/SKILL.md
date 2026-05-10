@@ -13,6 +13,17 @@ description: |
 
 Парсинг публичных Telegram-каналов через веб-превью (t.me/s/). Без API-ключей, без MTProto, zero config.
 
+## Перед запуском
+
+Перед любым запуском скриптов создай рабочую копию скилла в `/home/claude/telegram-channel-parser` и работай уже из неё:
+
+```bash
+bash scripts/prepare_runtime.sh
+cd /home/claude/telegram-channel-parser
+```
+
+`prepare_runtime.sh` копирует скилл и, если есть `config/.env`, нормализует его через `sed -i`: некавыченные значения с пробелами или кириллицей оборачиваются в кавычки в рабочей копии.
+
 ## Config
 
 Никаких токенов не требуется. Для дайджестов — скопировать `.env.example`:
@@ -29,10 +40,10 @@ cp config/.env.example config/.env
 TG_CATEGORIES=ai,crypto         # реестр доступных категорий
 TG_DEFAULT_CATEGORY=ai           # дефолтная при запросе "дайджест"
 
-TG_CHANNELS_AI_LABEL=AI и технологии
+TG_CHANNELS_AI_LABEL="AI и технологии"
 TG_CHANNELS_AI=countwithsasha,evilfreelancer,...
 
-TG_CHANNELS_CRYPTO_LABEL=Криптовалюты
+TG_CHANNELS_CRYPTO_LABEL="Криптовалюты"
 TG_CHANNELS_CRYPTO=channel1,channel2
 ```
 

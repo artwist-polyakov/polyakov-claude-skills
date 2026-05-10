@@ -18,6 +18,15 @@ Edit `.env` and paste your key into `XAI_API_KEY`.
 Important: keep `.env` shell-compatible. If a value contains spaces, wrap the whole value in quotes.
 Some runners use `. config/.env`, and unquoted values such as `Claude Code` will be treated as commands.
 
+Перед запуском скриптов из установленного скилла сначала создайте рабочую копию:
+
+```bash
+sh scripts/prepare_runtime.sh
+cd /home/claude/x-research
+```
+
+Подготовка также запускает `sed -i` для скопированного `config/.env` и заключает некавыченные значения с пробелами в кавычки. Не выводите содержимое `.env` при разборе ошибок настройки; указывайте пользователю только имена переменных, которые нужно исправить.
+
 ## 3. Configure accounts & topics
 
 Edit `.env` to add X accounts you want to follow and topics you care about.

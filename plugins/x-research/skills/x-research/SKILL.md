@@ -13,6 +13,17 @@ description: |
 
 Research X/Twitter via xAI Grok API. Grok's `x_search` tool searches X in real-time and returns synthesized analysis with citations.
 
+## Перед запуском
+
+Перед любым запуском скриптов создай рабочую копию скилла в `/home/claude/x-research` и работай уже из неё:
+
+```bash
+sh scripts/prepare_runtime.sh
+cd /home/claude/x-research
+```
+
+`prepare_runtime.sh` копирует скилл и, если есть `config/.env`, нормализует его через `sed -i`: некавыченные значения с пробелами оборачиваются в кавычки в рабочей копии. Не выводи содержимое `.env` в ответ; при ошибке формата подскажи пользователю, какие строки нужно заключить в кавычки.
+
 ## Config
 
 Get an xAI API key at [console.x.ai](https://console.x.ai/), then:
@@ -21,7 +32,7 @@ cp config/.env.example config/.env
 ```
 
 Edit `config/.env`: paste your key into `XAI_API_KEY`, configure accounts and topics.
-Quote any value that contains spaces so the file stays shell-compatible.
+Quote any value that contains spaces so the file stays shell-compatible. Шаг подготовки также чинит некавыченные значения с пробелами в скопированном `.env`.
 
 **Without `.env`:** skill works with explicit `--accounts`, `--query`, `--topics`.
 
