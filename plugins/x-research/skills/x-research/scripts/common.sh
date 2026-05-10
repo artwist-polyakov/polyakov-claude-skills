@@ -30,6 +30,9 @@ check_python3() {
 load_config() {
     check_python3
     if [ -f "$CONFIG_FILE" ]; then
+        if [ -f "$SCRIPT_DIR/sanitize_env.sh" ]; then
+            sh "$SCRIPT_DIR/sanitize_env.sh" "$CONFIG_FILE"
+        fi
         _exports_file=$(mktemp "${TMPDIR:-/tmp}/xr_env.XXXXXX")
         if ! python3 - "$CONFIG_FILE" > "$_exports_file" <<'PY'
 import pathlib

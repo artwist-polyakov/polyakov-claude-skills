@@ -11,6 +11,15 @@ cp config/.env.example config/.env
 
 Готово — дайджест AI-каналов работает из коробки.
 
+Перед запуском скриптов из установленного скилла сначала создайте рабочую копию:
+
+```bash
+bash scripts/prepare_runtime.sh
+cd /home/claude/telegram-channel-parser
+```
+
+Подготовка также чинит `config/.env` в рабочей копии через `sed -i`: значения с пробелами или кириллицей должны быть в кавычках.
+
 ## Категории дайджестов
 
 `.env` содержит **реестр категорий** — агент читает его и знает какие дайджесты доступны.
@@ -23,11 +32,11 @@ TG_CATEGORIES=ai,crypto,news
 TG_DEFAULT_CATEGORY=ai
 
 # Категория: AI
-TG_CHANNELS_AI_LABEL=AI и технологии
+TG_CHANNELS_AI_LABEL="AI и технологии"
 TG_CHANNELS_AI=countwithsasha,evilfreelancer,...
 
 # Категория: Crypto
-TG_CHANNELS_CRYPTO_LABEL=Криптовалюты
+TG_CHANNELS_CRYPTO_LABEL="Криптовалюты"
 TG_CHANNELS_CRYPTO=channel1,channel2
 ```
 

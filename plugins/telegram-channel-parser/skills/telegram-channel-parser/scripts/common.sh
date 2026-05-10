@@ -12,6 +12,9 @@ TG_REQUEST_DELAY="1.5"
 
 load_config() {
     if [ -f "$CONFIG_FILE" ]; then
+        if [ -f "$SCRIPT_DIR/sanitize_env.sh" ]; then
+            bash "$SCRIPT_DIR/sanitize_env.sh" "$CONFIG_FILE"
+        fi
         . "$CONFIG_FILE"
     fi
 }
