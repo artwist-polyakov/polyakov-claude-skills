@@ -112,4 +112,33 @@ grep -Fq 'auth.mode=api_key requires YANDEX_AI_API_KEY' "$td/missing-key.out" ||
     exit 1
 }
 
+cat > "$td/skill/config/config.json" <<'EOF'
+{
+  "yandex_cloud_folder_id": "b1g-test-folder",
+  "auth": {
+    "mode": "iam",
+    "service_account_key_file": "config/service-account.json"
+  }
+}
+EOF
+cat > "$td/skill/cache/iam_token.json" <<'EOF'
+{"iam_token":"test-iam-secret","expires_at":4102444800}
+EOF
+rm -f "$IAM_MARKER" "$CURL_CAPTURE"
+
+sh "$td/skill/scripts/harness.sh" >/dev/null
+
+grep -Fxq 'Authorization: Bearer test-iam-secret' "$CURL_CAPTURE" || {
+    echo 'FAIL: IAM mode no longer sends the cached Bearer token'
+    exit 1
+}
+if grep -Fq 'Authorization: Api-Key' "$CURL_CAPTURE"; then
+    echo 'FAIL: API-key header leaked into IAM mode'
+    exit 1
+fi
+[ ! -e "$IAM_MARKER" ] || {
+    echo 'FAIL: valid cached IAM token triggered regeneration'
+    exit 1
+}
+
 echo 'test_api_key_auth: all passed'
