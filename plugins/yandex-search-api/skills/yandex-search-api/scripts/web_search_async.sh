@@ -251,13 +251,6 @@ elif [ -n "$QUERIES_FILE" ]; then
         exit 1
     fi
 
-    # Ensure IAM token
-    _token=$(get_cached_iam_token)
-    if [ -z "$_token" ]; then
-        echo "No valid IAM token. Generating..." >&2
-        sh "$SCRIPT_DIR/iam_token_get.sh"
-    fi
-
     echo "=== Async Search: Submitting queries ==="
     echo "NOTE: This may take minutes to hours. The script will poll every $POLL_INTERVAL minutes."
     echo "Max wait: $MAX_WAIT minutes. Use --resume to continue if interrupted."
