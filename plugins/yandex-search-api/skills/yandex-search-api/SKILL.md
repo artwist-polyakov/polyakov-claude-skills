@@ -13,15 +13,16 @@ Parse Yandex SERP via Yandex Cloud Search API v2 (sync + async).
 
 ## Config
 
-Для работы нужен сервисный аккаунт Яндекс.Облака.
+Рекомендуемый способ авторизации — API-ключ Yandex AI Studio. IAM через
+сервисный аккаунт также поддерживается.
 Пошаговая инструкция (6 шагов, ~10 минут): [config/README.md](config/README.md).
 
 Краткий чеклист:
 1. ID каталога Яндекс.Облака → в `config.json`
-2. Файл ключа сервисного аккаунта → в `config/service_account_key.json`
-3. Проверка: `bash scripts/iam_token_get.sh`
+2. `auth.mode: "api_key"` → в `config.json`
+3. `YANDEX_AI_API_KEY` → в `config/.env`
 
-> macOS: может потребоваться `brew install openssl` — подробности в config/README.md.
+> IAM fallback: сервисный аккаунт и OpenSSL — подробности в config/README.md.
 
 ## Workflow
 
@@ -46,14 +47,16 @@ Parse Yandex SERP via Yandex Cloud Search API v2 (sync + async).
 2. **Режим поиска** берётся из `config.json` → `search.mode` (по умолчанию `sync`).
    Не спрашивай — используй то, что в конфиге.
 
-3. **Verify config**: `bash scripts/iam_token_get.sh`
+3. **Verify config**: убедись, что заданы `yandex_cloud_folder_id`,
+   `auth.mode` и соответствующий credential. Не печатай ключ или токен.
 4. **Run search** с полученным region ID
 5. **Present results** with position, title, URL, snippet
 
 ## Scripts
 
 ### iam_token_get.sh
-Generate or validate IAM token from Service Account key.
+Generate or validate IAM token from Service Account key. Needed only when
+`auth.mode` is `iam`.
 ```bash
 bash scripts/iam_token_get.sh
 ```
@@ -160,11 +163,8 @@ Run `bash scripts/regions_tree.sh` for full list.
 
 ## Pricing
 
-Yandex Search API v2 pricing (as of 2025):
-- Sync requests: billed per request
-- Async requests: billed per request
-- Free tier available (check current limits)
-- See: https://yandex.cloud/ru/docs/search-api/pricing
+Search requests may be billable. Check current terms before running a large
+batch: https://yandex.cloud/ru/docs/search-api/pricing
 
 ## Example Session
 
@@ -179,8 +179,7 @@ Claude: [Находит ID региона]
         bash scripts/search_region.sh --name "Москва"
         → Москва = 213
 
-        [Проверяет токен]
-        bash scripts/iam_token_get.sh
+        [Проверяет конфигурацию авторизации без вывода секрета]
 
         [Выполняет поиск — 1 запрос, автоматически sync]
         bash scripts/web_search_sync.sh --query "купить сэндвич дымоход" --region-id 213
@@ -203,8 +202,7 @@ Claude: [Находит ID региона]
         bash scripts/search_region.sh --name "Казань"
         → Казань = 43
 
-        [Проверяет токен]
-        bash scripts/iam_token_get.sh
+        [Проверяет конфигурацию авторизации без вывода секрета]
 
         [Режим sync из конфига — запускает батч по одному]
         bash scripts/web_search_sync.sh --file queries.txt --region-id 43

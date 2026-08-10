@@ -1,145 +1,117 @@
 # Настройка Yandex Search API
 
-Для работы скилла нужен сервисный аккаунт в Яндекс.Облаке.
+Для работы нужны каталог Yandex Cloud, роль Search API и один из способов
+авторизации:
 
-## Шаг 1: Создайте каталог в Яндекс.Облаке
+- API-ключ Yandex AI Studio — рекомендуемый вариант;
+- IAM через ключ сервисного аккаунта — совместимый fallback.
 
-1. Откройте https://console.yandex.cloud/
-2. Если нет аккаунта — зарегистрируйтесь (нужен Яндекс ID)
-3. Создайте **каталог** (folder) или используйте существующий
-4. Скопируйте **ID каталога** — он понадобится дальше
+## Вариант A: API-ключ Yandex AI Studio
 
-> ID каталога выглядит так: `b1gabcdef12345678900`
-> Найти его можно: Консоль → ваш каталог → кнопка "ID" справа от названия
+### Шаг 1: подготовьте каталог
 
-## Шаг 2: Создайте сервисный аккаунт
+1. Откройте https://console.yandex.cloud/ и выберите каталог.
+2. Скопируйте его ID. Он выглядит как `b1gabcdef12345678900`.
+3. Убедитесь, что в каталоге активирован Search API.
+4. Назначьте субъекту ключа роль `search-api.webSearch.user`.
 
-1. В консоли откройте ваш каталог
-2. Слева выберите **Сервисные аккаунты** (раздел IAM)
-3. Нажмите **Создать сервисный аккаунт**
-4. Имя: `search-api-sa` (или любое другое)
-5. Нажмите **Создать**
+API-ключ должен иметь scope `yc.search-api.execute`. Создать и настроить ключ
+можно в Yandex AI Studio: https://aistudio.yandex.ru/
 
-## Шаг 3: Назначьте роль
-
-Сервисному аккаунту нужна роль для доступа к Search API:
-
-1. Откройте созданный сервисный аккаунт
-2. Перейдите в раздел **Роли** (или назначьте через настройки каталога)
-3. Нажмите **Назначить роль**
-4. Найдите и выберите: `search-api.webSearch.user`
-5. Сохраните
-
-## Шаг 4: Создайте ключ авторизации
-
-1. Откройте сервисный аккаунт
-2. Перейдите на вкладку **Авторизованные ключи**
-3. Нажмите **Создать авторизованный ключ**
-4. Скачайте JSON-файл ключа
-5. Переименуйте его в `service_account_key.json`
-6. Положите в папку `config/` (рядом с этим README)
-
-> Этот файл секретный! Не добавляйте его в git (он уже в .gitignore).
-
-## Шаг 5: Создайте config.json
-
-Скопируйте пример:
+### Шаг 2: создайте config.json
 
 ```bash
 cp config/config.example.json config/config.json
 ```
 
-Откройте `config.json` и замените `"b1g..."` на ваш ID каталога из Шага 1:
+Замените placeholder на ID каталога:
 
 ```json
 {
   "yandex_cloud_folder_id": "b1gabcdef12345678900",
   "auth": {
-    "service_account_key_file": "config/service_account_key.json"
+    "mode": "api_key"
   }
 }
 ```
 
-Остальные поля можно не менять — значения по умолчанию подходят для большинства случаев.
+Остальные секции из примера оставьте без изменений.
 
-## Шаг 6: Проверьте
+### Шаг 3: сохраните ключ локально
+
+Создайте `config/.env`:
+
+```bash
+YANDEX_AI_API_KEY=AQVN_your_api_key
+```
+
+```bash
+chmod 600 config/.env
+```
+
+`config/.env` и `config/config.json` исключены из git. Никогда не печатайте
+ключ в логах, отчётах или сообщениях.
+
+## Вариант B: IAM через сервисный аккаунт
+
+1. Создайте сервисный аккаунт в каталоге Yandex Cloud.
+2. Назначьте ему роль `search-api.webSearch.user`.
+3. Создайте авторизованный ключ и сохраните JSON как
+   `config/service_account_key.json`.
+4. Укажите IAM-режим:
+
+```json
+{
+  "yandex_cloud_folder_id": "b1gabcdef12345678900",
+  "auth": {
+    "mode": "iam",
+    "service_account_key_file": "config/service_account_key.json",
+    "openssl_bin": "openssl"
+  }
+}
+```
+
+5. Проверьте генерацию токена:
 
 ```bash
 bash scripts/iam_token_get.sh
 ```
 
-Если всё правильно — увидите "IAM token cached" и можно искать.
-
-## Для пользователей macOS
-
-На macOS вместо OpenSSL стоит LibreSSL, который не поддерживает нужный алгоритм подписи. Если при проверке видите ошибку про LibreSSL:
-
-1. Установите OpenSSL:
-   ```bash
-   brew install openssl
-   ```
-
-2. Добавьте путь к OpenSSL в `config.json`:
-   ```json
-   {
-     "yandex_cloud_folder_id": "b1g...",
-     "auth": {
-       "service_account_key_file": "config/service_account_key.json",
-       "openssl_bin": "/opt/homebrew/bin/openssl"
-     }
-   }
-   ```
-
-> `/opt/homebrew/bin/openssl` — для Mac на Apple Silicon (M1/M2/M3/M4).
-> Для Intel Mac путь: `/usr/local/opt/openssl/bin/openssl`.
-> Узнать точный путь: `brew --prefix openssl`
+На macOS может понадобиться `brew install openssl` и путь
+`/opt/homebrew/bin/openssl` (Apple Silicon) либо
+`/usr/local/opt/openssl/bin/openssl` (Intel).
 
 ## Частые проблемы
 
-### "Error: LibreSSL detected"
-macOS по умолчанию использует LibreSSL вместо OpenSSL. См. раздел выше "Для пользователей macOS".
+### `auth.mode=api_key requires YANDEX_AI_API_KEY`
 
-### "Error: 403 Forbidden"
-- Не назначена роль `search-api.webSearch.user` → назначьте (Шаг 3)
-- Неправильный ID каталога → проверьте `yandex_cloud_folder_id`
+Нет `config/.env`, переменная названа неверно или файл недоступен.
 
-### "Error: config.json not found"
-Не создан файл конфигурации → выполните Шаг 5.
+### `403 Forbidden`
 
-### "Error: openssl not found"
-OpenSSL не установлен или не в PATH → установите через `brew install openssl` и укажите путь в конфиге.
+Проверьте роль `search-api.webSearch.user`, scope ключа
+`yc.search-api.execute`, ID каталога и принадлежность ключа каталогу.
+
+### `config.json not found`
+
+Скопируйте `config/config.example.json` в `config/config.json`.
+
+### Ошибка LibreSSL или OpenSSL
+
+Она относится только к IAM-режиму. Установите OpenSSL и укажите
+`auth.openssl_bin` в `config.json`.
 
 ## Лимиты и цены
 
-- Бесплатный тариф: есть (проверяйте актуальные лимиты)
-- Подробнее: https://yandex.cloud/ru/docs/search-api/pricing
+Запросы Search API могут тарифицироваться. Перед массовым запуском проверьте
+актуальные условия: https://yandex.cloud/ru/docs/search-api/pricing
 
 ## Настройки по умолчанию
 
-Эти настройки можно менять в `config.json`, но для начала подойдут как есть:
-
 | Настройка | Значение | Что это |
 |-----------|----------|---------|
-| Регион | Россия (225) | Откуда "смотрим" поиск |
+| Регион | Россия (225) | Откуда «смотрим» поиск |
 | Тип поиска | Русскоязычный | Поиск по рунету |
 | Фильтр контента | Умеренный | Фильтрует откровенный контент |
-| Исправление опечаток | Включено | Яндекс сам исправляет опечатки |
+| Исправление опечаток | Включено | Яндекс исправляет опечатки |
 | Результатов на странице | 10 | Сколько ссылок в ответе |
-
-## Альтернатива: настройка через CLI
-
-Если у вас установлен `yc` (Yandex Cloud CLI), можно сделать всё через командную строку:
-
-```bash
-# Создать сервисный аккаунт
-yc iam service-account create --name search-api-sa
-
-# Назначить роль (замените <FOLDER_ID> и <SA_ID>)
-yc resource-manager folder add-access-binding <FOLDER_ID> \
-  --role search-api.webSearch.user \
-  --subject serviceAccount:<SA_ID>
-
-# Создать ключ
-yc iam key create --service-account-name search-api-sa \
-  --output config/service_account_key.json
-```

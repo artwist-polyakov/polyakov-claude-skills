@@ -1,5 +1,6 @@
 # Config with secrets
 config/config.json
+config/.env
 config/service_account_key.json
 
 # Cache files (generated at runtime)
