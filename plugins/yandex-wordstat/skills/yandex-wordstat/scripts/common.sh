@@ -11,8 +11,8 @@
 # Backend dispatch:
 #   - WORDSTAT_BACKEND=legacy → POST api.wordstat.yandex.net/v1/{method} (Bearer OAuth)
 #   - WORDSTAT_BACKEND=cloud  → POST searchapi.api.cloud.yandex.net/v2/wordstat/{method}
-#                              with IAM Bearer + folderId, response normalized back to legacy
-#                              shape so existing parsers in callers don't change.
+#                              with AI Studio Api-Key or IAM Bearer + folderId;
+#                              response normalized back to legacy shape so callers don't change.
 #
 # Selection in load_config is STRUCTURAL ONLY — no network, no IAM preflight.
 # IAM/network errors surface on the first wordstat_request call.
@@ -39,6 +39,8 @@ WORDSTAT_README_URL="https://github.com/artwist-polyakov/polyakov-claude-skills/
 WORDSTAT_BACKEND=""
 WORDSTAT_BACKEND_DETECTED_VIA=""
 WORDSTAT_CLOUD_FOLDER_ID=""
+WORDSTAT_CLOUD_AUTH_MODE=""
+WORDSTAT_CLOUD_API_KEY=""
 WORDSTAT_CLOUD_SA_KEY_PATH=""
 WORDSTAT_CLOUD_OPENSSL_BIN=""
 
@@ -64,13 +66,9 @@ die_with_help() {
         printf '  %s\n\n' "$WORDSTAT_README_URL"
         printf 'Quick checks:\n'
         printf '  - cloud mode:  config/config.json has yandex_cloud_folder_id?\n'
-        if [ -n "$WORDSTAT_CLOUD_SA_KEY_PATH" ]; then
-            printf '                 SA key file: %s\n' "$WORDSTAT_CLOUD_SA_KEY_PATH"
-            printf '                 (resolved from auth.service_account_key_file) — present and readable?\n'
-        else
-            printf '                 SA key file from auth.service_account_key_file — present and readable?\n'
-        fi
-        printf "                 SA has role 'search-api.webSearch.user'?\n"
+        printf '                 API key: YANDEX_AI_API_KEY is set and valid?\n'
+        printf '                 IAM: auth.service_account_key_file is present and readable?\n'
+        printf "                 account has role 'search-api.webSearch.user'?\n"
         printf '  - legacy mode: YANDEX_WORDSTAT_TOKEN still valid? (tokens expire after 1 year)\n'
         printf '  - to switch:   set YANDEX_WORDSTAT_BACKEND=legacy|cloud in config/.env\n'
     } >&2
@@ -155,6 +153,7 @@ _detect_cloud_config() {
     [ -f "$_cfg_file" ] || return 1
 
     _folder=$(_cfg_get yandex_cloud_folder_id)
+    _auth_mode=$(_cfg_get auth.mode)
     _sa_rel=$(_cfg_get auth.service_account_key_file)
     _ossl=$(_cfg_get auth.openssl_bin)
 
@@ -162,22 +161,47 @@ _detect_cloud_config() {
         WORDSTAT_BACKEND_DETECTED_VIA="cloud (config.json present but yandex_cloud_folder_id missing)"
         return 2
     fi
-    if [ -z "$_sa_rel" ]; then
-        WORDSTAT_BACKEND_DETECTED_VIA="cloud (config.json present but auth.service_account_key_file missing)"
-        return 2
-    fi
-
-    _sa_resolved=$(_resolve_path "$_sa_rel")
-    if [ ! -r "$_sa_resolved" ]; then
-        WORDSTAT_CLOUD_SA_KEY_PATH="$_sa_resolved"
-        WORDSTAT_BACKEND_DETECTED_VIA="cloud (SA key file not found at resolved path)"
-        return 2
-    fi
-
     WORDSTAT_CLOUD_FOLDER_ID="$_folder"
-    WORDSTAT_CLOUD_SA_KEY_PATH="$_sa_resolved"
-    WORDSTAT_CLOUD_OPENSSL_BIN="${_ossl:-openssl}"
-    return 0
+
+    if [ -z "$_auth_mode" ]; then
+        if [ -n "${YANDEX_AI_API_KEY:-}" ] && [ -z "$_sa_rel" ]; then
+            _auth_mode="api_key"
+        else
+            _auth_mode="iam"
+        fi
+    fi
+
+    case "$_auth_mode" in
+        api_key)
+            if [ -z "${YANDEX_AI_API_KEY:-}" ]; then
+                WORDSTAT_BACKEND_DETECTED_VIA="cloud (auth.mode=api_key but YANDEX_AI_API_KEY missing)"
+                return 2
+            fi
+            WORDSTAT_CLOUD_AUTH_MODE="api_key"
+            WORDSTAT_CLOUD_API_KEY="$YANDEX_AI_API_KEY"
+            return 0
+            ;;
+        iam)
+            if [ -z "$_sa_rel" ]; then
+                WORDSTAT_BACKEND_DETECTED_VIA="cloud (auth.mode=iam but auth.service_account_key_file missing)"
+                return 2
+            fi
+            _sa_resolved=$(_resolve_path "$_sa_rel")
+            if [ ! -r "$_sa_resolved" ]; then
+                WORDSTAT_CLOUD_SA_KEY_PATH="$_sa_resolved"
+                WORDSTAT_BACKEND_DETECTED_VIA="cloud (SA key file not found at resolved path)"
+                return 2
+            fi
+            WORDSTAT_CLOUD_AUTH_MODE="iam"
+            WORDSTAT_CLOUD_SA_KEY_PATH="$_sa_resolved"
+            WORDSTAT_CLOUD_OPENSSL_BIN="${_ossl:-openssl}"
+            return 0
+            ;;
+        *)
+            WORDSTAT_BACKEND_DETECTED_VIA="cloud (invalid auth.mode=$_auth_mode)"
+            return 2
+            ;;
+    esac
 }
 
 load_config() {
@@ -265,7 +289,10 @@ print_backend_info() {
         cloud)
             echo "Backend: cloud ($WORDSTAT_BACKEND_DETECTED_VIA)"
             echo "  folder_id: $WORDSTAT_CLOUD_FOLDER_ID"
-            echo "  SA key:    $WORDSTAT_CLOUD_SA_KEY_PATH"
+            echo "  auth:      $WORDSTAT_CLOUD_AUTH_MODE"
+            if [ "$WORDSTAT_CLOUD_AUTH_MODE" = "iam" ]; then
+                echo "  SA key:    $WORDSTAT_CLOUD_SA_KEY_PATH"
+            fi
             echo ""
             echo "=== Endpoints ==="
             echo "  POST $WORDSTAT_CLOUD_API/topRequests"
@@ -690,7 +717,7 @@ _legacy_request() {
         -d "$_params"
 }
 
-# Cloud backend: translate, sign, POST, normalize
+# Cloud backend: translate, authorize, POST, normalize
 _cloud_request() {
     _method="$1"
     _params="$2"
@@ -716,11 +743,22 @@ _cloud_request() {
     fi
     _cloud_body="$_xlate_out"
 
-    # 2. Get IAM token (uses cache, falls back to issue)
-    _tok=$(_iam_token_get)
-    if [ -z "$_tok" ]; then
-        die_with_help "Failed to obtain IAM token"
-    fi
+    # 2. Select the configured authorization header.
+    case "$WORDSTAT_CLOUD_AUTH_MODE" in
+        api_key)
+            _auth_header="Authorization: Api-Key $WORDSTAT_CLOUD_API_KEY"
+            ;;
+        iam)
+            _tok=$(_iam_token_get)
+            if [ -z "$_tok" ]; then
+                die_with_help "Failed to obtain IAM token"
+            fi
+            _auth_header="Authorization: Bearer $_tok"
+            ;;
+        *)
+            die_with_help "Unknown cloud auth mode: $WORDSTAT_CLOUD_AUTH_MODE"
+            ;;
+    esac
 
     # 3. POST with retry on 5xx and refresh on 401
     _attempt=0
@@ -732,7 +770,7 @@ _cloud_request() {
         _resp_file="$_tmp/resp"
         _status=$(curl -s -o "$_resp_file" -w '%{http_code}' \
             -X POST "$WORDSTAT_CLOUD_API/$_method" \
-            -H "Authorization: Bearer $_tok" \
+            -H "$_auth_header" \
             -H "Content-Type: application/json" \
             -d "$_cloud_body")
 
@@ -743,22 +781,26 @@ _cloud_request() {
                 return 0
                 ;;
             401)
-                # Refresh once and retry
-                if [ "$_attempt" = "1" ]; then
+                # IAM tokens can be refreshed once. Static API keys cannot.
+                if [ "$WORDSTAT_CLOUD_AUTH_MODE" = "iam" ] && [ "$_attempt" = "1" ]; then
                     rm -f "$WORDSTAT_CACHE_DIR/iam_token.json"
                     _tok=$(_iam_token_issue)
+                    _auth_header="Authorization: Bearer $_tok"
                     rm -rf "$_tmp"
                     continue
                 fi
                 _err=$(cat "$_resp_file" 2>/dev/null)
                 rm -rf "$_tmp"
+                if [ "$WORDSTAT_CLOUD_AUTH_MODE" = "api_key" ]; then
+                    die_with_help "Cloud Wordstat 401 Unauthorized: AI Studio API key was rejected" "$_err"
+                fi
                 die_with_help "Cloud Wordstat 401 Unauthorized after token refresh" "$_err"
                 ;;
             403)
                 _err=$(cat "$_resp_file" 2>/dev/null)
                 rm -rf "$_tmp"
                 die_with_help "Cloud Wordstat 403 Forbidden" \
-                    "Check that your service account has the role 'search-api.webSearch.user' on folder $WORDSTAT_CLOUD_FOLDER_ID. Raw: $_err"
+                    "Check role 'search-api.webSearch.user', API-key scope 'yc.search-api.execute', and folder $WORDSTAT_CLOUD_FOLDER_ID. Raw: $_err"
                 ;;
             5[0-9][0-9]|000)
                 if [ "$_attempt" -lt "$_max_attempts" ]; then
