@@ -40,9 +40,9 @@ cd /home/claude/perplexity-search
 Эти дефолты включаются, только когда в `.env` не задано ничего. Флаг командной
 строки сильнее и того, и другого.
 | `PPLX_CONTEXT_SIZE` | `medium` | глубина извлечения текста страницы: `low`/`medium`/`high` |
-| `PPLX_MAX_RESULTS` | `10` | результатов на запрос Search API (1..20) |
-| `PPLX_COUNTRY` | — | ISO 3166-1 alpha-2, например `RU` |
-| `PPLX_LANGUAGE` | — | ISO 639-1: язык ответа для `ask.sh`, фильтр выдачи для `search.sh` |
+| `PPLX_MAX_RESULTS` | `10` | **только `search.sh`**: результатов на запрос (1..20). У agent-скриптов свой потолок (1..50), поэтому там значение задаётся флагом `--max-results` |
+| `PPLX_COUNTRY` | — | ISO 3166-1 alpha-2, например `RU`; не применяется в `fetch_url.sh` — там нет веб-поиска |
+| `PPLX_LANGUAGE` | — | ISO 639-1: язык ответа для agent-скриптов, фильтр выдачи для `search.sh` |
 | `PPLX_CACHE_TTL` | `900` | сколько секунд переиспользовать идентичный запрос; `0` — всегда живой |
 | `PPLX_RESEARCH_CACHE_TTL` | `86400` | то же для `research.sh` |
 | `PPLX_PRINT_LIMIT` | `30` | строк в stdout, остальное остаётся в `cache/` |
