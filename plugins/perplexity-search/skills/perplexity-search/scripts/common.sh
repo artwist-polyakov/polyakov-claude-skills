@@ -104,13 +104,43 @@ load_config() {
         _lc_exports=$(mktemp "$PPLX_TMPDIR/pplx_env.XXXXXX") || die "mktemp failed"
         chmod 600 "$_lc_exports"
         if ! _F="$PPLX_CONFIG_FILE" python3 - > "$_lc_exports" <<'PY'
-import os, pathlib, re, shlex, sys
+import os, pathlib, re, shlex
 
 path = pathlib.Path(os.environ["_F"])
 key_re = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-for raw in path.read_text(encoding="utf-8").splitlines():
-    line = raw.strip()
+
+def parse_value(raw):
+    """Read one .env value the way a POSIX shell would.
+
+    Quoted values end at the closing quote and anything after it (a trailing
+    comment) is dropped. Unquoted values run until a '#' that starts a word —
+    `KEY=a#b` keeps the hash, `KEY=a #b` does not.
+    """
+    raw = raw.lstrip()
+    if raw[:1] in ("'", '"'):
+        quote, out, i = raw[0], [], 1
+        while i < len(raw):
+            ch = raw[i]
+            if quote == '"' and ch == "\\" and i + 1 < len(raw):
+                out.append(raw[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                return "".join(out)
+            out.append(ch)
+            i += 1
+        # Unterminated quote — keep what we have rather than dropping the line.
+        return "".join(out)
+
+    for i, ch in enumerate(raw):
+        if ch == "#" and (i == 0 or raw[i - 1].isspace()):
+            return raw[:i].rstrip()
+    return raw.rstrip()
+
+
+for raw_line in path.read_text(encoding="utf-8").splitlines():
+    line = raw_line.strip()
     if not line or line.startswith("#") or "=" not in line:
         continue
     key, value = line.split("=", 1)
@@ -119,10 +149,7 @@ for raw in path.read_text(encoding="utf-8").splitlines():
         key = key[len("export "):].strip()
     if not key_re.fullmatch(key):
         continue
-    value = value.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
-        value = value[1:-1]
-    print(f"export {key}={shlex.quote(value)}")
+    print(f"export {key}={shlex.quote(parse_value(value))}")
 PY
         then
             rm -f "$_lc_exports"

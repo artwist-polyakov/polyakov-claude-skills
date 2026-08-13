@@ -91,6 +91,44 @@ fi
     [ -z "$PPLX_PRESET_EXPLICIT" ] || { echo "the built-in default must not read as explicit"; exit 1; }
 ) || exit 1
 
+# --- inline comments: the file must read the way a POSIX shell reads it ---
+(
+    ENV2="$TMP_DIR/comments.env"
+    cat > "$ENV2" <<'EOF'
+PERPLEXITY_API_KEY=pplx-commented-key # рабочий ключ
+PPLX_PRESET=high  # подороже, зато лучше
+PPLX_PROFILE_A_LABEL=Tech news # мой список
+PPLX_PROFILE_B_LABEL="Quoted # not a comment" # but this one is
+PPLX_PROFILE_C_LABEL='single # kept'
+PPLX_PROFILE_D_DOMAINS=example.com/a#b
+PPLX_COUNTRY=RU
+EOF
+
+    # PPLX_PROFILE_A_LABEL is deliberately unquoted-with-spaces, which a plain
+    # shell cannot load — that is what sanitize_env.sh is for. Everything else
+    # here is already valid shell, so the loader must agree with shell semantics.
+    PPLX_CONFIG_FILE="$ENV2"
+    load_config >/dev/null
+
+    [ "$PERPLEXITY_API_KEY" = "pplx-commented-key" ] || { echo "key: [$PERPLEXITY_API_KEY]"; exit 1; }
+    [ "$PPLX_PRESET" = "high" ] || { echo "preset: [$PPLX_PRESET]"; exit 1; }
+    [ "$PPLX_PROFILE_A_LABEL" = "Tech news" ] || { echo "unquoted+comment: [$PPLX_PROFILE_A_LABEL]"; exit 1; }
+    # A '#' inside quotes is data, not a comment.
+    [ "$PPLX_PROFILE_B_LABEL" = "Quoted # not a comment" ] || { echo "quoted hash: [$PPLX_PROFILE_B_LABEL]"; exit 1; }
+    [ "$PPLX_PROFILE_C_LABEL" = "single # kept" ] || { echo "single quoted hash: [$PPLX_PROFILE_C_LABEL]"; exit 1; }
+    # A '#' that does not start a word is data too (URL paths, anchors).
+    [ "$PPLX_PROFILE_D_DOMAINS" = "example.com/a#b" ] || { echo "mid-word hash: [$PPLX_PROFILE_D_DOMAINS]"; exit 1; }
+    [ "$PPLX_COUNTRY" = "RU" ] || { echo "country: [$PPLX_COUNTRY]"; exit 1; }
+
+    # sanitize_env.sh must leave the file loadable by a plain shell as well.
+    ( . "$ENV2" ) >/dev/null 2>&1 || { echo "sanitize_env broke shell compatibility"; exit 1; }
+    grep -q '^PPLX_PROFILE_A_LABEL="Tech news" # мой список$' "$ENV2" || {
+        echo "sanitize_env folded the comment into the quotes:"
+        grep '^PPLX_PROFILE_A_LABEL' "$ENV2"
+        exit 1
+    }
+) || exit 1
+
 # --- API key validation ---
 if (
     PPLX_CONFIG_FILE="$TMP_DIR/missing.env"
