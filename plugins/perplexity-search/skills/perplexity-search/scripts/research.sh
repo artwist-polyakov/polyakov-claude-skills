@@ -191,13 +191,20 @@ else
     QUERY_LABEL="$PPLX_ARG_INPUT"
     JSON_FILE="$OUT_DIR/$KEY.json"
 
+    if [ -n "$CACHE_TTL" ]; then
+        EFFECTIVE_TTL="$CACHE_TTL"
+    else
+        EFFECTIVE_TTL=$(effective_cache_ttl "$PPLX_RESEARCH_CACHE_TTL" "$PPLX_ARG_RECENCY")
+    fi
+
     # A finished identical run is worth reusing — these are the expensive calls.
-    if [ -z "$NO_CACHE" ] && cache_fresh "$JSON_FILE" "${CACHE_TTL:-$PPLX_RESEARCH_CACHE_TTL}" &&
+    if [ -z "$NO_CACHE" ] && cache_fresh "$JSON_FILE" "$EFFECTIVE_TTL" &&
        [ "$(json_str "$JSON_FILE" status)" = "completed" ]; then
         MD_FILE="$OUT_DIR/$KEY.md"
         SOURCES=$(render_agent_response "$JSON_FILE" "$MD_FILE" "$QUERY_LABEL")
-        echo "=== Perplexity Research (cache) ==="
+        echo "=== Perplexity Research (cache, $(format_age "$(cache_age_seconds "$JSON_FILE")") old) ==="
         echo "sources: $SOURCES"
+        echo "re-run live with --no-cache if the facts may have moved"
         print_head "$MD_FILE" "$LIMIT"
         echo ""
         echo "full report: $MD_FILE"

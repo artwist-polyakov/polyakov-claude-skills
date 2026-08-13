@@ -101,7 +101,7 @@ FIRST_URL=$(printf '%s' "$URLS" | head -1)
 SOURCE="live"
 
 if [ -z "$NO_CACHE" ] && cache_fresh "$JSON_FILE" "${CACHE_TTL:-$PPLX_CACHE_TTL}"; then
-    SOURCE="cache"
+    SOURCE="cache, $(format_age "$(cache_age_seconds "$JSON_FILE")") old"
 else
     pplx_post "/v1/agent" "$BODY_FILE" "$JSON_FILE"
     index_append "fetch" "$KEY" "$FIRST_URL" "$JSON_FILE"

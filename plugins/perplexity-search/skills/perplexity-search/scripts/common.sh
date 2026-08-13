@@ -192,6 +192,58 @@ sys.exit(0 if age < float(os.environ["_TTL"]) else 1)
 PY
 }
 
+# cache_age_seconds FILE — age in whole seconds, exit 1 if the file is gone
+cache_age_seconds() {
+    _F="$1" python3 - <<'PY'
+import os, sys, time
+try:
+    print(int(time.time() - os.path.getmtime(os.environ["_F"])))
+except OSError:
+    sys.exit(1)
+PY
+}
+
+# format_age SECONDS → 42s | 12m | 3h | 2d
+format_age() {
+    _fa_s="$1"
+    case "$_fa_s" in
+        ''|*[!0-9]*) printf '?'; return 0 ;;
+    esac
+    if [ "$_fa_s" -lt 60 ]; then
+        printf '%ss' "$_fa_s"
+    elif [ "$_fa_s" -lt 3600 ]; then
+        printf '%sm' "$((_fa_s / 60))"
+    elif [ "$_fa_s" -lt 86400 ]; then
+        printf '%sh' "$((_fa_s / 3600))"
+    else
+        printf '%sd' "$((_fa_s / 86400))"
+    fi
+}
+
+# effective_cache_ttl CONFIGURED_TTL RECENCY
+# A --recency filter is the caller saying "this question is time-sensitive".
+# Honour that by capping how old a reused answer may be, so a 15-minute cache
+# cannot quietly answer a "what happened in the last hour" question.
+# An explicit --cache-ttl is the more deliberate knob and is never capped —
+# callers pass the configured default here only when they did not set one.
+effective_cache_ttl() {
+    _ect_ttl="$1"
+    case "$2" in
+        hour) _ect_cap=300 ;;
+        day)  _ect_cap=3600 ;;
+        week) _ect_cap=86400 ;;
+        *)    printf '%s' "$_ect_ttl"; return 0 ;;
+    esac
+    case "$_ect_ttl" in
+        ''|*[!0-9]*) printf '%s' "$_ect_ttl"; return 0 ;;
+    esac
+    if [ "$_ect_ttl" -gt "$_ect_cap" ]; then
+        printf '%s' "$_ect_cap"
+    else
+        printf '%s' "$_ect_ttl"
+    fi
+}
+
 # index_append SCRIPT KEY LABEL PATH — one grep-able row per run
 index_append() {
     _IDX="$PPLX_INDEX_FILE" _S="$1" _K="$2" _L="$3" _P="$4" python3 - <<'PY'

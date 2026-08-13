@@ -61,6 +61,38 @@ if cache_fresh "$FRESH" "abc"; then
     echo "non-numeric TTL should disable the cache"; exit 1
 fi
 
+# --- cache_age_seconds / format_age ---
+# $FRESH was backdated an hour above.
+AGE=$(cache_age_seconds "$FRESH")
+[ "$AGE" -ge 3595 ] && [ "$AGE" -le 3700 ] || { echo "cache age wrong: $AGE"; exit 1; }
+if cache_age_seconds "$TMP_DIR/absent.json" >/dev/null 2>&1; then
+    echo "cache_age_seconds should fail on a missing file"; exit 1
+fi
+
+[ "$(format_age 42)" = "42s" ]     || { echo "format_age 42 → $(format_age 42)"; exit 1; }
+[ "$(format_age 900)" = "15m" ]    || { echo "format_age 900 → $(format_age 900)"; exit 1; }
+[ "$(format_age 7200)" = "2h" ]    || { echo "format_age 7200 → $(format_age 7200)"; exit 1; }
+[ "$(format_age 172800)" = "2d" ]  || { echo "format_age 172800 → $(format_age 172800)"; exit 1; }
+[ "$(format_age "")" = "?" ]       || { echo "format_age '' should be '?'"; exit 1; }
+
+# --- effective_cache_ttl: a tight --recency shortens the reuse window ---
+# Without a recency filter the configured TTL stands.
+[ "$(effective_cache_ttl 900 "")" = "900" ]     || { echo "no recency should not cap"; exit 1; }
+[ "$(effective_cache_ttl 900 month)" = "900" ]  || { echo "month should not cap"; exit 1; }
+[ "$(effective_cache_ttl 900 year)" = "900" ]   || { echo "year should not cap"; exit 1; }
+
+# "last hour" must not be answered from a 15-minute-old cache.
+[ "$(effective_cache_ttl 900 hour)" = "300" ]   || { echo "hour cap missing"; exit 1; }
+# A day-scoped question tolerates an hour; the 15-minute default already fits.
+[ "$(effective_cache_ttl 900 day)" = "900" ]    || { echo "day should keep the smaller TTL"; exit 1; }
+# The research default (24h) is the case that really needs capping.
+[ "$(effective_cache_ttl 86400 day)" = "3600" ] || { echo "research TTL not capped for day"; exit 1; }
+[ "$(effective_cache_ttl 86400 week)" = "86400" ] || { echo "week cap wrong"; exit 1; }
+# The cap only ever lowers the TTL, never raises it.
+[ "$(effective_cache_ttl 60 hour)" = "60" ]     || { echo "cap must not raise the TTL"; exit 1; }
+# Garbage in, garbage out — but no crash.
+[ "$(effective_cache_ttl "abc" hour)" = "abc" ] || { echo "non-numeric TTL should pass through"; exit 1; }
+
 # --- index_append + find_latest ---
 touch "$TMP_DIR/artifact.json"
 index_append "search" "deadbeef" "query with	tab and  spaces" "$TMP_DIR/artifact.json"

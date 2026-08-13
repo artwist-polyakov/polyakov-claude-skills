@@ -122,8 +122,14 @@ JSON_FILE="$OUT_DIR/$KEY.json"
 MD_FILE="$OUT_DIR/$KEY.md"
 SOURCE="live"
 
-if [ -z "$NO_CACHE" ] && cache_fresh "$JSON_FILE" "${CACHE_TTL:-$PPLX_CACHE_TTL}"; then
-    SOURCE="cache"
+if [ -n "$CACHE_TTL" ]; then
+    EFFECTIVE_TTL="$CACHE_TTL"
+else
+    EFFECTIVE_TTL=$(effective_cache_ttl "$PPLX_CACHE_TTL" "$PPLX_ARG_RECENCY")
+fi
+
+if [ -z "$NO_CACHE" ] && cache_fresh "$JSON_FILE" "$EFFECTIVE_TTL"; then
+    SOURCE="cache, $(format_age "$(cache_age_seconds "$JSON_FILE")") old"
 else
     pplx_post "/v1/agent" "$BODY_FILE" "$JSON_FILE"
     index_append "ask" "$KEY" "$PPLX_ARG_INPUT" "$JSON_FILE"
