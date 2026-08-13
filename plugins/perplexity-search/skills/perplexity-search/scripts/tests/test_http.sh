@@ -143,6 +143,13 @@ fi
     exit 1
 }
 
+# pplx_get_soft is a probe: it reports failure instead of killing the caller.
+if pplx_get_soft "/unauthorized" "$TMP_DIR/probe.json"; then
+    echo "pplx_get_soft should fail on a rejected request"
+    exit 1
+fi
+echo "still running" >/dev/null  # reaching this line at all is the point
+
 # No scratch files left behind either.
 if find "$TMP_DIR" -name '*.part.*' | grep -q .; then
     echo "temporary .part files survived a failed request"

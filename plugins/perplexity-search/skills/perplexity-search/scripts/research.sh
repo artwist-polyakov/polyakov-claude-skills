@@ -54,6 +54,7 @@ POLL="15"
 TIMEOUT="1800"
 NO_WAIT=""
 RESUME_ID=""
+RESPONSE_ID=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -210,16 +211,33 @@ else
         exit 0
     fi
 
-    SUBMIT_FILE="$OUT_DIR/$KEY.submit.json"
-    pplx_post "/v1/agent" "$BODY_FILE" "$SUBMIT_FILE"
-    RESPONSE_ID=$(json_str "$SUBMIT_FILE" id)
-    [ -n "$RESPONSE_ID" ] || die "Agent API did not return a response id" \
-        "$(head -c 500 "$SUBMIT_FILE" 2>/dev/null)"
-    validate_response_id "$RESPONSE_ID"
+    # An identical run may still be in flight — from an earlier --no-wait, or
+    # from an invocation that stopped waiting while the job kept going. Without
+    # this the cache misses (no completed .json yet) and we would pay for a
+    # second minutes-long run and orphan the first by overwriting its marker.
+    ID_FILE="$OUT_DIR/$KEY.id"
+    if [ -z "$NO_CACHE" ] && [ -s "$ID_FILE" ]; then
+        PREV_ID=$(cat "$ID_FILE")
+        if ( validate_response_id "$PREV_ID" ) >/dev/null 2>&1 &&
+           pplx_get_soft "/v1/agent/$PREV_ID" "$JSON_FILE" &&
+           adoptable_status "$(json_str "$JSON_FILE" status)"; then
+            RESPONSE_ID="$PREV_ID"
+            echo "reusing the run already submitted for this query: $RESPONSE_ID" >&2
+        fi
+    fi
 
-    printf '%s\n' "$RESPONSE_ID" > "$OUT_DIR/$KEY.id"
-    index_append "research" "$KEY" "$QUERY_LABEL" "$OUT_DIR/$KEY.json"
-    echo "submitted: $RESPONSE_ID" >&2
+    if [ -z "$RESPONSE_ID" ]; then
+        SUBMIT_FILE="$OUT_DIR/$KEY.submit.json"
+        pplx_post "/v1/agent" "$BODY_FILE" "$SUBMIT_FILE"
+        RESPONSE_ID=$(json_str "$SUBMIT_FILE" id)
+        [ -n "$RESPONSE_ID" ] || die "Agent API did not return a response id" \
+            "$(head -c 500 "$SUBMIT_FILE" 2>/dev/null)"
+        validate_response_id "$RESPONSE_ID"
+
+        printf '%s\n' "$RESPONSE_ID" > "$ID_FILE"
+        index_append "research" "$KEY" "$QUERY_LABEL" "$JSON_FILE"
+        echo "submitted: $RESPONSE_ID" >&2
+    fi
 
     if [ -n "$NO_WAIT" ]; then
         echo "=== Perplexity Research (submitted) ==="

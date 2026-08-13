@@ -65,6 +65,17 @@ if ( require_uint "--n" 11 1 10 ) >/dev/null 2>&1; then
     echo "require_uint ignored the max bound"; exit 1
 fi
 
+# Which existing background run is worth reusing instead of paying again.
+for s in queued in_progress completed; do
+    adoptable_status "$s" || { echo "adoptable_status rejected '$s'"; exit 1; }
+done
+for s in failed cancelled incomplete unknown ""; do
+    if adoptable_status "$s"; then
+        echo "adoptable_status accepted '$s' — a fresh run is the right move there"
+        exit 1
+    fi
+done
+
 validate_response_id "resp_abc-123_X" || { echo "valid response id rejected"; exit 1; }
 for bad in "" "resp/../x" 'a;b' "a b"; do
     if ( validate_response_id "$bad" ) >/dev/null 2>&1; then

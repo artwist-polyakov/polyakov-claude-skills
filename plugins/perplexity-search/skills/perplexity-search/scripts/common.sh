@@ -436,6 +436,23 @@ pplx_get() {
     _pplx_request "GET" "$1" "" "$2"
 }
 
+# pplx_get_soft PATH OUT_FILE — a probe: returns non-zero instead of aborting.
+# Runs in a subshell so `die` ends only the probe; OUT_FILE still lands on disk.
+# One attempt only — a probe should not sit through the retry ladder.
+pplx_get_soft() {
+    ( PPLX_MAX_RETRIES=1; pplx_get "$1" "$2" ) >/dev/null 2>&1
+}
+
+# adoptable_status STATUS — 0 when an existing run in this state should be
+# reused rather than paid for again. A run that failed, was cancelled, or came
+# back incomplete is not adopted: starting over is the useful move there.
+adoptable_status() {
+    case "$1" in
+        queued|in_progress|completed) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # --- Input normalization ---------------------------------------------
 
 # normalize_date VALUE → MM/DD/YYYY (accepts YYYY-MM-DD, M/D/YYYY, MM/DD/YYYY)
