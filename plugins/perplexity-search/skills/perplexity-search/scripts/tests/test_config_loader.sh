@@ -167,6 +167,67 @@ EOF
     [ "$PPLX_PROFILE_W_LABEL" = 'C:\temp\query' ] || { echo "literal backslashes lost"; exit 1; }
 ) || exit 1
 
+# --- mixed quoting and escapes: agree with sh, and do not rewrite the file ---
+# Values that already use a quote or a backslash are shell-compatible by
+# construction; sanitize_env.sh must leave them alone, because wrapping
+# `Tech\ news` or `Tech" "news` in quotes changes what the shell reads back.
+(
+    ENV4="$TMP_DIR/escapes.env"
+    cat > "$ENV4" <<'EOF'
+PERPLEXITY_API_KEY=pplx-esc-key
+PPLX_ESC_A=Tech\ news
+PPLX_ESC_B=Tech" "news
+PPLX_ESC_C=a\#b
+PPLX_ESC_D=a\ #b
+PPLX_ESC_E=pre"mid"post
+PPLX_ESC_F=a\\b
+PPLX_ESC_G='raw # kept'
+EOF
+    cp "$ENV4" "$TMP_DIR/escapes.before"
+
+    REF=$(
+        . "$ENV4"
+        printf '%s|%s|%s|%s|%s|%s|%s' \
+            "$PPLX_ESC_A" "$PPLX_ESC_B" "$PPLX_ESC_C" "$PPLX_ESC_D" \
+            "$PPLX_ESC_E" "$PPLX_ESC_F" "$PPLX_ESC_G"
+    )
+
+    PPLX_CONFIG_FILE="$ENV4"
+    load_config >/dev/null
+    GOT=$(printf '%s|%s|%s|%s|%s|%s|%s' \
+        "$PPLX_ESC_A" "$PPLX_ESC_B" "$PPLX_ESC_C" "$PPLX_ESC_D" \
+        "$PPLX_ESC_E" "$PPLX_ESC_F" "$PPLX_ESC_G")
+
+    [ "$GOT" = "$REF" ] || {
+        printf 'loader disagrees with sh\n  sh:     [%s]\n  loader: [%s]\n' "$REF" "$GOT"
+        exit 1
+    }
+    # Pin the reference so a broken fixture cannot make the comparison vacuous.
+    [ "$REF" = 'Tech news|Tech news|a#b|a #b|premidpost|a\b|raw # kept' ] || {
+        printf 'unexpected shell reference: [%s]\n' "$REF"
+        exit 1
+    }
+    cmp -s "$ENV4" "$TMP_DIR/escapes.before" || {
+        echo "sanitize_env rewrote values that were already shell-compatible:"
+        diff "$TMP_DIR/escapes.before" "$ENV4" || true
+        exit 1
+    }
+) || exit 1
+
+# sanitize_env.sh must still do its actual job: quote a bare value with spaces,
+# and keep a trailing comment outside the quotes.
+(
+    ENV5="$TMP_DIR/plain.env"
+    cat > "$ENV5" <<'EOF'
+PLAIN=Tech news
+WITH_COMMENT=Tech news # note
+EOF
+    sh "$PPLX_SCRIPT_DIR/sanitize_env.sh" "$ENV5"
+    grep -q '^PLAIN="Tech news"$' "$ENV5" || { echo "bare value not quoted"; exit 1; }
+    grep -q '^WITH_COMMENT="Tech news" # note$' "$ENV5" || { echo "comment folded into quotes"; exit 1; }
+    ( . "$ENV5" ) >/dev/null 2>&1 || { echo "sanitized file is not shell-loadable"; exit 1; }
+) || exit 1
+
 # --- API key validation ---
 if (
     PPLX_CONFIG_FILE="$TMP_DIR/missing.env"

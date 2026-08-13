@@ -111,34 +111,73 @@ key_re = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def parse_value(raw):
-    """Read one .env value the way a POSIX shell would.
+    """Read one .env value as a POSIX shell reads the right-hand side of an
+    assignment: quoting modes may be mixed inside a single word.
 
-    Quoted values end at the closing quote and anything after it (a trailing
-    comment) is dropped. Unquoted values run until a '#' that starts a word —
-    `KEY=a#b` keeps the hash, `KEY=a #b` does not.
+      K=Tech\\ news      → Tech news     (backslash escapes the space)
+      K=Tech" "news      → Tech news     (a quoted run inside a bare word)
+      K="C:\\temp\\q"     → C:\\temp\\q     (\\ is literal unless it escapes " \\ $ `)
+      K='a # b'          → a # b         (single quotes take everything)
+      K=a\\#b             → a#b           (escaped, so not a comment)
+      K=a #b             → a             (# starts a word → comment)
     """
     raw = raw.lstrip()
-    if raw[:1] in ("'", '"'):
-        quote, out, i = raw[0], [], 1
-        while i < len(raw):
-            ch = raw[i]
-            # Inside double quotes a backslash only escapes these; anywhere else
-            # it is a literal character, so `K="C:\temp\q"` keeps its slashes.
-            if quote == '"' and ch == "\\" and raw[i + 1:i + 2] in ('"', "\\", "$", "`"):
-                out.append(raw[i + 1])
-                i += 2
-                continue
-            if ch == quote:
-                return "".join(out)
-            out.append(ch)
-            i += 1
-        # Unterminated quote — keep what we have rather than dropping the line.
-        return "".join(out)
+    out = []
+    keep = 0            # length of `out` up to the last character worth keeping
+    i, n = 0, len(raw)
+    at_word_start = True  # start of the value, or just after unquoted whitespace
 
-    for i, ch in enumerate(raw):
-        if ch == "#" and (i == 0 or raw[i - 1].isspace()):
-            return raw[:i].rstrip()
-    return raw.rstrip()
+    def emit(text):
+        nonlocal keep
+        out.append(text)
+        keep = len(out)
+
+    while i < n:
+        ch = raw[i]
+
+        if ch == "\\" and i + 1 < n:
+            emit(raw[i + 1])
+            i += 2
+            at_word_start = False
+            continue
+
+        if ch == "'":
+            end = raw.find("'", i + 1)
+            if end == -1:  # unterminated — keep the rest rather than dropping it
+                emit(raw[i + 1:])
+                break
+            emit(raw[i + 1:end])
+            i = end + 1
+            at_word_start = False
+            continue
+
+        if ch == '"':
+            i += 1
+            while i < n:
+                c = raw[i]
+                # Inside double quotes a backslash only escapes these four.
+                if c == "\\" and raw[i + 1:i + 2] in ('"', "\\", "$", "`"):
+                    emit(raw[i + 1])
+                    i += 2
+                    continue
+                if c == '"':
+                    i += 1
+                    break
+                emit(c)
+                i += 1
+            at_word_start = False
+            continue
+
+        if ch == "#" and at_word_start:
+            break  # trailing comment
+
+        out.append(ch)
+        if not ch.isspace():
+            keep = len(out)
+        at_word_start = ch.isspace()
+        i += 1
+
+    return "".join(out[:keep])
 
 
 for raw_line in path.read_text(encoding="utf-8").splitlines():

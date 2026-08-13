@@ -16,10 +16,17 @@ fi
 
 SED_SKIP_COMMENT='/^[[:space:]]*#/b'
 SED_SKIP_EMPTY='/^[[:space:]]*$/b'
+# A value that already uses a quote or a backslash is shell-compatible by
+# construction. Wrapping it would change what the shell reads back:
+# `K=Tech\ news` → `K="Tech\ news"` turns an escaped space into a literal
+# backslash, and `K=Tech" "news` → `K="Tech" "news"` splits into two words.
+SED_SKIP_ESCAPED='/^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=[^#]*["'\''\]/b'
 SED_QUOTE_VALUE='s/^([[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=[[:space:]]*)([^"'\''#][^#]*[[:space:]][^#]*[^#[:space:]])([[:space:]]*(#.*)?)$/\1"\3"\4/'
 
 if sed --version >/dev/null 2>&1; then
-    sed -i -E -e "$SED_SKIP_COMMENT" -e "$SED_SKIP_EMPTY" -e "$SED_QUOTE_VALUE" "$ENV_FILE"
+    sed -i -E -e "$SED_SKIP_COMMENT" -e "$SED_SKIP_EMPTY" -e "$SED_SKIP_ESCAPED" \
+        -e "$SED_QUOTE_VALUE" "$ENV_FILE"
 else
-    sed -i '' -E -e "$SED_SKIP_COMMENT" -e "$SED_SKIP_EMPTY" -e "$SED_QUOTE_VALUE" "$ENV_FILE"
+    sed -i '' -E -e "$SED_SKIP_COMMENT" -e "$SED_SKIP_EMPTY" -e "$SED_SKIP_ESCAPED" \
+        -e "$SED_QUOTE_VALUE" "$ENV_FILE"
 fi
