@@ -436,21 +436,53 @@ pplx_get() {
     _pplx_request "GET" "$1" "" "$2"
 }
 
-# pplx_get_soft PATH OUT_FILE — a probe: returns non-zero instead of aborting.
-# Runs in a subshell so `die` ends only the probe; OUT_FILE still lands on disk.
-# One attempt only — a probe should not sit through the retry ladder.
-pplx_get_soft() {
-    ( PPLX_MAX_RETRIES=1; pplx_get "$1" "$2" ) >/dev/null 2>&1
+# pplx_probe_get PATH OUT_FILE — one non-fatal GET, no retries.
+# Prints the HTTP status ("000" when the request never completed) and always
+# returns 0, so the caller can tell "definitely gone" (404) from "could not
+# tell" (000/5xx) — the difference decides whether spending money is safe.
+# OUT_FILE is written only on 2xx.
+pplx_probe_get() {
+    _pg_tmp="$2.probe.$$"
+    _pg_status=$(printf 'header = "Authorization: Bearer %s"\n' "$PERPLEXITY_API_KEY" \
+        | curl -sS --config - \
+            -o "$_pg_tmp" -w '%{http_code}' \
+            --max-time "$PPLX_HTTP_TIMEOUT" \
+            "${PPLX_API_BASE}$1" 2>/dev/null) || _pg_status="000"
+
+    case "$_pg_status" in
+        2[0-9][0-9]) mv -f "$_pg_tmp" "$2" 2>/dev/null || _pg_status="000" ;;
+        *)           rm -f "$_pg_tmp" ;;
+    esac
+    rm -f "$_pg_tmp"
+    printf '%s' "$_pg_status"
 }
 
-# adoptable_status STATUS — 0 when an existing run in this state should be
-# reused rather than paid for again. A run that failed, was cancelled, or came
-# back incomplete is not adopted: starting over is the useful move there.
+# adoptable_status STATUS — 0 when a run in this state is worth reusing at all.
+# A run that failed, was cancelled, or came back incomplete is not adopted:
+# starting over is the useful move there. `completed` additionally has to pass
+# the freshness check in the caller — see research.sh.
 adoptable_status() {
     case "$1" in
         queued|in_progress|completed) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+# response_age_seconds FILE — seconds since the run's own created_at.
+# Exits 1 when the response carries no usable timestamp.
+response_age_seconds() {
+    _F="$1" python3 - <<'PY'
+import json, os, sys, time
+try:
+    with open(os.environ["_F"], encoding="utf-8") as fh:
+        data = json.load(fh)
+except (OSError, ValueError):
+    sys.exit(1)
+created = data.get("created_at") if isinstance(data, dict) else None
+if not isinstance(created, (int, float)) or isinstance(created, bool):
+    sys.exit(1)
+print(int(max(0, time.time() - created)))
+PY
 }
 
 # --- Input normalization ---------------------------------------------

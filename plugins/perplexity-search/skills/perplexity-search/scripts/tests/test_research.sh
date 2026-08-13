@@ -19,18 +19,27 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 cat > "$TMP_DIR/mock.py" <<'PY'
-import http.server, json, sys
+import http.server, json, os, sys, time
 
-PORT_FILE, COUNT_FILE = sys.argv[1], sys.argv[2]
+PORT_FILE, COUNT_FILE, MODE_FILE = sys.argv[1], sys.argv[2], sys.argv[3]
 RESPONSE_ID = "resp_mocked1"
+
+
+def mode():
+    """ok | stale | flaky — how GET /v1/agent/<id> should answer."""
+    try:
+        with open(MODE_FILE, encoding="utf-8") as fh:
+            return fh.read().strip() or "ok"
+    except OSError:
+        return "ok"
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
     submissions = 0
 
-    def _send(self, payload):
+    def _send(self, payload, code=200):
         body = json.dumps(payload).encode()
-        self.send_response(200)
+        self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(body)
@@ -44,9 +53,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._send({"id": f"{RESPONSE_ID}_{Handler.submissions}", "status": "queued"})
 
     def do_GET(self):
+        current = mode()
+        if current == "flaky":
+            # A transient server-side failure: the run may well still be alive.
+            self._send({"error": "upstream unavailable"}, code=503)
+            return
+        # "stale" reports a run that finished long ago.
+        created = int(time.time()) - (10 * 86400 if current == "stale" else 5)
         self._send({
             "id": self.path.rsplit("/", 1)[-1],
             "object": "response",
+            "created_at": created,
             "status": "completed",
             "model": "openai/gpt-5.6-sol",
             "output": [
@@ -75,7 +92,9 @@ PY
 
 PORT_FILE="$TMP_DIR/port"
 COUNT_FILE="$TMP_DIR/submissions"
-python3 "$TMP_DIR/mock.py" "$PORT_FILE" "$COUNT_FILE" >/dev/null 2>&1 &
+MODE_FILE="$TMP_DIR/mode"
+echo ok > "$MODE_FILE"
+python3 "$TMP_DIR/mock.py" "$PORT_FILE" "$COUNT_FILE" "$MODE_FILE" >/dev/null 2>&1 &
 SERVER_PID=$!
 
 WAITED=0
@@ -128,5 +147,42 @@ sh "$SCRIPTS/research.sh" --query "$QUERY" --poll 1 --timeout 20 >/dev/null 2>&1
 # 4. --no-cache is the explicit way to pay for a fresh run.
 sh "$SCRIPTS/research.sh" --query "$QUERY" --no-cache --poll 1 --timeout 20 >/dev/null 2>&1
 [ "$(submissions)" = "2" ] || { echo "--no-cache did not start a new run"; exit 1; }
+
+# Age the cached report so the cache check misses and the probe path is reached.
+age_cached_report() {
+    find "$PPLX_CACHE_DIR/research" -name '*.json' -exec python3 -c '
+import os, sys, time
+old = time.time() - 3600
+for path in sys.argv[1:]:
+    os.utime(path, (old, old))
+' {} +
+}
+
+# 5. An inconclusive probe must not be read as "the run is gone".
+# A 5xx says nothing about whether the expensive run is still alive, so
+# submitting another one on that basis can double the bill.
+echo flaky > "$MODE_FILE"
+age_cached_report
+BEFORE=$(submissions)
+if sh "$SCRIPTS/research.sh" --query "$QUERY" --cache-ttl 60 --poll 1 --timeout 5 >/dev/null 2>&1; then
+    echo "an inconclusive probe should not report success"
+    exit 1
+fi
+[ "$(submissions)" = "$BEFORE" ] || {
+    echo "an inconclusive probe led to a second billable run ($(submissions) vs $BEFORE)"
+    exit 1
+}
+
+# 6. A completed run past its TTL is not adopted — otherwise the probe would
+# keep re-blessing an expired report and nothing would ever expire.
+echo stale > "$MODE_FILE"
+age_cached_report
+BEFORE=$(submissions)
+sh "$SCRIPTS/research.sh" --query "$QUERY" --cache-ttl 60 --poll 1 --timeout 20 >/dev/null 2>&1
+[ "$(submissions)" -gt "$BEFORE" ] || {
+    echo "a report older than the TTL was adopted instead of starting a fresh run"
+    exit 1
+}
+echo ok > "$MODE_FILE"
 
 echo PASS

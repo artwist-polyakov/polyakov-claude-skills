@@ -215,14 +215,50 @@ else
     # from an invocation that stopped waiting while the job kept going. Without
     # this the cache misses (no completed .json yet) and we would pay for a
     # second minutes-long run and orphan the first by overwriting its marker.
+    #
+    # The probe writes to its own scratch file, never to JSON_FILE: refreshing
+    # the cached report's timestamp here would silently restart its TTL.
     ID_FILE="$OUT_DIR/$KEY.id"
+    PROBE_FILE="$OUT_DIR/$KEY.probe.json"
     if [ -z "$NO_CACHE" ] && [ -s "$ID_FILE" ]; then
         PREV_ID=$(cat "$ID_FILE")
-        if ( validate_response_id "$PREV_ID" ) >/dev/null 2>&1 &&
-           pplx_get_soft "/v1/agent/$PREV_ID" "$JSON_FILE" &&
-           adoptable_status "$(json_str "$JSON_FILE" status)"; then
-            RESPONSE_ID="$PREV_ID"
-            echo "reusing the run already submitted for this query: $RESPONSE_ID" >&2
+        if ( validate_response_id "$PREV_ID" ) >/dev/null 2>&1; then
+            PROBE_HTTP=$(pplx_probe_get "/v1/agent/$PREV_ID" "$PROBE_FILE")
+            case "$PROBE_HTTP" in
+                2[0-9][0-9])
+                    PREV_STATUS=$(json_str "$PROBE_FILE" status)
+                    if adoptable_status "$PREV_STATUS"; then
+                        if [ "$PREV_STATUS" = "completed" ]; then
+                            # A finished run is still just a cached report, so it
+                            # has to satisfy the same TTL as one — otherwise an
+                            # expired report would be re-blessed forever.
+                            PREV_AGE=$(response_age_seconds "$PROBE_FILE" 2>/dev/null || true)
+                            if [ -z "$PREV_AGE" ]; then
+                                # No timestamp from the API: fall back to when we
+                                # submitted it, which is what the marker records.
+                                PREV_AGE=$(cache_age_seconds "$ID_FILE" 2>/dev/null || echo "")
+                            fi
+                            if [ -n "$PREV_AGE" ] && [ "$PREV_AGE" -lt "$EFFECTIVE_TTL" ] 2>/dev/null; then
+                                RESPONSE_ID="$PREV_ID"
+                            fi
+                        else
+                            RESPONSE_ID="$PREV_ID"
+                        fi
+                    fi
+                    ;;
+                404|410)
+                    : # The run is definitively gone; a fresh submission is right.
+                    ;;
+                *)
+                    rm -f "$PROBE_FILE"
+                    die "Cannot tell whether the run already submitted for this query is still active (probe returned HTTP $PROBE_HTTP)" \
+                        "Refusing to start a second billable run on a guess. Retry in a moment, poll the existing one with --resume $PREV_ID, or force a new run with --no-cache."
+                    ;;
+            esac
+            rm -f "$PROBE_FILE"
+            if [ -n "$RESPONSE_ID" ]; then
+                echo "reusing the run already submitted for this query: $RESPONSE_ID" >&2
+            fi
         fi
     fi
 

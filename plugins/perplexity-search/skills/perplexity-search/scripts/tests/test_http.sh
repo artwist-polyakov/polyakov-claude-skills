@@ -55,6 +55,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def do_GET(self):
+        if self.path == "/unauthorized":
+            self.send_response(401)
+            self.end_headers()
+            self.wfile.write(b'{"error":"bad key"}')
+            return
+        payload = b'{"status":"completed"}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(payload)
+
     def log_message(self, *args):
         pass
 
@@ -143,12 +155,15 @@ fi
     exit 1
 }
 
-# pplx_get_soft is a probe: it reports failure instead of killing the caller.
-if pplx_get_soft "/unauthorized" "$TMP_DIR/probe.json"; then
-    echo "pplx_get_soft should fail on a rejected request"
-    exit 1
-fi
-echo "still running" >/dev/null  # reaching this line at all is the point
+# pplx_probe_get reports the HTTP status instead of aborting, so a caller can
+# tell "definitely gone" from "could not tell" before spending money.
+PROBE_STATUS=$(pplx_probe_get "/unauthorized" "$TMP_DIR/probe.json")
+[ "$PROBE_STATUS" = "401" ] || { echo "probe reported '$PROBE_STATUS', expected 401"; exit 1; }
+[ ! -e "$TMP_DIR/probe.json" ] || { echo "probe wrote an error body to its output file"; exit 1; }
+
+PROBE_STATUS=$(pplx_probe_get "/ok" "$TMP_DIR/probe_ok.json")
+[ "$PROBE_STATUS" = "200" ] || { echo "probe reported '$PROBE_STATUS', expected 200"; exit 1; }
+[ -s "$TMP_DIR/probe_ok.json" ] || { echo "probe did not save a successful response"; exit 1; }
 
 # No scratch files left behind either.
 if find "$TMP_DIR" -name '*.part.*' | grep -q .; then
