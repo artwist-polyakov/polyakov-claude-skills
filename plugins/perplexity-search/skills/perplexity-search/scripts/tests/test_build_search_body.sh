@@ -40,7 +40,7 @@ print(json.dumps(value, ensure_ascii=False, sort_keys=True))
 }
 
 reset_args() {
-    PPLX_ARG_QUERIES=""
+    queries_reset
     PPLX_ARG_DOMAINS=""
     PPLX_ARG_RECENCY=""
     PPLX_ARG_AFTER=""
@@ -55,21 +55,42 @@ reset_args() {
 
 # --- single query stays a string ---
 reset_args
-PPLX_ARG_QUERIES="one question"
+query_add "one question"
 build_search_body "$BODY"
 [ "$(field "$BODY" query)" = '"one question"' ] || { echo "single query should be a string"; exit 1; }
 
 # --- several queries become an array ---
 reset_args
-PPLX_ARG_QUERIES="$(printf 'first\nsecond\nthird')"
+query_add "first"
+query_add "second"
+query_add "third"
 build_search_body "$BODY"
 [ "$(field "$BODY" query)" = '["first", "second", "third"]' ] || {
     echo "multi query array wrong: $(field "$BODY" query)"; exit 1
 }
 
+# --- one multiline query must stay ONE query ---
+# Newlines used to be the in-band delimiter, so a pasted or command-substituted
+# question silently became several separate (billed) queries.
+reset_args
+query_add "$(printf 'как устроен трансформер\nи чем он лучше RNN')"
+build_search_body "$BODY"
+[ "$(field "$BODY" query)" = '"как устроен трансформер\nи чем он лучше RNN"' ] || {
+    echo "multiline query was split: $(field "$BODY" query)"; exit 1
+}
+
+# ...and it must not eat into the five-query budget either.
+reset_args
+query_add "$(printf 'a\nb\nc\nd\ne\nf\ng')"
+query_add "second"
+build_search_body "$BODY"
+[ "$(field "$BODY" query)" = '["a\nb\nc\nd\ne\nf\ng", "second"]' ] || {
+    echo "multiline query miscounted: $(field "$BODY" query)"; exit 1
+}
+
 # --- filters land where the API expects them ---
 reset_args
-PPLX_ARG_QUERIES="q"
+query_add "q"
 PPLX_ARG_MAX_RESULTS="7"
 PPLX_ARG_CONTEXT_SIZE="high"
 PPLX_ARG_COUNTRY="ru"
@@ -86,7 +107,7 @@ build_search_body "$BODY"
 
 # --- explicit dates ---
 reset_args
-PPLX_ARG_QUERIES="q"
+query_add "q"
 PPLX_ARG_AFTER="01/15/2026"
 PPLX_ARG_BEFORE="05/01/2026"
 build_search_body "$BODY"
@@ -95,7 +116,7 @@ build_search_body "$BODY"
 
 # --- rejected combinations ---
 reset_args
-PPLX_ARG_QUERIES="q"
+query_add "q"
 PPLX_ARG_RECENCY="week"
 PPLX_ARG_AFTER="01/15/2026"
 if ( build_search_body "$BODY" ) 2>/dev/null; then
@@ -103,21 +124,21 @@ if ( build_search_body "$BODY" ) 2>/dev/null; then
 fi
 
 reset_args
-PPLX_ARG_QUERIES="q"
+query_add "q"
 PPLX_ARG_DOMAINS="nature.com,-reddit.com"
 if ( build_search_body "$BODY" ) 2>/dev/null; then
     echo "mixed allowlist/denylist should be rejected"; exit 1
 fi
 
 reset_args
-PPLX_ARG_QUERIES="q"
+query_add "q"
 PPLX_ARG_MAX_RESULTS="50"
 if ( build_search_body "$BODY" ) 2>/dev/null; then
     echo "max_results above 20 should be rejected"; exit 1
 fi
 
 reset_args
-PPLX_ARG_QUERIES="$(printf 'a\nb\nc\nd\ne\nf')"
+for q in a b c d e f; do query_add "$q"; done
 if ( build_search_body "$BODY" ) 2>/dev/null; then
     echo "more than 5 queries should be rejected"; exit 1
 fi

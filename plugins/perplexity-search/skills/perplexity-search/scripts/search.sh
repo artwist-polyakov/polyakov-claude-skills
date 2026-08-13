@@ -39,17 +39,9 @@ NO_CACHE=""
 CACHE_TTL=""
 PROFILE=""
 
-add_query() {
-    if [ -z "$PPLX_ARG_QUERIES" ]; then
-        PPLX_ARG_QUERIES="$1"
-    else
-        PPLX_ARG_QUERIES="$(printf '%s\n%s' "$PPLX_ARG_QUERIES" "$1")"
-    fi
-}
-
 while [ $# -gt 0 ]; do
     case "$1" in
-        --query|-q)       require_value "$1" $#; add_query "$2"; shift 2 ;;
+        --query|-q)       require_value "$1" $#; query_add "$2"; shift 2 ;;
         --max-results)    require_value "$1" $#; PPLX_ARG_MAX_RESULTS="$2"; shift 2 ;;
         --recency)        require_value "$1" $#; PPLX_ARG_RECENCY="$2"; shift 2 ;;
         --after)          require_value "$1" $#; PPLX_ARG_AFTER="$2"; shift 2 ;;
@@ -69,7 +61,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-if [ -z "$PPLX_ARG_QUERIES" ]; then
+if [ "$PPLX_ARG_QUERY_COUNT" -eq 0 ]; then
     usage >&2
     die "--query is required"
 fi
@@ -105,7 +97,8 @@ JSON_FILE="$OUT_DIR/$KEY.json"
 TSV_FILE="$OUT_DIR/$KEY.tsv"
 TXT_FILE="$OUT_DIR/$KEY.txt"
 
-FIRST_QUERY=$(printf '%s' "$PPLX_ARG_QUERIES" | head -1)
+# A query may span lines; keep the header to the first one.
+FIRST_QUERY=$(query_get 1 | head -1)
 SOURCE="live"
 
 if [ -n "$CACHE_TTL" ]; then

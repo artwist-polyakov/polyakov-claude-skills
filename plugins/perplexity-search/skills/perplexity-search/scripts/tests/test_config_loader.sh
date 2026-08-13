@@ -129,6 +129,44 @@ EOF
     }
 ) || exit 1
 
+# --- backslashes: the loader must agree with the shell, character for character ---
+# In double quotes a backslash escapes only " \ $ ` and newline; everywhere else
+# it is literal, so Windows paths and regex-ish labels must survive intact.
+(
+    ENV3="$TMP_DIR/backslash.env"
+    cat > "$ENV3" <<'EOF'
+PERPLEXITY_API_KEY=pplx-bs-key
+PPLX_PROFILE_W_LABEL="C:\temp\query"
+PPLX_PROFILE_X_LABEL="a\\b"
+PPLX_PROFILE_Y_LABEL="a\"b"
+PPLX_PROFILE_Z_LABEL="a\$b"
+PPLX_PROFILE_N_LABEL="a\nb"
+EOF
+
+    # Every line above is valid shell, so `sh` itself is the reference answer.
+    REF=$(
+        . "$ENV3"
+        printf '%s|%s|%s|%s|%s' \
+            "$PPLX_PROFILE_W_LABEL" "$PPLX_PROFILE_X_LABEL" "$PPLX_PROFILE_Y_LABEL" \
+            "$PPLX_PROFILE_Z_LABEL" "$PPLX_PROFILE_N_LABEL"
+    )
+
+    PPLX_CONFIG_FILE="$ENV3"
+    load_config >/dev/null
+    GOT=$(printf '%s|%s|%s|%s|%s' \
+        "$PPLX_PROFILE_W_LABEL" "$PPLX_PROFILE_X_LABEL" "$PPLX_PROFILE_Y_LABEL" \
+        "$PPLX_PROFILE_Z_LABEL" "$PPLX_PROFILE_N_LABEL")
+
+    # printf, not echo: /bin/sh here is bash with xpg_echo, whose echo would
+    # itself expand \t and \n and make the diff unreadable.
+    [ "$GOT" = "$REF" ] || {
+        printf 'loader disagrees with sh on backslashes\n  sh:     [%s]\n  loader: [%s]\n' "$REF" "$GOT"
+        exit 1
+    }
+    # Guard the reference itself, so a broken fixture cannot make this vacuous.
+    [ "$PPLX_PROFILE_W_LABEL" = 'C:\temp\query' ] || { echo "literal backslashes lost"; exit 1; }
+) || exit 1
+
 # --- API key validation ---
 if (
     PPLX_CONFIG_FILE="$TMP_DIR/missing.env"

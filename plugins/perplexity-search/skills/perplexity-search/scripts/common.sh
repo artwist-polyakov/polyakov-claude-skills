@@ -44,7 +44,7 @@ PPLX_TMPDIR="${TMPDIR:-/tmp}"
 
 # Request parameters shared by all scripts. Flag parsing lives in each script;
 # body shaping reads these and stays in one testable place.
-PPLX_ARG_QUERIES=""          # newline-separated (Search API accepts up to 5)
+PPLX_ARG_QUERY_COUNT=0       # queries live in PPLX_ARG_QUERY_1..N, see below
 PPLX_ARG_INPUT=""
 PPLX_ARG_PRESET=""
 PPLX_ARG_MODEL=""
@@ -122,7 +122,9 @@ def parse_value(raw):
         quote, out, i = raw[0], [], 1
         while i < len(raw):
             ch = raw[i]
-            if quote == '"' and ch == "\\" and i + 1 < len(raw):
+            # Inside double quotes a backslash only escapes these; anywhere else
+            # it is a literal character, so `K="C:\temp\q"` keeps its slashes.
+            if quote == '"' and ch == "\\" and raw[i + 1:i + 2] in ('"', "\\", "$", "`"):
                 out.append(raw[i + 1])
                 i += 2
                 continue
@@ -419,6 +421,32 @@ PY
     printf '%s' "$_nd_out"
 }
 
+# --- Query list -------------------------------------------------------
+#
+# Queries are kept as PPLX_ARG_QUERY_1..N, one variable per CLI argument,
+# instead of one newline-joined string. A single --query may legitimately
+# contain newlines — a pasted prompt, a command substitution — and an in-band
+# delimiter would silently turn it into several separate (billed) queries.
+
+queries_reset() {
+    _qr_i=1
+    while [ "$_qr_i" -le "${PPLX_ARG_QUERY_COUNT:-0}" ]; do
+        unset "PPLX_ARG_QUERY_$_qr_i"
+        _qr_i=$((_qr_i + 1))
+    done
+    PPLX_ARG_QUERY_COUNT=0
+}
+
+query_add() {
+    PPLX_ARG_QUERY_COUNT=$((PPLX_ARG_QUERY_COUNT + 1))
+    eval "PPLX_ARG_QUERY_${PPLX_ARG_QUERY_COUNT}=\$1"
+}
+
+# query_get N — print the Nth query (1-based), empty if absent
+query_get() {
+    eval "printf '%s' \"\${PPLX_ARG_QUERY_$1:-}\""
+}
+
 # require_value FLAG REMAINING_ARGC — call as `require_value "$1" $#` before a
 # `shift 2`, so a trailing flag reports itself instead of failing inside shift.
 require_value() {
@@ -668,7 +696,15 @@ PY
 
 # build_search_body OUT_FILE — POST /search
 build_search_body() {
-    _QUERIES="$PPLX_ARG_QUERIES" \
+    # Hand each query to python in its own variable so embedded newlines survive.
+    _bsb_i=1
+    while [ "$_bsb_i" -le "$PPLX_ARG_QUERY_COUNT" ]; do
+        eval "export _PPLX_Q$_bsb_i=\"\$PPLX_ARG_QUERY_$_bsb_i\""
+        _bsb_i=$((_bsb_i + 1))
+    done
+
+    _bsb_status=0
+    _Q_COUNT="$PPLX_ARG_QUERY_COUNT" \
     _DOMAINS="$PPLX_ARG_DOMAINS" \
     _RECENCY="$PPLX_ARG_RECENCY" \
     _AFTER="$PPLX_ARG_AFTER" \
@@ -679,7 +715,7 @@ build_search_body() {
     _MAX_RESULTS="$PPLX_ARG_MAX_RESULTS" \
     _COUNTRY="$PPLX_ARG_COUNTRY" \
     _LANGUAGE="$PPLX_ARG_LANGUAGE" \
-    python3 - > "$1" <<'PY'
+    python3 - > "$1" <<'PY' || _bsb_status=$?
 import json, os, sys
 
 
@@ -691,7 +727,13 @@ def split_list(raw):
     return [p.strip() for p in raw.split(",") if p.strip()]
 
 
-queries = [q.strip() for q in os.environ.get("_QUERIES", "").split("\n") if q.strip()]
+# One variable per query: a query may contain newlines and must stay intact.
+queries = []
+for i in range(1, int(env("_Q_COUNT") or 0) + 1):
+    q = os.environ.get(f"_PPLX_Q{i}", "").strip()
+    if q:
+        queries.append(q)
+
 if not queries:
     print("no query given", file=sys.stderr)
     sys.exit(1)
@@ -749,6 +791,14 @@ body.update(dated)
 
 json.dump(body, sys.stdout, ensure_ascii=False)
 PY
+
+    _bsb_i=1
+    while [ "$_bsb_i" -le "$PPLX_ARG_QUERY_COUNT" ]; do
+        unset "_PPLX_Q$_bsb_i"
+        _bsb_i=$((_bsb_i + 1))
+    done
+
+    return "$_bsb_status"
 }
 
 # --- Response renderers -----------------------------------------------
