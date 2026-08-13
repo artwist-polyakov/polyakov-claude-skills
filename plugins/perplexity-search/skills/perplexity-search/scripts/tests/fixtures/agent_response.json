@@ -1,0 +1,60 @@
+{
+  "id": "resp_fixture0001",
+  "object": "response",
+  "created_at": 1771891464,
+  "status": "completed",
+  "model": "openai/gpt-5.4-mini",
+  "output": [
+    {
+      "type": "search_results",
+      "queries": ["transformer architecture explained"],
+      "results": [
+        {
+          "id": 1,
+          "title": "Attention primer",
+          "url": "https://example.com/a",
+          "snippet": "A short snippet about attention.",
+          "date": "2026-02-02",
+          "source": "web"
+        },
+        {
+          "id": 2,
+          "title": "Attention primer (mirror)",
+          "url": "https://example.com/a",
+          "snippet": "Duplicate of the first source.",
+          "date": "2026-02-02",
+          "source": "web"
+        },
+        {
+          "id": 3,
+          "title": "Sequence models",
+          "url": "https://example.com/b",
+          "snippet": "Another snippet.",
+          "date": null,
+          "source": "web"
+        }
+      ]
+    },
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "The answer text, with a citation [1] and a second one [2]."
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 100,
+    "output_tokens": 200,
+    "total_tokens": 300,
+    "cost": {
+      "currency": "USD",
+      "input_cost": 0.0001,
+      "output_cost": 0.0006,
+      "total_cost": 0.0007
+    }
+  }
+}

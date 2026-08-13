@@ -1,0 +1,8 @@
+{
+  "name": "perplexity-search",
+  "version": "1.0.0",
+  "description": "Perplexity API на shell-скриптах: Search API (сырая выдача), Agent API (ответ с цитатами), deep research в фоне, извлечение страниц. Cache-first, всё крупное — в кеш",
+  "author": {
+    "name": "Polyakov"
+  }
+}

@@ -28,6 +28,7 @@
   - [sourcecraft-publisher](#sourcecraft-publisher) — публикация на SourceCraft Sites
   - [reddit-skill](#reddit-skill) — Reddit API: пользователи, сабреддиты, поиск, посты
   - [knowledge-compiler](#knowledge-compiler) — компиляция книг и длинных источников в личные скиллы
+  - [perplexity-search](#perplexity-search) — поиск и ресёрч через Perplexity API
 - [Структура репозитория](#структура-репозитория)
 - [Лицензия](#лицензия)
 
@@ -59,6 +60,7 @@
 /plugin install sourcecraft-publisher
 /plugin install reddit-skill
 /plugin install knowledge-compiler
+/plugin install perplexity-search
 ```
 
 ### Ручная установка (без маркетплейса)
@@ -485,6 +487,31 @@ Reddit API на shell-скриптах: пользователи, сабредд
 
 ---
 
+### [perplexity-search](plugins/perplexity-search/skills/perplexity-search)
+
+Поиск и ресёрч через Perplexity API на POSIX-shell.
+
+- Search API — сырая ранжированная выдача со сниппетами, до 5 запросов за один оплаченный вызов
+- Agent API — ответ с цитатами, выбор пресета и модели (Sonar, GPT, Claude, Gemini, Grok)
+- Deep research в background mode с поллингом и `--resume` по response id
+- Извлечение содержимого конкретных URL через инструмент `fetch_url`
+- Структурированный вывод по JSON Schema
+- Cache-first: ключ кеша — само тело запроса; крупные результаты уходят в `cache/` и читаются грепом
+- Профили источников в `.env`: домены + свежесть + глубина извлечения одним флагом
+- Оффлайн-тесты: разбор `.env`, сборка тел запросов, рендер ответов, CLI-контракт, HTTP-слой на loopback-моке
+
+**Триггеры (RU):**
+- "найди в интернете"
+- "что пишут про [тему]"
+- "глубокое исследование"
+
+**Триггеры (EN):**
+- "perplexity search"
+- "web search with sources"
+- "deep research"
+
+---
+
 ## Структура репозитория
 
 ```
@@ -510,7 +537,8 @@ polyakov-claude-skills/
 │   ├── github-pages-publisher/  # Плагин для публикации на GitHub Pages
 │   ├── sourcecraft-publisher/   # Плагин для публикации на SourceCraft Sites
 │   ├── reddit-skill/            # Плагин для Reddit API
-│   └── knowledge-compiler/      # Плагин для компиляции источников в скиллы
+│   ├── knowledge-compiler/      # Плагин для компиляции источников в скиллы
+│   └── perplexity-search/       # Плагин для поиска и ресёрча через Perplexity API
 └── README.md
 ```
 

@@ -1,0 +1,12 @@
+{
+  "id": "resp_fixture0002",
+  "object": "response",
+  "created_at": 1771891999,
+  "status": "failed",
+  "model": "openai/gpt-5.4-mini",
+  "output": [],
+  "error": {
+    "code": "tool_error",
+    "message": "web_search failed after 3 attempts"
+  }
+}
