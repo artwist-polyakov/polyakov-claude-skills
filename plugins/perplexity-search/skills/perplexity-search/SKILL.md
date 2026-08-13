@@ -171,8 +171,8 @@ sh scripts/<script>.sh [params]     # у каждого есть --help
 | `--context-size` | поиск | `medium` | `low`, `medium`, `high` |
 | `--max-results` | поиск | `10` | Search: 1–20, Agent: 1–50 |
 | `--profile` | поиск | — | набор дефолтов из `.env` |
-| `--preset` | agent | `medium` | `fast`, `low`, `medium`, `high`, `xhigh`, `wide-research` |
-| `--model` | agent | — | `perplexity/sonar`, `openai/gpt-5.6-sol`, `anthropic/claude-sonnet-5`, … |
+| `--preset` | agent | см. ниже | `fast`, `low`, `medium`, `high`, `xhigh`, `wide-research` |
+| `--model` | agent | из `.env` | `perplexity/sonar`, `openai/gpt-5.6-sol`, `anthropic/claude-sonnet-5`, … |
 | `--tools` | agent | `web_search` | `web_search`, `fetch_url`, `finance_search`, `people_search`, `sandbox` |
 | `--instructions` | agent | — | системная инструкция |
 | `--schema` | agent | — | файл JSON Schema → структурированный ответ |
@@ -181,6 +181,18 @@ sh scripts/<script>.sh [params]     # у каждого есть --help
 
 Взаимоисключающие комбинации (`--recency` вместе с явными датами, смешанные
 allow/deny домены) отклоняются до похода в API — деньги не тратятся.
+
+### Кто исполняет запрос
+
+Приоритет: **флаг > `.env` > собственный дефолт скрипта**.
+
+- задан `--preset` или `--model` — берётся он;
+- иначе, если в `config/.env` заданы `PPLX_PRESET` / `PPLX_MODEL`, — берутся они;
+- иначе работает дефолт скрипта: `ask.sh` → `medium`, `research.sh` → `high`,
+  `fetch_url.sh` → `low`.
+
+Скрипт со своим дефолтом никогда не перебивает то, что вы указали в `.env`, —
+иначе `research.sh` тихо считал бы деньги по другой модели.
 
 ## Кеш
 

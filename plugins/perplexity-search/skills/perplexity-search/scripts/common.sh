@@ -146,6 +146,10 @@ PY
             ;;
     esac
 
+    # Remember whether the preset came from config before the default masks it:
+    # scripts with their own fallback (research → high, fetch_url → low) must be
+    # able to tell "the user chose medium" from "nobody chose anything".
+    PPLX_PRESET_EXPLICIT="${PPLX_PRESET:+1}"
     PPLX_PRESET="${PPLX_PRESET:-medium}"
     PPLX_MODEL="${PPLX_MODEL:-}"
     PPLX_CONTEXT_SIZE="${PPLX_CONTEXT_SIZE:-medium}"
@@ -264,6 +268,20 @@ PY
 #
 # The API key is streamed to curl through `--config -`, so it never appears in
 # argv (visible via ps) and is never written to disk.
+#
+# The response lands in a sibling temp file and is renamed onto OUT_FILE only
+# after a 2xx. Writing straight to OUT_FILE would park the error body at the
+# cache path, where the next identical call inside the TTL would read it back as
+# a legitimate (empty) result — and it would also destroy a good cached answer
+# whenever a refresh failed. The temp file sits in the destination directory so
+# the rename is atomic.
+
+# _rq_fail MESSAGE [DETAIL] — drop the scratch files _pplx_request is holding,
+# then report. Split out so every failure path cleans up the same way.
+_rq_fail() {
+    rm -f "$_rq_tmp" "$_rq_hdr"
+    die "$1" "${2:-}"
+}
 
 _pplx_request() {
     _rq_method="$1"
@@ -272,6 +290,7 @@ _pplx_request() {
     _rq_out="$4"
 
     _rq_hdr="$PPLX_TMPDIR/pplx_hdr.$$.txt"
+    _rq_tmp="${_rq_out}.part.$$"
     _rq_attempt=0
     _rq_delay=2
 
@@ -282,26 +301,26 @@ _pplx_request() {
             _rq_status=$(printf 'header = "Authorization: Bearer %s"\n' "$PERPLEXITY_API_KEY" \
                 | curl -sS --config - \
                     -H "Content-Type: application/json" \
-                    -o "$_rq_out" -D "$_rq_hdr" -w '%{http_code}' \
+                    -o "$_rq_tmp" -D "$_rq_hdr" -w '%{http_code}' \
                     --max-time "$PPLX_HTTP_TIMEOUT" \
                     -X POST --data-binary "@$_rq_body" \
                     "${PPLX_API_BASE}${_rq_path}") || _rq_status="000"
         else
             _rq_status=$(printf 'header = "Authorization: Bearer %s"\n' "$PERPLEXITY_API_KEY" \
                 | curl -sS --config - \
-                    -o "$_rq_out" -D "$_rq_hdr" -w '%{http_code}' \
+                    -o "$_rq_tmp" -D "$_rq_hdr" -w '%{http_code}' \
                     --max-time "$PPLX_HTTP_TIMEOUT" \
                     "${PPLX_API_BASE}${_rq_path}") || _rq_status="000"
         fi
 
         case "$_rq_status" in
             2[0-9][0-9])
+                mv -f "$_rq_tmp" "$_rq_out" || _rq_fail "Failed to store the response at $_rq_out"
                 rm -f "$_rq_hdr"
                 return 0
                 ;;
             401|403)
-                rm -f "$_rq_hdr"
-                die "HTTP $_rq_status — API key rejected" \
+                _rq_fail "HTTP $_rq_status — API key rejected" \
                     "Check PERPLEXITY_API_KEY in config/.env and that the key has API credits."
                 ;;
             429)
@@ -317,8 +336,7 @@ _pplx_request() {
                     _rq_delay=$((_rq_delay * 2))
                     continue
                 fi
-                rm -f "$_rq_hdr"
-                die "HTTP 429 Too Many Requests (gave up after ${_rq_attempt} attempts)" \
+                _rq_fail "HTTP 429 Too Many Requests (gave up after ${_rq_attempt} attempts)" \
                     "Search API allows 50 query units/s; Agent API limits are tier-based. Rejected 429s are not billed."
                 ;;
             000|5[0-9][0-9])
@@ -328,14 +346,12 @@ _pplx_request() {
                     _rq_delay=$((_rq_delay * 2))
                     continue
                 fi
-                rm -f "$_rq_hdr"
-                die "HTTP $_rq_status from $_rq_path after ${_rq_attempt} attempts" \
-                    "$(head -c 500 "$_rq_out" 2>/dev/null)"
+                _rq_fail "HTTP $_rq_status from $_rq_path after ${_rq_attempt} attempts" \
+                    "$(head -c 500 "$_rq_tmp" 2>/dev/null)"
                 ;;
             *)
-                rm -f "$_rq_hdr"
-                die "HTTP $_rq_status from $_rq_path" \
-                    "$(head -c 800 "$_rq_out" 2>/dev/null)"
+                _rq_fail "HTTP $_rq_status from $_rq_path" \
+                    "$(head -c 800 "$_rq_tmp" 2>/dev/null)"
                 ;;
         esac
     done
@@ -474,6 +490,24 @@ resolve_profile() {
     [ -n "$PPLX_ARG_RECENCY" ] || PPLX_ARG_RECENCY="$_rp_recency"
     [ -n "$PPLX_ARG_CONTEXT_SIZE" ] || PPLX_ARG_CONTEXT_SIZE="$_rp_context"
     PPLX_PROFILE_LABEL="$_rp_label"
+}
+
+# resolve_model_defaults FALLBACK_PRESET
+# Precedence for who runs the request: CLI flags > config/.env > the calling
+# script's own fallback preset. Without this, a script with a fallback would
+# silently ignore PPLX_MODEL / PPLX_PRESET and bill the user for another model.
+resolve_model_defaults() {
+    if [ -n "$PPLX_ARG_PRESET" ] || [ -n "$PPLX_ARG_MODEL" ]; then
+        return 0
+    fi
+
+    PPLX_ARG_MODEL="$PPLX_MODEL"
+    if [ -n "${PPLX_PRESET_EXPLICIT:-}" ]; then
+        PPLX_ARG_PRESET="$PPLX_PRESET"
+    elif [ -z "$PPLX_ARG_MODEL" ]; then
+        # No configuration at all — use what this script is tuned for.
+        PPLX_ARG_PRESET="$1"
+    fi
 }
 
 # --- Request builders -------------------------------------------------

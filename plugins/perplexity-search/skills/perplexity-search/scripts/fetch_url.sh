@@ -74,9 +74,7 @@ require_uint "--limit" "$LIMIT" 1
 [ -z "$CACHE_TTL" ] || require_uint "--cache-ttl" "$CACHE_TTL"
 [ -z "$PPLX_ARG_MAX_OUTPUT_TOKENS" ] || require_uint "--max-output-tokens" "$PPLX_ARG_MAX_OUTPUT_TOKENS" 1
 
-if [ -z "$PPLX_ARG_PRESET" ] && [ -z "$PPLX_ARG_MODEL" ]; then
-    PPLX_ARG_PRESET="low"
-fi
+resolve_model_defaults "low"
 PPLX_ARG_TOOLS="fetch_url"
 PPLX_ARG_LANGUAGE="${PPLX_ARG_LANGUAGE:-$PPLX_LANGUAGE}"
 PPLX_ARG_INSTRUCTIONS="Use the fetch_url tool on every URL the user lists. Report each URL under its own '## <url>' heading, quoting the page text as-is. Never invent content that the tool did not return; if a fetch fails, say so under that URL's heading."

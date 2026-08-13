@@ -34,6 +34,11 @@ cd /home/claude/perplexity-search
 | `PERPLEXITY_API_KEY` | — | обязательный ключ |
 | `PPLX_PRESET` | `medium` | пресет Agent API: `fast`, `low`, `medium`, `high`, `xhigh`, `wide-research` |
 | `PPLX_MODEL` | — | явная модель, перебивает модель пресета |
+
+Заданные здесь `PPLX_PRESET` / `PPLX_MODEL` действуют во всех agent-скриптах и
+сильнее их собственных дефолтов (`research.sh` → `high`, `fetch_url.sh` → `low`).
+Эти дефолты включаются, только когда в `.env` не задано ничего. Флаг командной
+строки сильнее и того, и другого.
 | `PPLX_CONTEXT_SIZE` | `medium` | глубина извлечения текста страницы: `low`/`medium`/`high` |
 | `PPLX_MAX_RESULTS` | `10` | результатов на запрос Search API (1..20) |
 | `PPLX_COUNTRY` | — | ISO 3166-1 alpha-2, например `RU` |

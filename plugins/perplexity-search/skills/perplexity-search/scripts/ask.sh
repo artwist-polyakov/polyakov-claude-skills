@@ -89,10 +89,7 @@ resolve_profile "$PROFILE"
 
 # An explicit --model without a --preset means "just that model": don't silently
 # mix in the config preset, which would fight the model choice.
-if [ -z "$PPLX_ARG_PRESET" ] && [ -z "$PPLX_ARG_MODEL" ]; then
-    PPLX_ARG_PRESET="$PPLX_PRESET"
-    PPLX_ARG_MODEL="$PPLX_MODEL"
-fi
+resolve_model_defaults "$PPLX_PRESET"
 PPLX_ARG_CONTEXT_SIZE="${PPLX_ARG_CONTEXT_SIZE:-$PPLX_CONTEXT_SIZE}"
 PPLX_ARG_COUNTRY="${PPLX_ARG_COUNTRY:-$PPLX_COUNTRY}"
 PPLX_ARG_LANGUAGE="${PPLX_ARG_LANGUAGE:-$PPLX_LANGUAGE}"

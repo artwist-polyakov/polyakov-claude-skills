@@ -123,6 +123,32 @@ if ( pplx_post "/unauthorized" "$TMP_DIR/body.json" "$TMP_DIR/out401.json" ) >/d
     exit 1
 fi
 
+# --- a failed request must not poison the cache path ---
+# Without this, the error body sits at the cache path and the next identical
+# call inside the TTL reads it back as a legitimate empty result.
+[ ! -e "$TMP_DIR/out401.json" ] || {
+    echo "error body was written to the cache path"
+    exit 1
+}
+
+# ...and it must not destroy an answer that is already cached there.
+GOOD="$TMP_DIR/good.json"
+printf '{"results":[{"title":"cached"}]}' > "$GOOD"
+if ( pplx_post "/unauthorized" "$TMP_DIR/body.json" "$GOOD" ) >/dev/null 2>&1; then
+    echo "401 should abort the request"
+    exit 1
+fi
+[ "$(cat "$GOOD")" = '{"results":[{"title":"cached"}]}' ] || {
+    echo "a failed refresh clobbered the cached response"
+    exit 1
+}
+
+# No scratch files left behind either.
+if find "$TMP_DIR" -name '*.part.*' | grep -q .; then
+    echo "temporary .part files survived a failed request"
+    exit 1
+fi
+
 # An empty request body is an internal error, not a request.
 : > "$TMP_DIR/empty.json"
 if ( pplx_post "/ok" "$TMP_DIR/empty.json" "$TMP_DIR/out2.json" ) >/dev/null 2>&1; then

@@ -37,10 +37,12 @@ load_config
 
 [ "$PERPLEXITY_API_KEY" = "pplx-test-key" ] || { echo "key not loaded"; exit 1; }
 [ "$PPLX_PRESET" = "high" ] || { echo "preset not loaded"; exit 1; }
+[ -n "$PPLX_PRESET_EXPLICIT" ] || { echo "a configured preset must be marked explicit"; exit 1; }
 [ "$PPLX_PROFILE_NEWS_LABEL" = "Tech news and blogs" ] || { echo "unquoted label broken"; exit 1; }
 [ "$PPLX_PROFILE_SCIENCE_LABEL" = "Peer reviewed" ] || { echo "quoted label broken"; exit 1; }
 
 # Defaults applied for anything the file did not set.
+[ -z "$PPLX_MODEL" ] || { echo "model should be empty when unset"; exit 1; }
 [ "$PPLX_CONTEXT_SIZE" = "medium" ] || { echo "context size default missing"; exit 1; }
 [ "$PPLX_MAX_RESULTS" = "10" ] || { echo "max results default missing"; exit 1; }
 [ "$PPLX_CACHE_TTL" = "900" ] || { echo "cache ttl default missing"; exit 1; }
@@ -76,6 +78,18 @@ fi
 if ( resolve_profile 'news;id' ) >/dev/null 2>&1; then
     echo "unsafe profile id accepted"; exit 1
 fi
+
+# A preset that only comes from the built-in default must NOT read as explicit,
+# or research.sh/fetch_url.sh would lose their own tuned fallbacks.
+(
+    PPLX_CONFIG_FILE="$TMP_DIR/missing.env"
+    PERPLEXITY_API_KEY="pplx-test-key"
+    PPLX_PRESET=""
+    PPLX_PRESET_EXPLICIT=""
+    load_config >/dev/null
+    [ "$PPLX_PRESET" = "medium" ] || { echo "default preset missing"; exit 1; }
+    [ -z "$PPLX_PRESET_EXPLICIT" ] || { echo "the built-in default must not read as explicit"; exit 1; }
+) || exit 1
 
 # --- API key validation ---
 if (

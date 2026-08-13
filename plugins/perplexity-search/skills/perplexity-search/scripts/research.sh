@@ -166,9 +166,7 @@ else
 
     resolve_profile "$PROFILE"
 
-    if [ -z "$PPLX_ARG_PRESET" ] && [ -z "$PPLX_ARG_MODEL" ]; then
-        PPLX_ARG_PRESET="high"
-    fi
+    resolve_model_defaults "high"
     PPLX_ARG_TOOLS="${PPLX_ARG_TOOLS:-web_search,fetch_url}"
     PPLX_ARG_CONTEXT_SIZE="${PPLX_ARG_CONTEXT_SIZE:-$PPLX_CONTEXT_SIZE}"
     PPLX_ARG_COUNTRY="${PPLX_ARG_COUNTRY:-$PPLX_COUNTRY}"

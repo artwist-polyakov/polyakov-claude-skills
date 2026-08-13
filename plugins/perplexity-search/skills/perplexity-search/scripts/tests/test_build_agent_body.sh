@@ -141,6 +141,51 @@ PPLX_ARG_SCHEMA_FILE="$TMP_DIR/rf.json"
 build_agent_body "$BODY"
 [ "$(field "$BODY" response_format.json_schema.name)" = '"custom"' ] || { echo "response_format double-wrapped"; exit 1; }
 
+# --- who runs the request: CLI flag > config/.env > the script's fallback ---
+
+# A configured preset and model must survive a script that has its own fallback,
+# otherwise research.sh would bill an unintended (expensive) model.
+reset_args
+PPLX_PRESET_EXPLICIT=1
+PPLX_PRESET="low"
+PPLX_MODEL="perplexity/sonar"
+resolve_model_defaults "high"
+[ "$PPLX_ARG_PRESET" = "low" ] || { echo "configured preset ignored: $PPLX_ARG_PRESET"; exit 1; }
+[ "$PPLX_ARG_MODEL" = "perplexity/sonar" ] || { echo "configured model ignored: $PPLX_ARG_MODEL"; exit 1; }
+
+# A configured model alone must not get the fallback preset bolted on.
+reset_args
+PPLX_PRESET_EXPLICIT=""
+PPLX_PRESET="medium"
+PPLX_MODEL="anthropic/claude-sonnet-5"
+resolve_model_defaults "high"
+[ -z "$PPLX_ARG_PRESET" ] || { echo "fallback preset fought the configured model"; exit 1; }
+[ "$PPLX_ARG_MODEL" = "anthropic/claude-sonnet-5" ] || { echo "configured model lost"; exit 1; }
+
+# Nothing configured — the script's own fallback applies.
+reset_args
+PPLX_PRESET_EXPLICIT=""
+PPLX_PRESET="medium"
+PPLX_MODEL=""
+resolve_model_defaults "high"
+[ "$PPLX_ARG_PRESET" = "high" ] || { echo "fallback preset missing: $PPLX_ARG_PRESET"; exit 1; }
+[ -z "$PPLX_ARG_MODEL" ] || { echo "model invented out of nowhere"; exit 1; }
+
+# An explicit CLI flag beats both config and fallback, and does not drag the
+# configured model along with it.
+reset_args
+PPLX_ARG_PRESET="xhigh"
+PPLX_PRESET_EXPLICIT=1
+PPLX_PRESET="low"
+PPLX_MODEL="perplexity/sonar"
+resolve_model_defaults "high"
+[ "$PPLX_ARG_PRESET" = "xhigh" ] || { echo "CLI preset overridden"; exit 1; }
+[ -z "$PPLX_ARG_MODEL" ] || { echo "config model leaked past an explicit --preset"; exit 1; }
+
+PPLX_PRESET_EXPLICIT=""
+PPLX_PRESET="medium"
+PPLX_MODEL=""
+
 # --- rejected combinations ---
 reset_args
 PPLX_ARG_INPUT="q"
