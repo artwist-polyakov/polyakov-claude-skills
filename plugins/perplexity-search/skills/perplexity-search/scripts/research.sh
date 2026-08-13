@@ -183,7 +183,8 @@ else
     PPLX_ARG_UPDATED_BEFORE=$(normalize_date "$PPLX_ARG_UPDATED_BEFORE")
 
     BODY_FILE="$PPLX_TMPDIR/pplx_research_body.$$.json"
-    trap 'rm -f "$BODY_FILE"' EXIT INT TERM
+    LOCK_DIR=""
+    trap 'rm -f "$BODY_FILE"; lock_release "$LOCK_DIR"' EXIT INT TERM
     build_agent_body "$BODY_FILE"
 
     KEY=$(cache_key "research|$(cat "$BODY_FILE")")
@@ -209,6 +210,18 @@ else
         echo "full report: $MD_FILE"
         echo "raw json:    $JSON_FILE"
         exit 0
+    fi
+
+    # Everything from here to the marker write is one critical section: probing
+    # for a reusable run and then submitting one is check-then-act, and two
+    # overlapping invocations of the same query would otherwise both find
+    # nothing and both pay. The lock is released before polling starts, so a
+    # waiting sibling gets in quickly and adopts the run we just recorded.
+    LOCK_DIR="$OUT_DIR/$KEY.lock"
+    if ! lock_acquire "$LOCK_DIR" 120; then
+        LOCK_DIR=""
+        die "Another invocation is already starting this query and did not finish in time" \
+            "Re-run in a moment: it will adopt that run instead of paying for a second one."
     fi
 
     # An identical run may still be in flight — from an earlier --no-wait, or
@@ -274,6 +287,11 @@ else
         index_append "research" "$KEY" "$QUERY_LABEL" "$JSON_FILE"
         echo "submitted: $RESPONSE_ID" >&2
     fi
+
+    # The id is recorded, so anyone waiting can adopt it now. Polling can take
+    # half an hour and must not hold the lock.
+    lock_release "$LOCK_DIR"
+    LOCK_DIR=""
 
     if [ -n "$NO_WAIT" ]; then
         echo "=== Perplexity Research (submitted) ==="

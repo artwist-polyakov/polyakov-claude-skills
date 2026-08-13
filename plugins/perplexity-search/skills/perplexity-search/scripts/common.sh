@@ -316,6 +316,41 @@ effective_cache_ttl() {
     fi
 }
 
+# --- Per-key lock ----------------------------------------------------
+#
+# Checking for a reusable run and then submitting one is a check-then-act
+# sequence. Two invocations of the same expensive query that overlap before
+# either records its id would both see nothing and both pay. `mkdir` is atomic
+# on POSIX filesystems, so it is the lock primitive here.
+
+# lock_acquire DIR [MAX_WAIT_SECONDS] — 0 when the lock is held by us.
+lock_acquire() {
+    _la_dir="$1"
+    _la_max="${2:-120}"
+    _la_waited=0
+
+    while ! mkdir "$_la_dir" 2>/dev/null; do
+        # A lock left behind by a killed process must not block forever.
+        _la_age=$(cache_age_seconds "$_la_dir" 2>/dev/null || echo 0)
+        if [ "$_la_age" -gt "${PPLX_LOCK_STALE:-900}" ] 2>/dev/null; then
+            echo "Removing a stale lock (${_la_age}s old): $_la_dir" >&2
+            rm -rf "$_la_dir"
+            continue
+        fi
+        if [ "$_la_waited" -ge "$_la_max" ]; then
+            return 1
+        fi
+        [ "$_la_waited" -gt 0 ] || echo "Another invocation is starting this query; waiting for it..." >&2
+        sleep 1
+        _la_waited=$((_la_waited + 1))
+    done
+    return 0
+}
+
+lock_release() {
+    [ -z "$1" ] || rm -rf "$1"
+}
+
 # index_append SCRIPT KEY LABEL PATH — one grep-able row per run
 index_append() {
     _IDX="$PPLX_INDEX_FILE" _S="$1" _K="$2" _L="$3" _P="$4" python3 - <<'PY'
@@ -344,6 +379,25 @@ PY
 # whenever a refresh failed. The temp file sits in the destination directory so
 # the rename is atomic.
 
+# _rq_retry_safe METHOD HTTP_STATUS CURL_EXIT — 0 when resending cannot double
+# the bill.
+#
+# GET is idempotent, so it is always safe. POST is not: `POST /v1/agent` starts
+# a background run, and a lost response or a --max-time cutoff says nothing
+# about whether the API accepted it. Resending then creates a second billable
+# run that we cannot even adopt, because its id never reached us. So a POST is
+# only retried when the request provably never landed:
+#   curl 6  — host not resolved
+#   curl 7  — connection refused / could not connect
+# A 429 is handled earlier: the server explicitly rejected it and does not bill.
+_rq_retry_safe() {
+    [ "$1" = "POST" ] || return 0
+    case "$3" in
+        6|7) return 0 ;;
+        *)   return 1 ;;
+    esac
+}
+
 # _rq_fail MESSAGE [DETAIL] — drop the scratch files _pplx_request is holding,
 # then report. Split out so every failure path cleans up the same way.
 _rq_fail() {
@@ -366,19 +420,31 @@ _pplx_request() {
         _rq_attempt=$((_rq_attempt + 1))
 
         if [ "$_rq_method" = "POST" ]; then
-            _rq_status=$(printf 'header = "Authorization: Bearer %s"\n' "$PERPLEXITY_API_KEY" \
+            if _rq_status=$(printf 'header = "Authorization: Bearer %s"\n' "$PERPLEXITY_API_KEY" \
                 | curl -sS --config - \
                     -H "Content-Type: application/json" \
                     -o "$_rq_tmp" -D "$_rq_hdr" -w '%{http_code}' \
                     --max-time "$PPLX_HTTP_TIMEOUT" \
                     -X POST --data-binary "@$_rq_body" \
-                    "${PPLX_API_BASE}${_rq_path}") || _rq_status="000"
+                    "${PPLX_API_BASE}${_rq_path}")
+            then
+                _rq_curl=0
+            else
+                _rq_curl=$?
+                _rq_status="000"
+            fi
         else
-            _rq_status=$(printf 'header = "Authorization: Bearer %s"\n' "$PERPLEXITY_API_KEY" \
+            if _rq_status=$(printf 'header = "Authorization: Bearer %s"\n' "$PERPLEXITY_API_KEY" \
                 | curl -sS --config - \
                     -o "$_rq_tmp" -D "$_rq_hdr" -w '%{http_code}' \
                     --max-time "$PPLX_HTTP_TIMEOUT" \
-                    "${PPLX_API_BASE}${_rq_path}") || _rq_status="000"
+                    "${PPLX_API_BASE}${_rq_path}")
+            then
+                _rq_curl=0
+            else
+                _rq_curl=$?
+                _rq_status="000"
+            fi
         fi
 
         case "$_rq_status" in
@@ -408,11 +474,16 @@ _pplx_request() {
                     "Search API allows 50 query units/s; Agent API limits are tier-based. Rejected 429s are not billed."
                 ;;
             000|5[0-9][0-9])
-                if [ "$_rq_attempt" -lt "$PPLX_MAX_RETRIES" ]; then
+                if [ "$_rq_attempt" -lt "$PPLX_MAX_RETRIES" ] &&
+                   _rq_retry_safe "$_rq_method" "$_rq_status" "$_rq_curl"; then
                     echo "Transient failure (HTTP $_rq_status). Retry ${_rq_attempt}/${PPLX_MAX_RETRIES} in ${_rq_delay}s..." >&2
                     sleep "$_rq_delay"
                     _rq_delay=$((_rq_delay * 2))
                     continue
+                fi
+                if [ "$_rq_method" = "POST" ] && ! _rq_retry_safe "$_rq_method" "$_rq_status" "$_rq_curl"; then
+                    _rq_fail "POST $_rq_path failed after the request was already on the wire (HTTP $_rq_status, curl exit $_rq_curl)" \
+                        "Not resending it: the API may have accepted the request, and a blind retry would start a second billable run. Check whether the first one exists before trying again."
                 fi
                 _rq_fail "HTTP $_rq_status from $_rq_path after ${_rq_attempt} attempts" \
                     "$(head -c 500 "$_rq_tmp" 2>/dev/null)"

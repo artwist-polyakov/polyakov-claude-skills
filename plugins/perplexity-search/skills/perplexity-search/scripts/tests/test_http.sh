@@ -21,13 +21,16 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 cat > "$TMP_DIR/mock.py" <<'PY'
-import http.server, json, sys
+import http.server, json, sys, time
 
 PORT_FILE = sys.argv[1]
+SLOW_COUNT_FILE = sys.argv[2]
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
     hits = 0
+
+    posts_to_slow = 0
 
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
@@ -35,6 +38,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(401)
             self.end_headers()
             self.wfile.write(b'{"error":"bad key"}')
+            return
+        if self.path == "/slow":
+            # The request was accepted; the client just never hears back in time.
+            Handler.posts_to_slow += 1
+            with open(SLOW_COUNT_FILE, "w", encoding="utf-8") as fh:
+                fh.write(str(Handler.posts_to_slow))
+            time.sleep(3)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b"{}")
             return
         Handler.hits += 1
         if Handler.hits == 1:
@@ -81,7 +95,8 @@ server.serve_forever()
 PY
 
 PORT_FILE="$TMP_DIR/port"
-python3 "$TMP_DIR/mock.py" "$PORT_FILE" >/dev/null 2>&1 &
+SLOW_COUNT_FILE="$TMP_DIR/slow_posts"
+python3 "$TMP_DIR/mock.py" "$PORT_FILE" "$SLOW_COUNT_FILE" >/dev/null 2>&1 &
 SERVER_PID=$!
 
 WAITED=0
@@ -164,6 +179,23 @@ PROBE_STATUS=$(pplx_probe_get "/unauthorized" "$TMP_DIR/probe.json")
 PROBE_STATUS=$(pplx_probe_get "/ok" "$TMP_DIR/probe_ok.json")
 [ "$PROBE_STATUS" = "200" ] || { echo "probe reported '$PROBE_STATUS', expected 200"; exit 1; }
 [ -s "$TMP_DIR/probe_ok.json" ] || { echo "probe did not save a successful response"; exit 1; }
+
+# A POST that times out after the server already took it must NOT be resent:
+# `POST /v1/agent` starts a billable background run, and a blind retry would
+# start a second one whose id we never learn.
+if (
+    PPLX_HTTP_TIMEOUT=1
+    pplx_post "/slow" "$TMP_DIR/body.json" "$TMP_DIR/slow_out.json"
+) >/dev/null 2>&1; then
+    echo "a timed-out POST should not report success"
+    exit 1
+fi
+sleep 4  # let the mock finish its handler before counting
+SLOW_POSTS=$(cat "$SLOW_COUNT_FILE" 2>/dev/null || echo 0)
+[ "$SLOW_POSTS" = "1" ] || {
+    echo "an ambiguous POST was resent $SLOW_POSTS times — each one bills a new run"
+    exit 1
+}
 
 # No scratch files left behind either.
 if find "$TMP_DIR" -name '*.part.*' | grep -q .; then

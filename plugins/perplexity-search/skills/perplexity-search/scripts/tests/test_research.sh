@@ -49,6 +49,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         Handler.submissions += 1
         with open(COUNT_FILE, "w", encoding="utf-8") as fh:
             fh.write(str(Handler.submissions))
+        if mode() == "slowpost":
+            # Widen the window between "decided to submit" and "id recorded",
+            # which is exactly where two concurrent invocations collide.
+            time.sleep(2)
         # Every submission starts a fresh background run.
         self._send({"id": f"{RESPONSE_ID}_{Handler.submissions}", "status": "queued"})
 
@@ -184,5 +188,30 @@ sh "$SCRIPTS/research.sh" --query "$QUERY" --cache-ttl 60 --poll 1 --timeout 20 
     exit 1
 }
 echo ok > "$MODE_FILE"
+
+# 7. Two concurrent invocations of the same new query must produce one run.
+# Probing for a reusable id and then submitting is check-then-act; without a
+# per-key lock both processes see nothing and both pay.
+echo slowpost > "$MODE_FILE"
+CONCURRENT_QUERY="совершенно новый запрос для гонки"
+BEFORE=$(submissions)
+sh "$SCRIPTS/research.sh" --query "$CONCURRENT_QUERY" --no-wait >/dev/null 2>&1 &
+P1=$!
+sh "$SCRIPTS/research.sh" --query "$CONCURRENT_QUERY" --no-wait >/dev/null 2>&1 &
+P2=$!
+wait "$P1" 2>/dev/null || true
+wait "$P2" 2>/dev/null || true
+AFTER=$(submissions)
+[ "$((AFTER - BEFORE))" = "1" ] || {
+    echo "two concurrent invocations produced $((AFTER - BEFORE)) billable runs, expected 1"
+    exit 1
+}
+echo ok > "$MODE_FILE"
+
+# No lock directories may survive a completed run.
+if find "$PPLX_CACHE_DIR/research" -name '*.lock' | grep -q .; then
+    echo "a lock directory outlived the run that took it"
+    exit 1
+fi
 
 echo PASS
