@@ -1,0 +1,27 @@
+{
+  "id": "req-fixture-0001",
+  "server_time": null,
+  "results": [
+    {
+      "title": "First result title",
+      "url": "https://example.org/articles/one",
+      "snippet": "This is the full snippet body for the first result. It is long enough that it clearly belongs in the .txt dump rather than in the ranked table.",
+      "date": "2026-05-01",
+      "last_updated": "2026-06-02"
+    },
+    {
+      "title": "Messy\ttitle with tabs\nand a newline",
+      "url": "https://news.example.com/b?utm_source=x",
+      "snippet": "Second snippet.",
+      "date": null,
+      "last_updated": "2026-07-11"
+    },
+    {
+      "title": "Third result",
+      "url": "https://docs.example.net/guide",
+      "snippet": "",
+      "date": "2026-01-09",
+      "last_updated": null
+    }
+  ]
+}

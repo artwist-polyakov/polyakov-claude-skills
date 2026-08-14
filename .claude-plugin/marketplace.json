@@ -120,6 +120,12 @@
       "description": "Компилятор прикладных знаний из книг и длинных источников в личные скиллы с картой источников",
       "source": "./plugins/knowledge-compiler",
       "category": "productivity"
+    },
+    {
+      "name": "perplexity-search",
+      "description": "Perplexity API на shell: сырая выдача, ответ с цитатами, deep research в фоне, чтение страниц; cache-first",
+      "source": "./plugins/perplexity-search",
+      "category": "productivity"
     }
   ]
 }
