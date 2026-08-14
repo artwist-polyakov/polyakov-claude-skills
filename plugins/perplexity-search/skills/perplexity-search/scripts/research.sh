@@ -184,7 +184,9 @@ else
 
     BODY_FILE="$PPLX_TMPDIR/pplx_research_body.$$.json"
     LOCK_DIR=""
-    trap 'rm -f "$BODY_FILE"; lock_release "$LOCK_DIR"' EXIT INT TERM
+    trap 'rm -f "$BODY_FILE"; lock_release "$LOCK_DIR"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
     build_agent_body "$BODY_FILE"
 
     KEY=$(cache_key "research|$(cat "$BODY_FILE")")
@@ -326,6 +328,22 @@ with open(os.environ["_J"], encoding="utf-8") as fh:
 print(err.get("message", "") if isinstance(err, dict) else str(err))
 ')
         [ -z "$_ERR" ] || echo "error: $_ERR"
+        exit 1
+        ;;
+    incomplete)
+        # Terminal but unfinished — usually truncated. Whatever text arrived is
+        # still worth keeping, so render it, but never report success: callers
+        # and automation would take a partial report for a complete one.
+        SOURCES=$(render_agent_response "$JSON_FILE" "$MD_FILE" "$QUERY_LABEL" || echo 0)
+        echo "=== Perplexity Research (incomplete) ==="
+        echo "response id: $RESPONSE_ID"
+        echo "sources: $SOURCES"
+        echo "the run stopped before finishing — treat the report below as partial"
+        print_head "$MD_FILE" "$LIMIT"
+        echo ""
+        echo "partial report: $MD_FILE"
+        echo "raw json:       $JSON_FILE"
+        echo "re-run with --no-cache, or raise --max-output-tokens, to get a full one"
         exit 1
         ;;
 esac

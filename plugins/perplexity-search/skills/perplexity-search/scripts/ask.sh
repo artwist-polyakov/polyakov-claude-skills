@@ -111,7 +111,9 @@ OUT_DIR="$PPLX_CACHE_DIR/ask"
 mkdir -p "$OUT_DIR"
 
 BODY_FILE="$PPLX_TMPDIR/pplx_ask_body.$$.json"
-trap 'rm -f "$BODY_FILE"' EXIT INT TERM
+trap 'rm -f "$BODY_FILE"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 build_agent_body "$BODY_FILE"
 
 KEY=$(cache_key "ask|$(cat "$BODY_FILE")")

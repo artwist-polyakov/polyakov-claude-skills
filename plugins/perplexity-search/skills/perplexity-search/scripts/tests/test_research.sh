@@ -16,7 +16,9 @@ cleanup() {
     [ -z "$SERVER_PID" ] || kill "$SERVER_PID" 2>/dev/null || true
     rm -rf "$TMP_DIR"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 cat > "$TMP_DIR/mock.py" <<'PY'
 import http.server, json, os, sys, time
@@ -26,7 +28,7 @@ RESPONSE_ID = "resp_mocked1"
 
 
 def mode():
-    """ok | stale | flaky — how GET /v1/agent/<id> should answer."""
+    """ok | stale | flaky | incomplete | slowpost — how the mock should answer."""
     try:
         with open(MODE_FILE, encoding="utf-8") as fh:
             return fh.read().strip() or "ok"
@@ -61,6 +63,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if current == "flaky":
             # A transient server-side failure: the run may well still be alive.
             self._send({"error": "upstream unavailable"}, code=503)
+            return
+        if current == "incomplete":
+            # Terminal, but the run stopped before finishing.
+            self._send({
+                "id": self.path.rsplit("/", 1)[-1],
+                "object": "response",
+                "created_at": int(time.time()) - 5,
+                "status": "incomplete",
+                "model": "openai/gpt-5.6-sol",
+                "output": [{"type": "message", "role": "assistant",
+                            "content": [{"type": "output_text", "text": "Half a rep"}]}],
+                "usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3},
+            })
             return
         # "stale" reports a run that finished long ago.
         created = int(time.time()) - (10 * 86400 if current == "stale" else 5)
@@ -213,5 +228,21 @@ if find "$PPLX_CACHE_DIR/research" -name '*.lock' | grep -q .; then
     echo "a lock directory outlived the run that took it"
     exit 1
 fi
+
+# 8. `incomplete` is a terminal status, not a success: automation must not take
+# a truncated report for a finished one.
+echo incomplete > "$MODE_FILE"
+INC_OUT=$(sh "$SCRIPTS/research.sh" --query "запрос с обрывом" --no-cache --poll 1 --timeout 20 2>&1) && INC_RC=0 || INC_RC=$?
+[ "$INC_RC" != "0" ] || { echo "an incomplete run reported success"; exit 1; }
+case "$INC_OUT" in
+    *incomplete*) : ;;
+    *) echo "the incomplete status was not surfaced:"; printf '%s\n' "$INC_OUT"; exit 1 ;;
+esac
+# The partial text is still saved rather than thrown away.
+case "$INC_OUT" in
+    *"Half a rep"*) : ;;
+    *) echo "the partial report was discarded"; exit 1 ;;
+esac
+echo ok > "$MODE_FILE"
 
 echo PASS

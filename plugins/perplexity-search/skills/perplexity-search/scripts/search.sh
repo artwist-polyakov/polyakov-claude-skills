@@ -88,7 +88,9 @@ OUT_DIR="$PPLX_CACHE_DIR/search"
 mkdir -p "$OUT_DIR"
 
 BODY_FILE="$PPLX_TMPDIR/pplx_search_body.$$.json"
-trap 'rm -f "$BODY_FILE"' EXIT INT TERM
+trap 'rm -f "$BODY_FILE"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 build_search_body "$BODY_FILE"
 
 # The cache key is the request body itself, so any changed filter is a new entry.

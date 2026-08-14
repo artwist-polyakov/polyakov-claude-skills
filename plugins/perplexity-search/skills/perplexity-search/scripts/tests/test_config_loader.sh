@@ -10,7 +10,9 @@ PPLX_SKILL_DIR="$SKILL_DIR"
 export PPLX_SCRIPT_DIR PPLX_SKILL_DIR
 
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pplx_config_test.XXXXXX")
-trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
+trap 'rm -rf "$TMP_DIR"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 PPLX_CONFIG_FILE="$TMP_DIR/.env"
 PPLX_CACHE_DIR="$TMP_DIR/cache"

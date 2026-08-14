@@ -9,7 +9,9 @@ SKILL_DIR="$(cd "$TESTS_DIR/../.." && pwd)"
 SCRIPTS="$SKILL_DIR/scripts"
 
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pplx_cli_test.XXXXXX")
-trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
+trap 'rm -rf "$TMP_DIR"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # A key in the environment plus a config path that does not exist keeps
 # load_config happy without touching the developer's real .env.

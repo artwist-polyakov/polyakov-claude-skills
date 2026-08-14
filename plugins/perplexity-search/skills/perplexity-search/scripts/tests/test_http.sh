@@ -18,7 +18,9 @@ cleanup() {
     [ -z "$SERVER_PID" ] || kill "$SERVER_PID" 2>/dev/null || true
     rm -rf "$TMP_DIR"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 cat > "$TMP_DIR/mock.py" <<'PY'
 import http.server, json, sys, time
