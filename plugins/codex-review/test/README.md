@@ -12,6 +12,7 @@ Run everything from the repository root.
 test/
 ├── test-auto-approve-plan.sh   # unit tests for the auto-approve hook
 ├── test-integration.sh         # path-contract tests (hook ↔ state dir)
+├── test-description-file.sh    # --description-file, per-attempt logs, saved request
 ├── test-e2e.sh                 # opt-in end-to-end with real codex / claude
 └── test-fixtures/              # plan markdown fixtures used by test-e2e.sh
     ├── approve_plan.md         # trivial plan → APPROVED
@@ -65,6 +66,31 @@ Run:
 
 ```sh
 sh plugins/codex-review/test/test-integration.sh
+```
+
+## test-description-file.sh
+
+Covers the file-based description path and the artefacts a review run leaves
+behind.
+
+Scenarios:
+
+1. `--description-file` refuses a missing file, an empty file, a description
+   also passed inline, and a `--plan-file` passed alongside it.
+2. Text read from the file reaches the Codex prompt verbatim — backticks
+   included, which is what passing the same text as an argument destroys.
+3. A log left by an earlier attempt at the same iteration is kept; the retry
+   writes `codex-<phase>-<N>.2.log` beside it.
+4. The description sent for review is stored next to that attempt's log as
+   `codex-<phase>-<N>.request.md`.
+
+Does **not** require the `codex` binary — a stub on `PATH` records the prompt
+and writes the verdict.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-description-file.sh
 ```
 
 ## test-e2e.sh
@@ -126,5 +152,5 @@ CODEX_E2E=1 sh plugins/codex-review/test/test-e2e.sh stale
 
 ## Exit codes
 
-All three scripts exit `0` on success and `1` if any assertion failed.
+All four scripts exit `0` on success and `1` if any assertion failed.
 `test-e2e.sh` additionally exits `0` (skip) when `CODEX_E2E` is not set.
