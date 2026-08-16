@@ -102,6 +102,16 @@ Addressed concerns: [if resubmit — point-by-point from previous review]
 bash scripts/codex-review.sh code "What changed: JWT auth middleware + refresh endpoint. Key decisions: RS256 over HS256 for key rotation. Files: auth/jwt.py (middleware), api/auth.py (refresh endpoint). Tests: 3 new tests (expired/invalid/valid tokens), all pass."
 ```
 
+#### Описание из файла
+
+Если в описании есть обратные кавычки (обычное дело — так пишут имена функций и полей), `$` или `$(...)` — передавай текст файлом, а не аргументом: шелл выполняет такие фрагменты внутри двойных кавычек, и до Codex доходит искажённый текст либо вызов падает с `command not found`.
+
+```bash
+bash scripts/codex-review.sh code --description-file /path/to/description.md
+```
+
+Опция работает и для `init`. Одновременно с `--plan-file` или с описанием в аргументе — ошибка.
+
 ### 5. Управление состоянием
 
 ```bash
@@ -198,6 +208,8 @@ When `AUTO_REVIEW=true` in `.codex-review/config.env`, the entire review cycle r
 7. After implementation, run code review:
    ```bash
    bash scripts/codex-review.sh code "code description"
+   # or, when the description contains backticks / `$` / `$(...)`:
+   bash scripts/codex-review.sh code --description-file /path/to/description.md
    ```
 8. **Formal verdict check** — same as step 3: run `bash scripts/codex-state.sh get verdict` and check for exact string `APPROVED`.
 9. `CHANGES_REQUESTED` → fix code, resubmit automatically.

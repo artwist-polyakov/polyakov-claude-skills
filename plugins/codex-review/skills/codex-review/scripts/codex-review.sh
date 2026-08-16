@@ -4,6 +4,7 @@
 #   init "task description"
 #   plan --plan-file <path>   (reads file content, passes inline to Codex)
 #   code "description"
+#   init|code --description-file <path>   (reads file content instead of argv)
 #
 # Exit codes:
 #   0 — review received (APPROVED or CHANGES_REQUESTED)
@@ -29,6 +30,7 @@ fi
 shift
 
 DESCRIPTION=""
+DESCRIPTION_FILE=""
 PLAN_FILE=""
 MAX_ITER=""
 
@@ -36,6 +38,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --plan-file)
             PLAN_FILE="$2"
+            shift 2
+            ;;
+        --description-file)
+            DESCRIPTION_FILE="$2"
             shift 2
             ;;
         --max-iter)
@@ -48,6 +54,32 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# --- Description from a file (init / code) ---
+# A description written in Markdown normally contains backticks, and a shell
+# executes those as command substitution when the text is passed as an argument:
+# the review then reaches Codex mangled, or the call dies with
+# "some_identifier: command not found". Reading the text from a file keeps it
+# verbatim.
+if [[ -n "$DESCRIPTION_FILE" ]]; then
+    if [[ -n "$PLAN_FILE" ]]; then
+        echo "ERROR: Use either --plan-file or --description-file, not both." >&2
+        exit 1
+    fi
+    if [[ -n "$DESCRIPTION" ]]; then
+        echo "ERROR: Description given both inline and via --description-file. Pass it one way." >&2
+        exit 1
+    fi
+    if [[ ! -f "$DESCRIPTION_FILE" ]]; then
+        echo "ERROR: Description file not found: $DESCRIPTION_FILE" >&2
+        exit 1
+    fi
+    DESCRIPTION="$(cat "$DESCRIPTION_FILE")"
+    if [[ -z "$DESCRIPTION" ]]; then
+        echo "ERROR: Description file is empty: $DESCRIPTION_FILE" >&2
+        exit 1
+    fi
+fi
 
 # --- Validate arguments per command ---
 if [[ "$COMMAND" == "plan" ]]; then
@@ -69,6 +101,7 @@ if [[ "$COMMAND" == "plan" ]]; then
 elif [[ -z "$DESCRIPTION" && "$COMMAND" != "status" ]]; then
     echo "ERROR: Description is required." >&2
     echo "Usage: codex-review.sh <init|code> \"description\" [--max-iter N]" >&2
+    echo "   or: codex-review.sh <init|code> --description-file <path> [--max-iter N]" >&2
     exit 1
 fi
 
@@ -214,6 +247,21 @@ save_note() {
         echo ""
         echo "$content"
     } > "$note_file"
+}
+
+# --- Pick a log path that does not overwrite an earlier attempt ---
+# A run that dies before writing its verdict (killed process, lost connection)
+# leaves the reasoning in its log, and the iteration counter does not advance —
+# so the next attempt would reuse the same name and destroy the only record.
+next_attempt_log() {
+    local base="$1"
+    local candidate="$base.log"
+    local attempt=2
+    while [[ -e "$candidate" ]]; do
+        candidate="$base.$attempt.log"
+        attempt=$((attempt + 1))
+    done
+    echo "$candidate"
 }
 
 # --- Update state.json ---
@@ -465,7 +513,12 @@ cmd_review() {
 
     # Call codex with resume
     local output_file="$STATE_DIR/last_response.txt"
-    local log_file="$STATE_DIR/codex-${phase}-${next_iteration}.log"
+    local log_file
+    log_file="$(next_attempt_log "$STATE_DIR/codex-${phase}-${next_iteration}")"
+
+    # What was sent, stored next to the log of the run that sent it. A run that
+    # dies before its verdict otherwise leaves no record of what it reviewed.
+    printf '%s\n' "$DESCRIPTION" > "${log_file%.log}.request.md"
 
     echo "Sending $phase for review (iteration ${next_iteration}/${MAX_ITERATIONS})..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
@@ -530,6 +583,11 @@ case "$COMMAND" in
         echo "  init \"task\"                    Create a new Codex session for the given task" >&2
         echo "  plan --plan-file <path>        Submit plan for review (reads file, passes inline)" >&2
         echo "  code \"description\"             Submit code for review" >&2
+        echo "" >&2
+        echo "Options:" >&2
+        echo "  --description-file <path>      Read the init/code description from a file" >&2
+        echo "                                 instead of argv (keeps backticks verbatim)" >&2
+        echo "  --max-iter N                   Override the iteration limit for this call" >&2
         echo "" >&2
         echo "Exit codes:" >&2
         echo "  0 — Review received (APPROVED or CHANGES_REQUESTED)" >&2
