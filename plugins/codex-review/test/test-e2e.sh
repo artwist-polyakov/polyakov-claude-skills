@@ -13,6 +13,7 @@
 #   CODEX_E2E=1 sh plugins/codex-review/test/test-e2e.sh                  # all scenarios
 #   CODEX_E2E=1 sh plugins/codex-review/test/test-e2e.sh approve          # only approve
 #   CODEX_E2E=1 sh plugins/codex-review/test/test-e2e.sh approve reject   # subset
+#   CODEX_E2E=1 sh plugins/codex-review/test/test-e2e.sh filedesc         # only filedesc
 #   CODEX_E2E=1 sh plugins/codex-review/test/test-e2e.sh stale            # only stale
 #
 # Available scenarios:
@@ -29,6 +30,15 @@
 #     B3 resubmit plan — resubmit fixture in SAME session → APPROVED
 #     B4 hook allow  — stale reject was cleared before step B3
 #
+#   filedesc — Repo F: description read from a file (3 codex calls)
+#     F1 refusal     — multi-line task without --task-label → refused, no session
+#     F2 bad label   — label containing a double quote → refused
+#     F3 init        — --description-file + --task-label → label stored as given,
+#                      state.json valid, full task text in codex-init.request.md
+#     F4 code review — description with backticks / $HOME / $(…) → APPROVED, and
+#                      the text is found verbatim on the codex side
+#     F5 archive     — a new session moves saved requests out with their logs
+#
 #   stale    — Repo S: stale-state survival test (1 real claude run + ~2 codex calls)
 #     Pre-seeds .codex-review/main with stale verdict.txt=APPROVED + state.json
 #     + notes from a fake completed prior task. Invokes real claude in plan
@@ -36,7 +46,7 @@
 #     state, runs init, archives the old artifacts, and runs a fresh review
 #     for the new task — i.e. the stale verdict does NOT silently auto-approve.
 #
-# Total cost (all scenarios): ~5 codex calls + 1 claude run, ~3-5 minutes.
+# Total cost (all scenarios): ~8 codex calls + 1 claude run, ~5-7 minutes.
 
 set -e
 
@@ -61,13 +71,16 @@ if ! command -v codex >/dev/null 2>&1; then
     exit 1
 fi
 
-if [ ! -f "$FIXTURES/approve_plan.md" ] || [ ! -f "$FIXTURES/reject_plan.md" ] || [ ! -f "$FIXTURES/resubmit_plan.md" ]; then
-    echo "ERROR: fixtures missing in $FIXTURES" >&2
-    exit 1
-fi
+for fixture in approve_plan.md reject_plan.md resubmit_plan.md \
+    task_description.md code_description.md; do
+    if [ ! -f "$FIXTURES/$fixture" ]; then
+        echo "ERROR: fixture missing: $FIXTURES/$fixture" >&2
+        exit 1
+    fi
+done
 
 # --- Scenario selection ---
-ALL_SCENARIOS="approve reject stale"
+ALL_SCENARIOS="approve reject filedesc stale"
 if [ $# -eq 0 ]; then
     SELECTED="$ALL_SCENARIOS"
 else
@@ -450,13 +463,126 @@ NOTE
 }
 
 # ============================
+# Scenario: description from a file
+# ============================
+# The one text in this suite that must survive verbatim: a shell executes
+# backticks and $(...) inside a double-quoted argument, so a Markdown
+# description of code only reaches Codex intact when it travels as a file.
+scenario_filedesc() {
+    printf "\n=== Scenario filedesc: description from a file ===\n"
+    RF="$TMPDIR_BASE/test-e2e-filedesc-$$"
+    init_test_repo "$RF"
+    state_dir_f="$(cd "$RF" && bash "$STATE_CMD" dir)"
+
+    # --- F1: a multi-line task without a label is refused, for free ---
+    # No session is opened, so this costs no codex call.
+    printf "F1: init without --task-label should be refused\n"
+    out_f1="$(cd "$RF" && bash "$REVIEW_CMD" init \
+        --description-file "$FIXTURES/task_description.md" 2>&1)" || true
+    assert_contains "multi-line task without a label is refused" "$out_f1" "single line"
+    assert_contains "the refusal names the option to pass" "$out_f1" "--task-label"
+    if [ -f "$state_dir_f/codex-init.log" ]; then
+        FAIL=$((FAIL + 1))
+        printf "  FAIL: refusal still opened a session (codex-init.log exists)\n"
+    else
+        PASS=$((PASS + 1))
+        printf "  PASS: no session was opened\n"
+    fi
+
+    # --- F2: a label that no reader of state.json survives is refused ---
+    printf "F2: label with a double quote should be refused\n"
+    out_f2="$(cd "$RF" && bash "$REVIEW_CMD" init \
+        --description-file "$FIXTURES/task_description.md" \
+        --task-label 'says "stale" batch' 2>&1)" || true
+    assert_contains "quoted label is refused" "$out_f2" "double quote"
+
+    # --- F3: init with a label (1 codex call) ---
+    printf "F3: init --description-file --task-label\n"
+    LABEL_F="e2e file-description wiring"
+    (
+        cd "$RF"
+        bash "$REVIEW_CMD" init --description-file "$FIXTURES/task_description.md" \
+            --task-label "$LABEL_F" >/dev/null 2>&1
+    ) || { echo "  FAIL: codex-review.sh init errored" >&2; FAIL=$((FAIL + 1)); rm -rf "$RF"; return; }
+
+    assert_eq "state.task_description = the given label" "$LABEL_F" \
+        "$(cd "$RF" && bash "$STATE_CMD" get task_description)"
+
+    if command -v python3 >/dev/null 2>&1; then
+        if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' \
+            "$state_dir_f/state.json" 2>/dev/null; then
+            PASS=$((PASS + 1)); printf "  PASS: state.json is valid JSON\n"
+        else
+            FAIL=$((FAIL + 1)); printf "  FAIL: state.json is not valid JSON\n"
+            cat "$state_dir_f/state.json"
+        fi
+    else
+        printf "  INFO: python3 absent — JSON validity not asserted\n"
+    fi
+
+    assert_contains "full task text kept beside the log" \
+        "$(cat "$state_dir_f/codex-init.request.md" 2>/dev/null)" 'C:\tmp\out'
+
+    # --- F4: code review from a file (1 codex call) ---
+    printf "F4: code --description-file\n"
+    (
+        cd "$RF"
+        bash "$REVIEW_CMD" code --description-file "$FIXTURES/code_description.md" >/dev/null 2>&1
+    ) || { echo "  FAIL: codex-review.sh code errored" >&2; FAIL=$((FAIL + 1)); rm -rf "$RF"; return; }
+
+    assert_eq "state.last_review_status = APPROVED" "APPROVED" \
+        "$(cd "$RF" && bash "$STATE_CMD" get last_review_status | tr -d '[:space:]')"
+    assert_eq "verdict.txt = APPROVED" "APPROVED" \
+        "$(tr -d '[:space:]' < "$state_dir_f/verdict.txt" 2>/dev/null)"
+
+    # The claim this whole feature rests on: the metacharacters were not eaten
+    # on the way. Checked on the codex side (its run log, or the reply it wrote),
+    # not just in the copy the script saved.
+    VERBATIM='identifiers like `beforeSend` and `$HOME`'
+    if grep -qF "$VERBATIM" "$state_dir_f/codex-code-1.log" 2>/dev/null ||
+        grep -qF "$VERBATIM" "$state_dir_f/last_response.txt" 2>/dev/null; then
+        PASS=$((PASS + 1)); printf "  PASS: backticks and \$ reached codex verbatim\n"
+    else
+        FAIL=$((FAIL + 1))
+        printf "  FAIL: verbatim text not found in the codex run log or reply\n"
+    fi
+    assert_contains "the sent description was saved" \
+        "$(cat "$state_dir_f/codex-code-1.request.md" 2>/dev/null)" "$VERBATIM"
+
+    # --- F5: a new session archives the saved requests (1 codex call) ---
+    printf "F5: a new session archives requests with their logs\n"
+    (
+        cd "$RF"
+        bash "$REVIEW_CMD" init --description-file "$FIXTURES/task_description.md" \
+            --task-label "$LABEL_F round two" >/dev/null 2>&1
+    ) || { echo "  FAIL: second init errored" >&2; FAIL=$((FAIL + 1)); rm -rf "$RF"; return; }
+
+    leftovers="$(ls "$state_dir_f"/codex-*.request.md 2>/dev/null | grep -v 'codex-init.request.md$' || true)"
+    if [ -z "$leftovers" ]; then
+        PASS=$((PASS + 1)); printf "  PASS: no request of the old session left behind\n"
+    else
+        FAIL=$((FAIL + 1)); printf "  FAIL: still in the active state dir: %s\n" "$leftovers"
+    fi
+
+    review_root_f="$(dirname "$state_dir_f")"
+    if ls "$review_root_f"/archive/*/codex-code-1.request.md >/dev/null 2>&1; then
+        PASS=$((PASS + 1)); printf "  PASS: the request was archived next to its log\n"
+    else
+        FAIL=$((FAIL + 1)); printf "  FAIL: no archived request under %s/archive/\n" "$review_root_f"
+    fi
+
+    rm -rf "$RF"
+}
+
+# ============================
 # Run selected scenarios
 # ============================
 for s in $SELECTED; do
     case "$s" in
-        approve) scenario_approve ;;
-        reject)  scenario_reject ;;
-        stale)   scenario_stale ;;
+        approve)  scenario_approve ;;
+        reject)   scenario_reject ;;
+        filedesc) scenario_filedesc ;;
+        stale)    scenario_stale ;;
     esac
 done
 

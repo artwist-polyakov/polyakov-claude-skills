@@ -121,11 +121,19 @@ Scenarios (selectable by name):
 
 | name      | cost                              | what it tests |
 |-----------|-----------------------------------|---------------|
-| `approve` | ~2 codex calls                    | init + approve cycle, hook allow, `verdict.txt` cleanup, stale guard on second call |
-| `reject`  | ~3 codex calls                    | init + reject, hook deny w/ resubmit message, resubmit in same session → APPROVED |
-| `stale`   | 1 real `claude` run + ~2 codex    | stale `.codex-review/<branch>/` artifacts from a prior task must be archived by `init` — must NOT silently auto-approve the new task |
+| `approve`  | ~2 codex calls                   | init + approve cycle, hook allow, `verdict.txt` cleanup, stale guard on second call |
+| `reject`   | ~3 codex calls                   | init + reject, hook deny w/ resubmit message, resubmit in same session → APPROVED |
+| `filedesc` | ~3 codex calls                   | `--description-file` and `--task-label`: refusals cost no session, the label is stored as given, `state.json` stays valid, backticks and `$` reach codex verbatim, saved requests are archived with their logs |
+| `stale`    | 1 real `claude` run + ~2 codex   | stale `.codex-review/<branch>/` artifacts from a prior task must be archived by `init` — must NOT silently auto-approve the new task |
 
-Total for all scenarios: ~5 codex calls + 1 claude run, roughly 3–5 minutes.
+Total for all scenarios: ~8 codex calls + 1 claude run, roughly 5–7 minutes.
+
+`filedesc` is the only scenario that asserts something on the **codex side**
+rather than in the plugin's own files: the description it sends carries
+`` `beforeSend` ``, `$HOME` and a `$(…)` shape, and the check looks for that
+text in the codex run log or in the reply codex wrote. Passed as a
+command-line argument the shell would have executed all three first, so this
+is what tells the file-based path apart from the old one.
 
 The `stale` scenario invokes `claude -p --plugin-dir ...` with a
 5-minute hard timeout. It intentionally does not assert the new plan
@@ -161,6 +169,17 @@ CODEX_E2E=1 sh plugins/codex-review/test/test-e2e.sh stale
   asks for `APPROVED`. A plain `approve_plan.md` would not work here
   because the earlier `reject_plan.md` instruction "sticks" in the
   session and keeps producing `CHANGES_REQUESTED`.
+
+Two further fixtures are fed to `--description-file` by the `filedesc`
+scenario — as an `init` task and as a code description, not as plans:
+
+- **`task_description.md`** — a task text of several lines carrying a quoted
+  phrase, a `C:\tmp\out` path and backticked identifiers: none of them can live
+  in a `state.json` value, which is why that scenario has to pass
+  `--task-label`.
+- **`code_description.md`** — a code description carrying `` `beforeSend` ``,
+  `$HOME` and a `$(…)` shape, asking for `APPROVED`. The metacharacters are the
+  point: they are what a shell would have eaten on the argv path.
 
 ## Exit codes
 
