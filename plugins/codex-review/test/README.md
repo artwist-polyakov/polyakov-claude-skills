@@ -83,10 +83,17 @@ Scenarios:
    writes `codex-<phase>-<N>.2.log` beside it.
 4. The description sent for review is stored next to that attempt's log as
    `codex-<phase>-<N>.request.md`.
-5. `init` with a multi-line description containing a double quote and a
-   backslash keeps `state.json` valid, `task_description` non-empty and on one
-   line, and the full text in `codex-init.request.md`.
-6. Opening a new session archives the saved requests together with their logs,
+5. `init` refuses a description longer than one line unless `--task-label` names
+   the task, and the refusal lands before the session is opened — no log, no
+   request file, nothing recorded.
+6. With `--task-label` given, `state.json` stays valid JSON and stores the label
+   exactly as passed, `STATUS.md` points at the full text, and the description
+   itself is kept in `codex-init.request.md`.
+7. A label no reader of `state.json` could handle is refused: containing a
+   double quote, longer than 200 characters, spanning two lines, or blank. So is
+   `--task-label` passed to a phase other than `init`.
+8. A single-line description still names itself — no label needed.
+9. Opening a new session archives the saved requests together with their logs,
    leaving none behind for the next attempt numbering to overwrite.
 
 Does **not** require the `codex` binary — a stub on `PATH` records the prompt

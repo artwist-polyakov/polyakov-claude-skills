@@ -5,6 +5,7 @@
 #   plan --plan-file <path>   (reads file content, passes inline to Codex)
 #   code "description"
 #   init|code --description-file <path>   (reads file content instead of argv)
+#   init --task-label "<one line>"        (names the task in state.json)
 #
 # Exit codes:
 #   0 — review received (APPROVED or CHANGES_REQUESTED)
@@ -32,6 +33,8 @@ shift
 DESCRIPTION=""
 DESCRIPTION_FILE=""
 PLAN_FILE=""
+TASK_LABEL=""
+TASK_LABEL_JSON=""
 MAX_ITER=""
 
 while [[ $# -gt 0 ]]; do
@@ -42,6 +45,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --description-file)
             DESCRIPTION_FILE="$2"
+            shift 2
+            ;;
+        --task-label)
+            TASK_LABEL="$2"
             shift 2
             ;;
         --max-iter)
@@ -103,6 +110,23 @@ elif [[ -z "$DESCRIPTION" && "$COMMAND" != "status" ]]; then
     echo "Usage: codex-review.sh <init|code> \"description\" [--max-iter N]" >&2
     echo "   or: codex-review.sh <init|code> --description-file <path> [--max-iter N]" >&2
     exit 1
+fi
+
+# --- Task label that names this session in state.json (init only) ---
+# Checked here, before the session is created or anything is archived, so a
+# rejected label costs nothing.
+if [[ -n "$TASK_LABEL" && "$COMMAND" != "init" ]]; then
+    echo "ERROR: --task-label applies to init — it names the task for the whole session." >&2
+    exit 1
+fi
+if [[ "$COMMAND" == "init" ]]; then
+    if [[ -n "$TASK_LABEL" ]]; then
+        TASK_LABEL_JSON="$(task_label_for_state "$TASK_LABEL" \
+            'Fix the value passed to --task-label.')" || exit 1
+    else
+        TASK_LABEL_JSON="$(task_label_for_state "$DESCRIPTION" \
+            'Name the task yourself: --task-label "<one line>". The full description still goes to Codex and to codex-init.request.md.')" || exit 1
+    fi
 fi
 
 # --- Load config & state ---
@@ -408,7 +432,7 @@ cmd_init() {
     local log_file="$STATE_DIR/codex-init.log"
 
     # The task text in full, beside the log of the run that opened the session.
-    # state.json keeps only a one-line label of it (see state_label).
+    # state.json keeps only the caller's one-line label (see --task-label).
     printf '%s\n' "$task_desc" > "$STATE_DIR/codex-init.request.md"
 
     echo "Creating Codex session..." >&2
@@ -432,9 +456,6 @@ cmd_init() {
     # Extract session_id
     SESSION_ID="$(resolve_new_session_id "$marker" "$log_file")"
 
-    local task_label
-    task_label="$(state_label "$task_desc")"
-
     write_state "{
   \"session_id\": \"$SESSION_ID\",
   \"phase\": \"initialized\",
@@ -442,7 +463,7 @@ cmd_init() {
   \"max_iterations\": $MAX_ITERATIONS,
   \"last_review_status\": \"\",
   \"last_review_timestamp\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
-  \"task_description\": \"$task_label\"
+  \"task_description\": \"$TASK_LABEL_JSON\"
 }"
 
     write_status
@@ -594,6 +615,9 @@ case "$COMMAND" in
         echo "Options:" >&2
         echo "  --description-file <path>      Read the init/code description from a file" >&2
         echo "                                 instead of argv (keeps backticks verbatim)" >&2
+        echo "  --task-label \"<one line>\"      init: names the task in state.json." >&2
+        echo "                                 Required when the description spans" >&2
+        echo "                                 more than one line" >&2
         echo "  --max-iter N                   Override the iteration limit for this call" >&2
         echo "" >&2
         echo "Exit codes:" >&2

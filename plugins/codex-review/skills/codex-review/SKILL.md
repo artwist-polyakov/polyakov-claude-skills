@@ -112,7 +112,19 @@ bash scripts/codex-review.sh code --description-file /path/to/description.md
 
 Опция работает и для `init`. Одновременно с `--plan-file` или с описанием в аргументе — ошибка.
 
-Отправленный текст сохраняется рядом с логом попытки: `codex-<phase>-<N>.request.md` для ревью, `codex-init.request.md` для сессии. В `state.json` поле `task_description` хранит однострочную метку задачи — полный текст читай из `codex-init.request.md`.
+Отправленный текст сохраняется рядом с логом попытки: `codex-<phase>-<N>.request.md` для ревью, `codex-init.request.md` для сессии.
+
+#### Название задачи для `init`
+
+`state.json` хранит одну строку — название задачи, которое видно в `STATUS.md` и в сводке архива. Название даёшь ты сам:
+
+```bash
+bash scripts/codex-review.sh init --description-file task.md --task-label "JWT auth: middleware + refresh endpoint"
+```
+
+Правила: одна строка, без двойных кавычек, до 200 символов. Если описание задачи занимает больше одной строки, а `--task-label` не передан — запуск завершается ошибкой, ничего не создаётся: назови задачу сам, а не рассчитывай, что скрипт угадает. При однострочном описании название берётся из него.
+
+Полный текст задачи в `state.json` не попадает — он целиком уходит в Codex и лежит в `codex-init.request.md`.
 
 ### 5. Управление состоянием
 

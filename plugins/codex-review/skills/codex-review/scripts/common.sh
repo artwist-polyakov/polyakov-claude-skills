@@ -136,29 +136,51 @@ get_effective_session_id() {
     echo "$sid"
 }
 
-# --- One-line label safe to embed in state.json ---
+# --- Task label for state.json ---
 # Values in state.json are written into string literals and read back with a
 # quote-delimited grep, so a value has to stay on one line and carry no double
-# quote of its own. A description read from a file is neither, so state.json
-# gets this label and the full text is kept as a file beside it.
-STATE_LABEL_MAX=200
+# quote of its own. A label that breaks either rule is refused: rewriting it
+# here would put a mangled string in front of every reader of the file, and
+# only the caller knows how to name its own task in one line.
+#
+# Prints the label ready to embed; on rejection prints the reason to stderr and
+# returns 1 (the caller must pass that on — a bare exit inside $(...) would only
+# leave the subshell).
+TASK_LABEL_MAX=200
 
-state_label() {
-    local text="$1"
-    local line
-    # First non-empty line, control characters dropped.
-    line="$(printf '%s\n' "$text" | tr -d '\000-\010\013\014\016-\037' | grep -m1 -v '^[[:space:]]*$' || true)"
+task_label_for_state() {
+    local label="$1"
+    local hint="$2"
+
     # Trim surrounding whitespace.
-    line="${line#"${line%%[![:space:]]*}"}"
-    line="${line%"${line##*[![:space:]]}"}"
-    # A trailing backslash would escape the closing quote; a double quote would
-    # end the literal early for every reader of this file.
-    line="${line//\\/\\\\}"
-    line="${line//\"/\'}"
-    if [[ ${#line} -gt $STATE_LABEL_MAX ]]; then
-        line="${line:0:$STATE_LABEL_MAX}..."
+    label="${label#"${label%%[![:space:]]*}"}"
+    label="${label%"${label##*[![:space:]]}"}"
+
+    if [[ -z "$label" ]]; then
+        echo "ERROR: task label is empty. $hint" >&2
+        return 1
     fi
-    printf '%s' "$line"
+    if [[ "$label" == *$'\n'* ]]; then
+        echo "ERROR: task label must be a single line. $hint" >&2
+        return 1
+    fi
+    if [[ "$label" == *'"'* ]]; then
+        echo "ERROR: task label must not contain a double quote — every reader of state.json cuts the value there. $hint" >&2
+        return 1
+    fi
+    if [[ ${#label} -gt $TASK_LABEL_MAX ]]; then
+        echo "ERROR: task label is ${#label} characters, the limit is $TASK_LABEL_MAX. $hint" >&2
+        return 1
+    fi
+    if [[ "$label" == *[$'\001'-$'\010'$'\013'$'\014'$'\016'-$'\037']* ]]; then
+        echo "ERROR: task label contains control characters. $hint" >&2
+        return 1
+    fi
+
+    # Escape what JSON requires and no reader is confused by.
+    label="${label//\\/\\\\}"
+    label="${label//$'\t'/\\t}"
+    printf '%s' "$label"
 }
 
 # --- Write state.json ---
@@ -188,6 +210,9 @@ write_status() {
     {
         echo "# Active Codex Review"
         echo "- Task: ${task:-not set}"
+        if [[ -f "$state_dir/codex-init.request.md" ]]; then
+            echo "- Task text: \`.codex-review/${branch}/codex-init.request.md\`"
+        fi
         echo "- Branch: ${branch}"
         echo "- Phase: ${phase:-initialized}"
         echo "- Iteration: ${iteration}/${max_iter}"

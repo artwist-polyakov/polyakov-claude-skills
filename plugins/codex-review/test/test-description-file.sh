@@ -172,20 +172,40 @@ assert_file_contains "retry saves its own description" "$STATE_DIR/codex-code-1.
 
 rm -rf "$REPO"
 
-echo "=== init keeps state.json valid and the task text in full ==="
+echo "=== init: the caller names the task ==="
+
+assert_eq_str() {
+    if [ "$2" = "$3" ]; then pass "$1"; else fail "$1" "expected [$3], got [$2]"; fi
+}
 
 REPO="$(make_repo)"
 # A description as it comes out of a file: several lines, a double quote, a
-# backslash — each of which would break a value embedded in state.json.
+# backslash — none of which can live in a state.json value.
 cat > "$REPO/task.md" <<'TASK'
 Add a retry to `beforeSend` so empty payloads are dropped
 Context: the queue calls it with a "stale" batch and a path like C:\tmp\out
 Done when: no empty payload reaches the transport
 TASK
 
-run_review "$REPO" init --description-file "$REPO/task.md" >/dev/null
-
 STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
+
+out="$(run_review "$REPO" init --description-file "$REPO/task.md")"
+assert_contains "multi-line description without a label is refused" "$out" "single line"
+assert_contains "the refusal says what to pass" "$out" "--task-label"
+if [ -f "$STATE_DIR/codex-init.log" ] || [ -f "$STATE_DIR/codex-init.request.md" ]; then
+    fail "refusal happens before the session is opened" "init left artefacts behind"
+else
+    pass "refusal happens before the session is opened"
+fi
+# Read the file rather than `get`: that subcommand reports an empty string as 0.
+if grep -q '"task_description"[[:space:]]*:[[:space:]]*""' "$STATE_DIR/state.json" 2>/dev/null; then
+    pass "nothing was recorded for the task"
+else
+    fail "nothing was recorded for the task" "$(cat "$STATE_DIR/state.json" 2>/dev/null)"
+fi
+
+LABEL='JWT auth: middleware + refresh endpoint'
+run_review "$REPO" init --description-file "$REPO/task.md" --task-label "$LABEL" >/dev/null
 
 if json_valid "$STATE_DIR/state.json"; then
     pass "state.json stays valid JSON"
@@ -193,31 +213,62 @@ else
     fail "state.json stays valid JSON" "$(cat "$STATE_DIR/state.json")"
 fi
 
-label="$(cd "$REPO" && bash "$STATE_CMD" get task_description)"
-case "$label" in
-    "") fail "task label survives the round trip" "empty task_description" ;;
-    *"beforeSend"*) pass "task label survives the round trip" ;;
-    *) fail "task label survives the round trip" "got: $label" ;;
-esac
-
-lines="$(printf '%s\n' "$label" | wc -l | tr -d ' ')"
-assert_eq_num() {
-    if [ "$2" = "$3" ]; then pass "$1"; else fail "$1" "expected $3, got $2"; fi
-}
-assert_eq_num "task label is a single line" "$lines" "1"
-
+assert_eq_str "the label is stored as given" \
+    "$(cd "$REPO" && bash "$STATE_CMD" get task_description)" "$LABEL"
+assert_file_contains "STATUS.md points at the full text" \
+    "$STATE_DIR/STATUS.md" "codex-init.request.md"
 assert_file_contains "full task text is kept beside the log" \
     "$STATE_DIR/codex-init.request.md" 'C:\tmp\out'
 assert_file_contains "full task text keeps its last line" \
     "$STATE_DIR/codex-init.request.md" "no empty payload reaches the transport"
 
+echo "=== init: a label that no reader could handle is refused ==="
+
+out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label 'says "stale" batch')"
+assert_contains "double quote in the label is refused" "$out" "double quote"
+
+LONG="$(printf 'x%.0s' $(seq 1 201))"
+out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label "$LONG")"
+assert_contains "over-long label is refused" "$out" "the limit is 200"
+
+out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label "$(printf 'first\nsecond')")"
+assert_contains "two-line label is refused" "$out" "single line"
+
+out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label '   ')"
+assert_contains "blank label is refused" "$out" "empty"
+
+printf 'code description\n' > "$REPO/desc.md"
+out="$(run_review "$REPO" code --description-file "$REPO/desc.md" --task-label "$LABEL")"
+assert_contains "the label belongs to init only" "$out" "applies to init"
+
+rm -rf "$REPO"
+
+echo "=== init: a one-line description names itself ==="
+
+REPO="$(make_repo)"
+STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
+run_review "$REPO" init "Implement JWT authentication for API" >/dev/null
+assert_eq_str "single-line description becomes the label" \
+    "$(cd "$REPO" && bash "$STATE_CMD" get task_description)" \
+    "Implement JWT authentication for API"
+
+rm -rf "$REPO"
+
 echo "=== a new session archives saved requests with their logs ==="
+
+REPO="$(make_repo)"
+cat > "$REPO/task.md" <<'TASK'
+Add a retry to `beforeSend` so empty payloads are dropped
+Done when: no empty payload reaches the transport
+TASK
+STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
+run_review "$REPO" init --description-file "$REPO/task.md" --task-label "retry in beforeSend" >/dev/null
 
 printf 'code description\n' > "$REPO/desc.md"
 run_review "$REPO" code --description-file "$REPO/desc.md" >/dev/null
 assert_file_exists "review wrote its request" "$STATE_DIR/codex-code-1.request.md"
 
-run_review "$REPO" init --description-file "$REPO/task.md" >/dev/null
+run_review "$REPO" init --description-file "$REPO/task.md" --task-label "retry in beforeSend" >/dev/null
 
 if ls "$STATE_DIR"/codex-*.request.md >/dev/null 2>&1; then
     # Only the request of the session just opened may remain.
