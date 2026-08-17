@@ -407,6 +407,10 @@ cmd_init() {
     local output_file="$STATE_DIR/last_response.txt"
     local log_file="$STATE_DIR/codex-init.log"
 
+    # The task text in full, beside the log of the run that opened the session.
+    # state.json keeps only a one-line label of it (see state_label).
+    printf '%s\n' "$task_desc" > "$STATE_DIR/codex-init.request.md"
+
     echo "Creating Codex session..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
 
@@ -428,6 +432,9 @@ cmd_init() {
     # Extract session_id
     SESSION_ID="$(resolve_new_session_id "$marker" "$log_file")"
 
+    local task_label
+    task_label="$(state_label "$task_desc")"
+
     write_state "{
   \"session_id\": \"$SESSION_ID\",
   \"phase\": \"initialized\",
@@ -435,7 +442,7 @@ cmd_init() {
   \"max_iterations\": $MAX_ITERATIONS,
   \"last_review_status\": \"\",
   \"last_review_timestamp\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
-  \"task_description\": \"$task_desc\"
+  \"task_description\": \"$task_label\"
 }"
 
     write_status

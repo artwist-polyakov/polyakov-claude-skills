@@ -136,6 +136,31 @@ get_effective_session_id() {
     echo "$sid"
 }
 
+# --- One-line label safe to embed in state.json ---
+# Values in state.json are written into string literals and read back with a
+# quote-delimited grep, so a value has to stay on one line and carry no double
+# quote of its own. A description read from a file is neither, so state.json
+# gets this label and the full text is kept as a file beside it.
+STATE_LABEL_MAX=200
+
+state_label() {
+    local text="$1"
+    local line
+    # First non-empty line, control characters dropped.
+    line="$(printf '%s\n' "$text" | tr -d '\000-\010\013\014\016-\037' | grep -m1 -v '^[[:space:]]*$' || true)"
+    # Trim surrounding whitespace.
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    # A trailing backslash would escape the closing quote; a double quote would
+    # end the literal early for every reader of this file.
+    line="${line//\\/\\\\}"
+    line="${line//\"/\'}"
+    if [[ ${#line} -gt $STATE_LABEL_MAX ]]; then
+        line="${line:0:$STATE_LABEL_MAX}..."
+    fi
+    printf '%s' "$line"
+}
+
 # --- Write state.json ---
 write_state() {
     local json="$1"
@@ -206,6 +231,7 @@ archive_previous_session() {
     done
     if ls "$state_dir"/notes/*.md &>/dev/null; then has_artifacts=true; fi
     if ls "$state_dir"/codex-*.log &>/dev/null; then has_artifacts=true; fi
+    if ls "$state_dir"/codex-*.request.md &>/dev/null; then has_artifacts=true; fi
 
     if [[ "$has_artifacts" == "false" ]]; then
         return
@@ -225,6 +251,9 @@ archive_previous_session() {
         [[ -f "$state_dir/$f" ]] && mv "$state_dir/$f" "$archive_dir/"
     done
     mv "$state_dir"/codex-*.log "$archive_dir/" 2>/dev/null || true
+    # Requests travel with the logs of the attempts that sent them: left behind,
+    # they would be overwritten once a new session reuses the attempt numbers.
+    mv "$state_dir"/codex-*.request.md "$archive_dir/" 2>/dev/null || true
     mv "$state_dir"/notes/*.md "$archive_dir/notes/" 2>/dev/null || true
 
     echo "Previous session archived to: $archive_dir" >&2

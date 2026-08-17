@@ -112,6 +112,8 @@ bash scripts/codex-review.sh code --description-file /path/to/description.md
 
 Опция работает и для `init`. Одновременно с `--plan-file` или с описанием в аргументе — ошибка.
 
+Отправленный текст сохраняется рядом с логом попытки: `codex-<phase>-<N>.request.md` для ревью, `codex-init.request.md` для сессии. В `state.json` поле `task_description` хранит однострочную метку задачи — полный текст читай из `codex-init.request.md`.
+
 ### 5. Управление состоянием
 
 ```bash
