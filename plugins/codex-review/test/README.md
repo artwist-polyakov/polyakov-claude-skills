@@ -107,8 +107,11 @@ Scenarios:
    is `--task-label` passed to a phase other than `init`, empty value included.
 9. A single-line description still names itself — no label needed. Read from a
    file, its trailing newline is not carried into the name.
-10. Opening a new session archives the saved requests together with their logs,
-   leaving none behind for the next attempt numbering to overwrite.
+10. Every file a run leaves in the state directory is covered by a line of the
+    ignore list the skill's README tells a project to add — an artefact nobody
+    ignores ends up untracked in the user's worktree.
+11. Opening a new session archives the saved requests together with their logs,
+    leaving none behind for the next attempt numbering to overwrite.
 
 Does **not** require the `codex` binary — a stub on `PATH` records the prompt
 and writes the verdict.
