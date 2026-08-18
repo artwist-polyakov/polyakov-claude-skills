@@ -76,7 +76,13 @@ done
 # newlines, so the text is read with a sentinel character appended and the
 # sentinel removed afterwards. Sets FILE_TEXT.
 read_review_file() {
-    FILE_TEXT="$(cat "$1"; printf 'x')"
+    # cat runs first in the && chain, so its failure is the status of the
+    # assignment — otherwise the trailing printf would report success over a
+    # file that was only half read.
+    if ! FILE_TEXT="$(cat -- "$1" && printf 'x')"; then
+        echo "ERROR: Could not read $1" >&2
+        return 1
+    fi
     FILE_TEXT="${FILE_TEXT%x}"
 }
 
@@ -104,7 +110,7 @@ if [[ -n "$DESCRIPTION_FILE" ]]; then
         PLAN_FILE="$DESCRIPTION_FILE"
         DESCRIPTION_FILE=""
     else
-        read_review_file "$DESCRIPTION_FILE"
+        read_review_file "$DESCRIPTION_FILE" || exit 1
         if file_text_is_blank; then
             echo "ERROR: Description file is empty: $DESCRIPTION_FILE" >&2
             exit 1
@@ -124,7 +130,7 @@ if [[ "$COMMAND" == "plan" ]]; then
         echo "ERROR: Plan file not found: $PLAN_FILE" >&2
         exit 1
     fi
-    read_review_file "$PLAN_FILE"
+    read_review_file "$PLAN_FILE" || exit 1
     if file_text_is_blank; then
         echo "ERROR: Plan file is empty: $PLAN_FILE" >&2
         exit 1
@@ -467,7 +473,7 @@ cmd_init() {
 
     # The task text in full, beside the log of the run that opened the session.
     # state.json keeps only the caller's one-line label (see --task-label).
-    printf '%s\n' "$task_desc" > "$STATE_DIR/codex-init.request.md"
+    printf '%s' "$task_desc" > "$STATE_DIR/codex-init.request.md"
 
     echo "Creating Codex session..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2

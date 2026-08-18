@@ -75,14 +75,16 @@ behind.
 
 Scenarios:
 
-1. `--description-file` refuses a missing file, a file holding nothing but
-   blank lines, a description also passed inline, and a `--plan-file` passed
-   alongside it — each with exit `1`. On `plan` the option names the plan file,
-   the same input `--plan-file` names.
+1. `--description-file` refuses a missing file, an unreadable one, a file
+   holding nothing but blank lines, a description also passed inline, and a
+   `--plan-file` passed alongside it — each checked for both the message and
+   exit `1`. On `plan` the option names the plan file, the same input
+   `--plan-file` names.
 2. Text read from the file reaches the Codex prompt verbatim — backticks
    included, which is what passing the same text as an argument destroys. The
    saved copy matches the source file byte for byte, trailing blank lines and a
-   missing final newline included (`cmp`).
+   missing final newline included (`cmp`), for a review and for the task text
+   `init` stores alike.
 3. A log left by an earlier attempt at the same iteration is kept; the retry
    writes `codex-<phase>-<N>.2.log` beside it. A request saved by an attempt
    that died before its log appeared holds the number just as a log does.

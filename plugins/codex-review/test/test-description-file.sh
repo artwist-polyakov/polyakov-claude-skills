@@ -147,18 +147,33 @@ assert_status "the refusal exits 1" 1
 : > "$REPO/empty.md"
 out="$(run_review "$REPO" code --description-file "$REPO/empty.md")"
 assert_contains "empty file is refused" "$out" "Description file is empty"
+assert_status "an empty file exits 1" 1
+
+# A file that cannot be read must say so rather than pass as empty. Root reads
+# everything, so the case only runs for an ordinary user.
+if [ "$(id -u)" != "0" ]; then
+    printf 'unreadable body\n' > "$REPO/locked.md"
+    chmod 000 "$REPO/locked.md"
+    out="$(run_review "$REPO" code --description-file "$REPO/locked.md")"
+    assert_contains "an unreadable file is reported as such" "$out" "Could not read"
+    assert_status "a read error exits 1" 1
+    chmod 644 "$REPO/locked.md"
+fi
 
 printf '\n\n   \n' > "$REPO/blank.md"
 out="$(run_review "$REPO" code --description-file "$REPO/blank.md")"
 assert_contains "a file of blank lines is refused too" "$out" "Description file is empty"
+assert_status "a blank file exits 1" 1
 
 printf '%s\n' "$DESC_TEXT" > "$REPO/desc.md"
 out="$(run_review "$REPO" code "inline text" --description-file "$REPO/desc.md")"
 assert_contains "inline plus file is refused" "$out" "Pass it one way"
+assert_status "two sources exit 1" 1
 
 printf 'plan body\n' > "$REPO/plan.md"
 out="$(run_review "$REPO" plan --plan-file "$REPO/plan.md" --description-file "$REPO/desc.md")"
 assert_contains "plan-file plus description-file is refused" "$out" "not both"
+assert_status "two file options exit 1" 1
 
 # On plan the two options name the same input, so either spelling works.
 out="$(run_review "$REPO" plan --description-file "$REPO/plan.md")"
@@ -307,10 +322,45 @@ assert_file_contains "full task text is kept beside the log" \
 assert_file_contains "full task text keeps its last line" \
     "$STATE_DIR/codex-init.request.md" "no empty payload reaches the transport"
 
+echo "=== init saves the task text to its last byte ==="
+
+REPO="$(make_repo)"
+STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
+printf 'task line\n\nlast line\n\n\n' > "$REPO/init-tail.md"
+run_review "$REPO" init --description-file "$REPO/init-tail.md" --task-label "tail task" >/dev/null
+if cmp -s "$REPO/init-tail.md" "$STATE_DIR/codex-init.request.md"; then
+    pass "trailing blank lines survive into the saved task"
+else
+    fail "trailing blank lines survive into the saved task" \
+        "$(od -c "$STATE_DIR/codex-init.request.md" | tail -3)"
+fi
+rm -rf "$REPO"
+
+REPO="$(make_repo)"
+STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
+printf 'task without a final newline' > "$REPO/init-tail.md"
+run_review "$REPO" init --description-file "$REPO/init-tail.md" --task-label "tail task" >/dev/null
+if cmp -s "$REPO/init-tail.md" "$STATE_DIR/codex-init.request.md"; then
+    pass "a task without a final newline is kept as it is"
+else
+    fail "a task without a final newline is kept as it is" \
+        "$(od -c "$STATE_DIR/codex-init.request.md" | tail -3)"
+fi
+rm -rf "$REPO"
+
 echo "=== init: a label that no reader could handle is refused ==="
+
+REPO="$(make_repo)"
+cat > "$REPO/task.md" <<'TASK'
+Add a retry to `beforeSend` so empty payloads are dropped
+Context: the queue calls it with a "stale" batch and a path like C:\tmp\out
+Done when: no empty payload reaches the transport
+TASK
+STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
 
 out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label 'says "stale" batch')"
 assert_contains "double quote in the label is refused" "$out" "double quote"
+assert_status "a quoted label exits 1" 1
 
 LONG="$(printf 'x%.0s' $(seq 1 201))"
 out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label "$LONG")"
@@ -329,9 +379,11 @@ assert_contains "backslash in the label is refused" "$out" "backslash"
 
 out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label '   ')"
 assert_contains "a label of spaces is refused" "$out" "space at its start or end"
+assert_status "a label of spaces exits 1" 1
 
 out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label 'padded name ')"
 assert_contains "a label padded with a space is refused, not trimmed" "$out" "space at its start or end"
+assert_status "a padded label exits 1" 1
 
 # Given explicitly, an empty label is an error rather than a request to fall
 # back to the description.
@@ -346,6 +398,7 @@ assert_contains "a tab at the edge of the label is refused" "$out" "control char
 printf 'code description\n' > "$REPO/desc.md"
 out="$(run_review "$REPO" code --description-file "$REPO/desc.md" --task-label "$LABEL")"
 assert_contains "the label belongs to init only" "$out" "applies to init"
+assert_status "a label outside init exits 1" 1
 
 out="$(run_review "$REPO" code --description-file "$REPO/desc.md" --task-label '')"
 assert_contains "an empty label does not slip past that guard" "$out" "applies to init"
