@@ -557,7 +557,14 @@ scenario_filedesc() {
             --task-label "$LABEL_F round two" >/dev/null 2>&1
     ) || { echo "  FAIL: second init errored" >&2; FAIL=$((FAIL + 1)); rm -rf "$RF"; return; }
 
-    leftovers="$(ls "$state_dir_f"/codex-*.request.md 2>/dev/null | grep -v 'codex-init.request.md$' || true)"
+    leftovers=""
+    for f in "$state_dir_f"/codex-*.request.md; do
+        [ -e "$f" ] || continue
+        case "$f" in
+            */codex-init.request.md) ;;
+            *) leftovers="$leftovers $f" ;;
+        esac
+    done
     if [ -z "$leftovers" ]; then
         PASS=$((PASS + 1)); printf "  PASS: no request of the old session left behind\n"
     else

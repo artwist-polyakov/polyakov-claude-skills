@@ -76,11 +76,13 @@ behind.
 Scenarios:
 
 1. `--description-file` refuses a missing file, an empty file, a description
-   also passed inline, and a `--plan-file` passed alongside it.
+   also passed inline, a `--plan-file` passed alongside it, and the `plan`
+   command, which takes `--plan-file` instead.
 2. Text read from the file reaches the Codex prompt verbatim — backticks
    included, which is what passing the same text as an argument destroys.
 3. A log left by an earlier attempt at the same iteration is kept; the retry
-   writes `codex-<phase>-<N>.2.log` beside it.
+   writes `codex-<phase>-<N>.2.log` beside it. A request saved by an attempt
+   that died before its log appeared holds the number just as a log does.
 4. The description sent for review is stored next to that attempt's log as
    `codex-<phase>-<N>.request.md`.
 5. `init` refuses a description longer than one line unless `--task-label` names
@@ -90,9 +92,11 @@ Scenarios:
    exactly as passed, `STATUS.md` points at the full text, and the description
    itself is kept in `codex-init.request.md`.
 7. A label no reader of `state.json` could handle is refused: containing a
-   double quote, a backslash, a carriage return, longer than 200 characters,
-   spanning two lines, or blank. So is `--task-label` passed to a phase other
-   than `init`.
+   double quote, a backslash, a carriage return, a tab at either end, longer
+   than 200 characters, spanning two lines, blank, or empty — an empty
+   `--task-label` is an error, not a request to fall back to the description.
+   So is `--task-label` passed to a phase other than `init`, empty value
+   included.
 8. A single-line description still names itself — no label needed.
 9. Opening a new session archives the saved requests together with their logs,
    leaving none behind for the next attempt numbering to overwrite.

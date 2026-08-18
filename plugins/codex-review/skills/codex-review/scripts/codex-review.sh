@@ -4,7 +4,8 @@
 #   init "task description"
 #   plan --plan-file <path>   (reads file content, passes inline to Codex)
 #   code "description"
-#   init|code --description-file <path>   (reads file content instead of argv)
+#   init|code --description-file <path>   (reads file content instead of argv;
+#                                          a plan is passed with --plan-file)
 #   init --task-label "<one line>"        (names the task in state.json)
 #
 # Exit codes:
@@ -34,6 +35,7 @@ DESCRIPTION=""
 DESCRIPTION_FILE=""
 PLAN_FILE=""
 TASK_LABEL=""
+TASK_LABEL_SET=0
 TASK_LABEL_JSON=""
 MAX_ITER=""
 
@@ -49,6 +51,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --task-label)
             TASK_LABEL="$2"
+            TASK_LABEL_SET=1
             shift 2
             ;;
         --max-iter)
@@ -71,6 +74,10 @@ done
 if [[ -n "$DESCRIPTION_FILE" ]]; then
     if [[ -n "$PLAN_FILE" ]]; then
         echo "ERROR: Use either --plan-file or --description-file, not both." >&2
+        exit 1
+    fi
+    if [[ "$COMMAND" == "plan" ]]; then
+        echo "ERROR: --description-file applies to init and code. A plan is passed with --plan-file, which reads the file the same way." >&2
         exit 1
     fi
     if [[ -n "$DESCRIPTION" ]]; then
@@ -115,12 +122,12 @@ fi
 # --- Task label that names this session in state.json (init only) ---
 # Checked here, before the session is created or anything is archived, so a
 # rejected label costs nothing.
-if [[ -n "$TASK_LABEL" && "$COMMAND" != "init" ]]; then
+if [[ $TASK_LABEL_SET -eq 1 && "$COMMAND" != "init" ]]; then
     echo "ERROR: --task-label applies to init — it names the task for the whole session." >&2
     exit 1
 fi
 if [[ "$COMMAND" == "init" ]]; then
-    if [[ -n "$TASK_LABEL" ]]; then
+    if [[ $TASK_LABEL_SET -eq 1 ]]; then
         TASK_LABEL_JSON="$(task_label_for_state "$TASK_LABEL" \
             'Fix the value passed to --task-label.')" || exit 1
     else
@@ -281,7 +288,10 @@ next_attempt_log() {
     local base="$1"
     local candidate="$base.log"
     local attempt=2
-    while [[ -e "$candidate" ]]; do
+    # Both files of the pair count as taken: the request is written before the
+    # log exists, so a run killed in between would otherwise have its request
+    # overwritten by the retry.
+    while [[ -e "$candidate" || -e "${candidate%.log}.request.md" ]]; do
         candidate="$base.$attempt.log"
         attempt=$((attempt + 1))
     done

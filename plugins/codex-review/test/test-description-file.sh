@@ -6,8 +6,10 @@
 #     also given inline, and a --plan-file given alongside it
 #   - text read from the file reaches Codex verbatim, backticks included
 #     (passing the same text as an argument makes the shell execute them)
-#   - a log left by an earlier attempt at the same iteration is not overwritten
+#   - a log left by an earlier attempt at the same iteration is not overwritten,
+#     and neither is a request saved by an attempt that never got a log
 #   - the description sent for review is stored next to that attempt's log
+#   - the task label is validated as given and never rewritten
 #
 # Does NOT require the real `codex` binary: a stub on PATH records the prompt
 # and writes the verdict, so the whole review path runs offline.
@@ -134,6 +136,9 @@ printf 'plan body\n' > "$REPO/plan.md"
 out="$(run_review "$REPO" plan --plan-file "$REPO/plan.md" --description-file "$REPO/desc.md")"
 assert_contains "plan-file plus description-file is refused" "$out" "not both"
 
+out="$(run_review "$REPO" plan --description-file "$REPO/desc.md")"
+assert_contains "plan says which option carries a plan" "$out" "applies to init and code"
+
 rm -rf "$REPO"
 
 echo "=== Description reaches Codex verbatim ==="
@@ -169,6 +174,26 @@ printf 'reasoning of the killed run\n' > "$STATE_DIR/codex-code-1.log"
 assert_file_contains "earlier log is intact" "$STATE_DIR/codex-code-1.log" "reasoning of the killed run"
 assert_file_exists "retry writes a second log" "$STATE_DIR/codex-code-1.2.log"
 assert_file_contains "retry saves its own description" "$STATE_DIR/codex-code-1.2.request.md" "$MARKER"
+
+rm -rf "$REPO"
+
+echo "=== A request saved without its log keeps its number ==="
+
+REPO="$(make_repo)"
+printf '%s\n' "$DESC_TEXT" > "$REPO/desc.md"
+STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
+
+# The request is written before the run that sends it creates its log, so a run
+# killed in that window leaves a request with no log beside it.
+printf 'description of the killed run\n' > "$STATE_DIR/codex-code-1.request.md"
+
+(cd "$REPO" && PATH="$REPO/bin:$PATH" \
+    bash "$REVIEW_CMD" code --description-file "$REPO/desc.md" >/dev/null 2>&1) || true
+
+assert_file_contains "the orphaned request is intact" \
+    "$STATE_DIR/codex-code-1.request.md" "description of the killed run"
+assert_file_contains "the retry saves its own request" \
+    "$STATE_DIR/codex-code-1.2.request.md" "$MARKER"
 
 rm -rf "$REPO"
 
@@ -245,9 +270,21 @@ assert_contains "backslash in the label is refused" "$out" "backslash"
 out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label '   ')"
 assert_contains "blank label is refused" "$out" "empty"
 
+# Given explicitly, an empty label is an error rather than a request to fall
+# back to the description.
+out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label '')"
+assert_contains "an explicitly empty label is refused" "$out" "empty"
+
+# A tab at the end used to be trimmed away before the checks could see it.
+out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label "$(printf 'trailing\t')")"
+assert_contains "a tab at the edge of the label is refused" "$out" "control characters"
+
 printf 'code description\n' > "$REPO/desc.md"
 out="$(run_review "$REPO" code --description-file "$REPO/desc.md" --task-label "$LABEL")"
 assert_contains "the label belongs to init only" "$out" "applies to init"
+
+out="$(run_review "$REPO" code --description-file "$REPO/desc.md" --task-label '')"
+assert_contains "an empty label does not slip past that guard" "$out" "applies to init"
 
 rm -rf "$REPO"
 
@@ -280,7 +317,13 @@ run_review "$REPO" init --description-file "$REPO/task.md" --task-label "retry i
 
 if ls "$STATE_DIR"/codex-*.request.md >/dev/null 2>&1; then
     # Only the request of the session just opened may remain.
-    leftovers="$(ls "$STATE_DIR"/codex-*.request.md | grep -v 'codex-init.request.md$' || true)"
+    leftovers=""
+    for f in "$STATE_DIR"/codex-*.request.md; do
+        case "$f" in
+            */codex-init.request.md) ;;
+            *) leftovers="$leftovers $f" ;;
+        esac
+    done
     if [ -z "$leftovers" ]; then
         pass "old requests left the active state dir"
     else

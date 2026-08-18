@@ -146,7 +146,8 @@ get_effective_session_id() {
 # label in front of every reader is worse than an error, and only the caller
 # knows how to name its own task in one line.
 #
-# Prints the label unchanged; on rejection prints the reason to stderr and
+# Prints the label with surrounding plain spaces removed and nothing else
+# changed; on rejection prints the reason to stderr and
 # returns 1 (the caller must pass that on — a bare exit inside $(...) would only
 # leave the subshell).
 TASK_LABEL_MAX=200
@@ -155,16 +156,15 @@ task_label_for_state() {
     local label="$1"
     local hint="$2"
 
-    # Trim surrounding whitespace.
-    label="${label#"${label%%[![:space:]]*}"}"
-    label="${label%"${label##*[![:space:]]}"}"
-
-    if [[ -z "$label" ]]; then
-        echo "ERROR: task label is empty. $hint" >&2
-        return 1
-    fi
+    # Checked on the value as it arrived: trimming first would quietly swallow a
+    # tab or a carriage return sitting at either end, and those are exactly the
+    # characters this refuses.
     if [[ "$label" == *$'\n'* || "$label" == *$'\r'* ]]; then
         echo "ERROR: task label must be a single line. $hint" >&2
+        return 1
+    fi
+    if [[ "$label" == *[$'\001'-$'\037']* ]]; then
+        echo "ERROR: task label contains control characters. $hint" >&2
         return 1
     fi
     if [[ "$label" == *'"'* ]]; then
@@ -175,12 +175,18 @@ task_label_for_state() {
         echo "ERROR: task label must not contain a backslash — readers of state.json do not decode JSON escapes, so it would come back doubled. $hint" >&2
         return 1
     fi
-    if [[ ${#label} -gt $TASK_LABEL_MAX ]]; then
-        echo "ERROR: task label is ${#label} characters, the limit is $TASK_LABEL_MAX. $hint" >&2
+
+    # Only plain spaces are trimmed, and only at the ends — the one thing a
+    # reader cannot tell apart from the label itself.
+    label="${label#"${label%%[! ]*}"}"
+    label="${label%"${label##*[! ]}"}"
+
+    if [[ -z "$label" ]]; then
+        echo "ERROR: task label is empty. $hint" >&2
         return 1
     fi
-    if [[ "$label" == *[$'\001'-$'\037']* ]]; then
-        echo "ERROR: task label contains control characters. $hint" >&2
+    if [[ ${#label} -gt $TASK_LABEL_MAX ]]; then
+        echo "ERROR: task label is ${#label} characters, the limit is $TASK_LABEL_MAX. $hint" >&2
         return 1
     fi
 
