@@ -75,11 +75,14 @@ behind.
 
 Scenarios:
 
-1. `--description-file` refuses a missing file, an empty file, a description
-   also passed inline, a `--plan-file` passed alongside it, and the `plan`
-   command, which takes `--plan-file` instead.
+1. `--description-file` refuses a missing file, a file holding nothing but
+   blank lines, a description also passed inline, and a `--plan-file` passed
+   alongside it — each with exit `1`. On `plan` the option names the plan file,
+   the same input `--plan-file` names.
 2. Text read from the file reaches the Codex prompt verbatim — backticks
-   included, which is what passing the same text as an argument destroys.
+   included, which is what passing the same text as an argument destroys. The
+   saved copy matches the source file byte for byte, trailing blank lines and a
+   missing final newline included (`cmp`).
 3. A log left by an earlier attempt at the same iteration is kept; the retry
    writes `codex-<phase>-<N>.2.log` beside it. A request saved by an attempt
    that died before its log appeared holds the number just as a log does.
@@ -91,13 +94,13 @@ Scenarios:
 6. With `--task-label` given, `state.json` stays valid JSON and stores the label
    exactly as passed, `STATUS.md` points at the full text, and the description
    itself is kept in `codex-init.request.md`.
-7. A label no reader of `state.json` could handle is refused: containing a
-   double quote, a backslash, a carriage return, a tab at either end, longer
-   than 200 characters, spanning two lines, blank, or empty — an empty
-   `--task-label` is an error, not a request to fall back to the description.
-   So is `--task-label` passed to a phase other than `init`, empty value
-   included.
-8. A single-line description still names itself — no label needed.
+7. A label that would not survive being stored and read back is refused rather
+   than repaired: a double quote, a backslash, a carriage return, a tab, a space
+   at either end, more than 200 characters, two lines, or empty — an empty
+   `--task-label` is an error, not a request to fall back to the description. So
+   is `--task-label` passed to a phase other than `init`, empty value included.
+8. A single-line description still names itself — no label needed. Read from a
+   file, its trailing newline is not carried into the name.
 9. Opening a new session archives the saved requests together with their logs,
    leaving none behind for the next attempt numbering to overwrite.
 

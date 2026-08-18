@@ -98,12 +98,31 @@ STUB
     echo "$repo"
 }
 
+# Callers read run_review through a command substitution, which runs it in a
+# subshell — so the exit status goes to a file rather than to a variable.
+STATUS_FILE="$(mktemp)"
+trap 'rm -f "$STATUS_FILE"' EXIT
+
 run_review() {
-    # repo, then codex-review.sh arguments; prints stderr+stdout, never fails
+    # repo, then codex-review.sh arguments; prints stderr+stdout, never fails.
+    # The exit status is recorded so a refusal can be checked for the status it
+    # exits with and not only for the text it prints.
     _repo="$1"
     shift
-    (cd "$_repo" && PATH="$_repo/bin:$PATH" CODEX_HOME="$_repo/codex-home" \
-        bash "$REVIEW_CMD" "$@" 2>&1) || true
+    _out="$( (cd "$_repo" && PATH="$_repo/bin:$PATH" CODEX_HOME="$_repo/codex-home" \
+        bash "$REVIEW_CMD" "$@" 2>&1) )" && _st=0 || _st=$?
+    printf '%s' "$_st" > "$STATUS_FILE"
+    printf '%s' "$_out"
+}
+
+assert_status() {
+    # name, expected status
+    _got="$(cat "$STATUS_FILE")"
+    if [ "$_got" = "$2" ]; then
+        pass "$1"
+    else
+        fail "$1" "expected exit $2, got $_got"
+    fi
 }
 
 json_valid() {
@@ -123,10 +142,15 @@ REPO="$(make_repo)"
 
 out="$(run_review "$REPO" code --description-file "$REPO/nope.md")"
 assert_contains "missing file is refused" "$out" "Description file not found"
+assert_status "the refusal exits 1" 1
 
 : > "$REPO/empty.md"
 out="$(run_review "$REPO" code --description-file "$REPO/empty.md")"
 assert_contains "empty file is refused" "$out" "Description file is empty"
+
+printf '\n\n   \n' > "$REPO/blank.md"
+out="$(run_review "$REPO" code --description-file "$REPO/blank.md")"
+assert_contains "a file of blank lines is refused too" "$out" "Description file is empty"
 
 printf '%s\n' "$DESC_TEXT" > "$REPO/desc.md"
 out="$(run_review "$REPO" code "inline text" --description-file "$REPO/desc.md")"
@@ -136,8 +160,13 @@ printf 'plan body\n' > "$REPO/plan.md"
 out="$(run_review "$REPO" plan --plan-file "$REPO/plan.md" --description-file "$REPO/desc.md")"
 assert_contains "plan-file plus description-file is refused" "$out" "not both"
 
-out="$(run_review "$REPO" plan --description-file "$REPO/desc.md")"
-assert_contains "plan says which option carries a plan" "$out" "applies to init and code"
+# On plan the two options name the same input, so either spelling works.
+out="$(run_review "$REPO" plan --description-file "$REPO/plan.md")"
+assert_status "plan accepts --description-file as its plan" 0
+
+out="$(run_review "$REPO" plan --description-file "$REPO/nope.md")"
+assert_contains "plan reports the file it could not read" "$out" "Description file not found"
+assert_status "that refusal exits 1" 1
 
 rm -rf "$REPO"
 
@@ -155,6 +184,37 @@ assert_file_contains "backticks survive into the Codex prompt" "$PROMPT_LOG" "$M
 STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
 assert_file_exists "first attempt writes its log" "$STATE_DIR/codex-code-1.log"
 assert_file_contains "the sent description is saved" "$STATE_DIR/codex-code-1.request.md" "$MARKER"
+
+rm -rf "$REPO"
+
+echo "=== The file is read to its last byte ==="
+
+REPO="$(make_repo)"
+STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
+
+# Trailing blank lines and a missing final newline are where reading a file
+# through a command substitution loses bytes.
+printf 'first line\n\nlast line\n\n\n' > "$REPO/tail.md"
+run_review "$REPO" code --description-file "$REPO/tail.md" >/dev/null
+if cmp -s "$REPO/tail.md" "$STATE_DIR/codex-code-1.request.md"; then
+    pass "trailing blank lines survive"
+else
+    fail "trailing blank lines survive" \
+        "$(od -c "$STATE_DIR/codex-code-1.request.md" | tail -3)"
+fi
+
+rm -rf "$REPO"
+
+REPO="$(make_repo)"
+STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
+printf 'no newline at the end' > "$REPO/tail.md"
+run_review "$REPO" code --description-file "$REPO/tail.md" >/dev/null
+if cmp -s "$REPO/tail.md" "$STATE_DIR/codex-code-1.request.md"; then
+    pass "a file without a final newline is kept as it is"
+else
+    fail "a file without a final newline is kept as it is" \
+        "$(od -c "$STATE_DIR/codex-code-1.request.md" | tail -3)"
+fi
 
 rm -rf "$REPO"
 
@@ -268,12 +328,16 @@ out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label '
 assert_contains "backslash in the label is refused" "$out" "backslash"
 
 out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label '   ')"
-assert_contains "blank label is refused" "$out" "empty"
+assert_contains "a label of spaces is refused" "$out" "space at its start or end"
+
+out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label 'padded name ')"
+assert_contains "a label padded with a space is refused, not trimmed" "$out" "space at its start or end"
 
 # Given explicitly, an empty label is an error rather than a request to fall
 # back to the description.
 out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label '')"
 assert_contains "an explicitly empty label is refused" "$out" "empty"
+assert_status "that refusal exits 1" 1
 
 # A tab at the end used to be trimmed away before the checks could see it.
 out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label "$(printf 'trailing\t')")"
@@ -294,6 +358,18 @@ REPO="$(make_repo)"
 STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
 run_review "$REPO" init "Implement JWT authentication for API" >/dev/null
 assert_eq_str "single-line description becomes the label" \
+    "$(cd "$REPO" && bash "$STATE_CMD" get task_description)" \
+    "Implement JWT authentication for API"
+
+rm -rf "$REPO"
+
+# Read from a file the same description carries a trailing newline, which is
+# part of the document and not of the name.
+REPO="$(make_repo)"
+STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
+printf 'Implement JWT authentication for API\n' > "$REPO/one-line.md"
+run_review "$REPO" init --description-file "$REPO/one-line.md" >/dev/null
+assert_eq_str "a one-line file names the task without its newline" \
     "$(cd "$REPO" && bash "$STATE_CMD" get task_description)" \
     "Implement JWT authentication for API"
 

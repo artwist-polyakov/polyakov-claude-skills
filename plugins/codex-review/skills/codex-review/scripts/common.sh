@@ -146,8 +146,7 @@ get_effective_session_id() {
 # label in front of every reader is worse than an error, and only the caller
 # knows how to name its own task in one line.
 #
-# Prints the label with surrounding plain spaces removed and nothing else
-# changed; on rejection prints the reason to stderr and
+# Prints the label exactly as it came in; on rejection prints the reason to stderr and
 # returns 1 (the caller must pass that on — a bare exit inside $(...) would only
 # leave the subshell).
 TASK_LABEL_MAX=200
@@ -156,9 +155,9 @@ task_label_for_state() {
     local label="$1"
     local hint="$2"
 
-    # Checked on the value as it arrived: trimming first would quietly swallow a
-    # tab or a carriage return sitting at either end, and those are exactly the
-    # characters this refuses.
+    # Everything is checked on the value as it arrived. Nothing here rewrites
+    # the label — not even trimming it, which would put a name in state.json
+    # that the caller never wrote.
     if [[ "$label" == *$'\n'* || "$label" == *$'\r'* ]]; then
         echo "ERROR: task label must be a single line. $hint" >&2
         return 1
@@ -176,13 +175,12 @@ task_label_for_state() {
         return 1
     fi
 
-    # Only plain spaces are trimmed, and only at the ends — the one thing a
-    # reader cannot tell apart from the label itself.
-    label="${label#"${label%%[! ]*}"}"
-    label="${label%"${label##*[! ]}"}"
-
     if [[ -z "$label" ]]; then
         echo "ERROR: task label is empty. $hint" >&2
+        return 1
+    fi
+    if [[ "$label" == " "* || "$label" == *" " ]]; then
+        echo "ERROR: task label has a space at its start or end — readers of state.json keep it, so trim it yourself rather than have it stored. $hint" >&2
         return 1
     fi
     if [[ ${#label} -gt $TASK_LABEL_MAX ]]; then

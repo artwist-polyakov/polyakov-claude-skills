@@ -4,8 +4,8 @@
 #   init "task description"
 #   plan --plan-file <path>   (reads file content, passes inline to Codex)
 #   code "description"
-#   init|code --description-file <path>   (reads file content instead of argv;
-#                                          a plan is passed with --plan-file)
+#   init|plan|code --description-file <path>  (reads file content instead of argv;
+#                                             on plan it names the plan file)
 #   init --task-label "<one line>"        (names the task in state.json)
 #
 # Exit codes:
@@ -65,19 +65,29 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# --- Description from a file (init / code) ---
+# --- Description or plan read from a file ---
 # A description written in Markdown normally contains backticks, and a shell
 # executes those as command substitution when the text is passed as an argument:
 # the review then reaches Codex mangled, or the call dies with
 # "some_identifier: command not found". Reading the text from a file keeps it
 # verbatim.
+#
+# Verbatim includes the end of the file: command substitution strips trailing
+# newlines, so the text is read with a sentinel character appended and the
+# sentinel removed afterwards. Sets FILE_TEXT.
+read_review_file() {
+    FILE_TEXT="$(cat "$1"; printf 'x')"
+    FILE_TEXT="${FILE_TEXT%x}"
+}
+
+# A file holding nothing but whitespace has no review in it.
+file_text_is_blank() {
+    [[ -z "${FILE_TEXT//[[:space:]]/}" ]]
+}
+
 if [[ -n "$DESCRIPTION_FILE" ]]; then
     if [[ -n "$PLAN_FILE" ]]; then
         echo "ERROR: Use either --plan-file or --description-file, not both." >&2
-        exit 1
-    fi
-    if [[ "$COMMAND" == "plan" ]]; then
-        echo "ERROR: --description-file applies to init and code. A plan is passed with --plan-file, which reads the file the same way." >&2
         exit 1
     fi
     if [[ -n "$DESCRIPTION" ]]; then
@@ -88,10 +98,18 @@ if [[ -n "$DESCRIPTION_FILE" ]]; then
         echo "ERROR: Description file not found: $DESCRIPTION_FILE" >&2
         exit 1
     fi
-    DESCRIPTION="$(cat "$DESCRIPTION_FILE")"
-    if [[ -z "$DESCRIPTION" ]]; then
-        echo "ERROR: Description file is empty: $DESCRIPTION_FILE" >&2
-        exit 1
+    if [[ "$COMMAND" == "plan" ]]; then
+        # A plan is a description that happens to live in a file, and --plan-file
+        # already reads one. The two options name the same input here.
+        PLAN_FILE="$DESCRIPTION_FILE"
+        DESCRIPTION_FILE=""
+    else
+        read_review_file "$DESCRIPTION_FILE"
+        if file_text_is_blank; then
+            echo "ERROR: Description file is empty: $DESCRIPTION_FILE" >&2
+            exit 1
+        fi
+        DESCRIPTION="$FILE_TEXT"
     fi
 fi
 
@@ -106,12 +124,12 @@ if [[ "$COMMAND" == "plan" ]]; then
         echo "ERROR: Plan file not found: $PLAN_FILE" >&2
         exit 1
     fi
-    # Read plan file content as description
-    DESCRIPTION="$(cat "$PLAN_FILE")"
-    if [[ -z "$DESCRIPTION" ]]; then
+    read_review_file "$PLAN_FILE"
+    if file_text_is_blank; then
         echo "ERROR: Plan file is empty: $PLAN_FILE" >&2
         exit 1
     fi
+    DESCRIPTION="$FILE_TEXT"
 elif [[ -z "$DESCRIPTION" && "$COMMAND" != "status" ]]; then
     echo "ERROR: Description is required." >&2
     echo "Usage: codex-review.sh <init|code> \"description\" [--max-iter N]" >&2
@@ -131,7 +149,13 @@ if [[ "$COMMAND" == "init" ]]; then
         TASK_LABEL_JSON="$(task_label_for_state "$TASK_LABEL" \
             'Fix the value passed to --task-label.')" || exit 1
     else
-        TASK_LABEL_JSON="$(task_label_for_state "$DESCRIPTION" \
+        # The description is a document, not a name: its surrounding
+        # whitespace — a trailing newline above all — is not part of what the
+        # caller called the task.
+        LABEL_FROM_DESCRIPTION="$DESCRIPTION"
+        LABEL_FROM_DESCRIPTION="${LABEL_FROM_DESCRIPTION#"${LABEL_FROM_DESCRIPTION%%[![:space:]]*}"}"
+        LABEL_FROM_DESCRIPTION="${LABEL_FROM_DESCRIPTION%"${LABEL_FROM_DESCRIPTION##*[![:space:]]}"}"
+        TASK_LABEL_JSON="$(task_label_for_state "$LABEL_FROM_DESCRIPTION" \
             'Name the task yourself: --task-label "<one line>". The full description still goes to Codex and to codex-init.request.md.')" || exit 1
     fi
 fi
@@ -556,7 +580,7 @@ cmd_review() {
 
     # What was sent, stored next to the log of the run that sent it. A run that
     # dies before its verdict otherwise leaves no record of what it reviewed.
-    printf '%s\n' "$DESCRIPTION" > "${log_file%.log}.request.md"
+    printf '%s' "$DESCRIPTION" > "${log_file%.log}.request.md"
 
     echo "Sending $phase for review (iteration ${next_iteration}/${MAX_ITERATIONS})..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
