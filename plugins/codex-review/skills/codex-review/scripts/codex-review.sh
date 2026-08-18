@@ -569,7 +569,7 @@ cmd_review() {
 
     # Save plan file copy for history
     if [[ "$phase" == "plan" && -n "$PLAN_FILE" ]]; then
-        cp "$PLAN_FILE" "$STATE_DIR/plan.md"
+        cp -- "$PLAN_FILE" "$STATE_DIR/plan.md"
         echo "Plan saved to: $STATE_DIR/plan.md" >&2
     fi
 

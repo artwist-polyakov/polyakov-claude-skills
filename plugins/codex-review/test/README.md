@@ -75,35 +75,39 @@ behind.
 
 Scenarios:
 
-1. `--description-file` refuses a missing file, an unreadable one, a file
-   holding nothing but blank lines, a description also passed inline, and a
-   `--plan-file` passed alongside it — each checked for both the message and
-   exit `1`. On `plan` the option names the plan file, the same input
-   `--plan-file` names.
-2. Text read from the file reaches the Codex prompt verbatim — backticks
+1. `--description-file` refuses a missing file, a file holding nothing but
+   blank lines, a description also passed inline, and a `--plan-file` passed
+   alongside it. Every refusal in the suite is checked for its message and for
+   exit `1` (`assert_refusal`). On `plan` the option names the plan file, the
+   same input `--plan-file` names.
+2. A read that dies part way through is reported as a read error, not as an
+   empty file, and nothing is sent: a `cat` stub on `PATH` prints half the text
+   and fails, so the case runs for root as well. A path whose name starts with
+   a dash is treated as a path, not as an option.
+3. Text read from the file reaches the Codex prompt verbatim — backticks
    included, which is what passing the same text as an argument destroys. The
    saved copy matches the source file byte for byte, trailing blank lines and a
    missing final newline included (`cmp`), for a review and for the task text
    `init` stores alike.
-3. A log left by an earlier attempt at the same iteration is kept; the retry
+4. A log left by an earlier attempt at the same iteration is kept; the retry
    writes `codex-<phase>-<N>.2.log` beside it. A request saved by an attempt
    that died before its log appeared holds the number just as a log does.
-4. The description sent for review is stored next to that attempt's log as
+5. The description sent for review is stored next to that attempt's log as
    `codex-<phase>-<N>.request.md`.
-5. `init` refuses a description longer than one line unless `--task-label` names
+6. `init` refuses a description longer than one line unless `--task-label` names
    the task, and the refusal lands before the session is opened — no log, no
    request file, nothing recorded.
-6. With `--task-label` given, `state.json` stays valid JSON and stores the label
+7. With `--task-label` given, `state.json` stays valid JSON and stores the label
    exactly as passed, `STATUS.md` points at the full text, and the description
    itself is kept in `codex-init.request.md`.
-7. A label that would not survive being stored and read back is refused rather
+8. A label that would not survive being stored and read back is refused rather
    than repaired: a double quote, a backslash, a carriage return, a tab, a space
    at either end, more than 200 characters, two lines, or empty — an empty
    `--task-label` is an error, not a request to fall back to the description. So
    is `--task-label` passed to a phase other than `init`, empty value included.
-8. A single-line description still names itself — no label needed. Read from a
+9. A single-line description still names itself — no label needed. Read from a
    file, its trailing newline is not carried into the name.
-9. Opening a new session archives the saved requests together with their logs,
+10. Opening a new session archives the saved requests together with their logs,
    leaving none behind for the next attempt numbering to overwrite.
 
 Does **not** require the `codex` binary — a stub on `PATH` records the prompt
