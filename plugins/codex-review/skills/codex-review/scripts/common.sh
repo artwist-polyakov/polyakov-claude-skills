@@ -136,6 +136,63 @@ get_effective_session_id() {
     echo "$sid"
 }
 
+# --- Task label for state.json ---
+# Values in state.json are written into string literals and read back with a
+# quote-delimited grep that does not decode JSON escapes. So the label has to be
+# a string that survives that round trip unchanged: one line, no double quote
+# (readers cut the value there), no backslash and no control character (a
+# JSON-escaped one would be read back as the escape itself, e.g. C:\tmp coming
+# out as C:\\tmp). Anything else is refused rather than rewritten — a mangled
+# label in front of every reader is worse than an error, and only the caller
+# knows how to name its own task in one line.
+#
+# Prints the label exactly as it came in; on rejection prints the reason to stderr and
+# returns 1 (the caller must pass that on — a bare exit inside $(...) would only
+# leave the subshell).
+TASK_LABEL_MAX=200
+
+task_label_for_state() {
+    local label="$1"
+    local hint="$2"
+
+    # Everything is checked on the value as it arrived. Nothing here rewrites
+    # the label — not even trimming it, which would put a name in state.json
+    # that the caller never wrote.
+    if [[ "$label" == *$'\n'* || "$label" == *$'\r'* ]]; then
+        echo "ERROR: task label must be a single line. $hint" >&2
+        return 1
+    fi
+    if [[ "$label" == *[$'\001'-$'\037']* ]]; then
+        echo "ERROR: task label contains control characters. $hint" >&2
+        return 1
+    fi
+    if [[ "$label" == *'"'* ]]; then
+        echo "ERROR: task label must not contain a double quote — every reader of state.json cuts the value there. $hint" >&2
+        return 1
+    fi
+    if [[ "$label" == *'\'* ]]; then
+        echo "ERROR: task label must not contain a backslash — readers of state.json do not decode JSON escapes, so it would come back doubled. $hint" >&2
+        return 1
+    fi
+
+    if [[ -z "$label" ]]; then
+        echo "ERROR: task label is empty. $hint" >&2
+        return 1
+    fi
+    if [[ "$label" == " "* || "$label" == *" " ]]; then
+        echo "ERROR: task label has a space at its start or end — readers of state.json keep it, so trim it yourself rather than have it stored. $hint" >&2
+        return 1
+    fi
+    if [[ ${#label} -gt $TASK_LABEL_MAX ]]; then
+        echo "ERROR: task label is ${#label} characters, the limit is $TASK_LABEL_MAX. $hint" >&2
+        return 1
+    fi
+
+    # No escaping: everything that would need it has been refused above, so the
+    # label reaches every reader exactly as the caller wrote it.
+    printf '%s' "$label"
+}
+
 # --- Write state.json ---
 write_state() {
     local json="$1"
@@ -163,6 +220,9 @@ write_status() {
     {
         echo "# Active Codex Review"
         echo "- Task: ${task:-not set}"
+        if [[ -f "$state_dir/codex-init.request.md" ]]; then
+            echo "- Task text: \`.codex-review/${branch}/codex-init.request.md\`"
+        fi
         echo "- Branch: ${branch}"
         echo "- Phase: ${phase:-initialized}"
         echo "- Iteration: ${iteration}/${max_iter}"
@@ -206,6 +266,7 @@ archive_previous_session() {
     done
     if ls "$state_dir"/notes/*.md &>/dev/null; then has_artifacts=true; fi
     if ls "$state_dir"/codex-*.log &>/dev/null; then has_artifacts=true; fi
+    if ls "$state_dir"/codex-*.request.md &>/dev/null; then has_artifacts=true; fi
 
     if [[ "$has_artifacts" == "false" ]]; then
         return
@@ -225,6 +286,9 @@ archive_previous_session() {
         [[ -f "$state_dir/$f" ]] && mv "$state_dir/$f" "$archive_dir/"
     done
     mv "$state_dir"/codex-*.log "$archive_dir/" 2>/dev/null || true
+    # Requests travel with the logs of the attempts that sent them: left behind,
+    # they would be overwritten once a new session reuses the attempt numbers.
+    mv "$state_dir"/codex-*.request.md "$archive_dir/" 2>/dev/null || true
     mv "$state_dir"/notes/*.md "$archive_dir/notes/" 2>/dev/null || true
 
     echo "Previous session archived to: $archive_dir" >&2

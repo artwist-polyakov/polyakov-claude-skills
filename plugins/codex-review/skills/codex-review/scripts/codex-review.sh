@@ -4,6 +4,9 @@
 #   init "task description"
 #   plan --plan-file <path>   (reads file content, passes inline to Codex)
 #   code "description"
+#   init|plan|code --description-file <path>  (reads file content instead of argv;
+#                                             on plan it names the plan file)
+#   init --task-label "<one line>"        (names the task in state.json)
 #
 # Exit codes:
 #   0 — review received (APPROVED or CHANGES_REQUESTED)
@@ -29,13 +32,26 @@ fi
 shift
 
 DESCRIPTION=""
+DESCRIPTION_FILE=""
 PLAN_FILE=""
+TASK_LABEL=""
+TASK_LABEL_SET=0
+TASK_LABEL_JSON=""
 MAX_ITER=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --plan-file)
             PLAN_FILE="$2"
+            shift 2
+            ;;
+        --description-file)
+            DESCRIPTION_FILE="$2"
+            shift 2
+            ;;
+        --task-label)
+            TASK_LABEL="$2"
+            TASK_LABEL_SET=1
             shift 2
             ;;
         --max-iter)
@@ -49,6 +65,60 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# --- Description or plan read from a file ---
+# A description written in Markdown normally contains backticks, and a shell
+# executes those as command substitution when the text is passed as an argument:
+# the review then reaches Codex mangled, or the call dies with
+# "some_identifier: command not found". Reading the text from a file keeps it
+# verbatim.
+#
+# Verbatim includes the end of the file: command substitution strips trailing
+# newlines, so the text is read with a sentinel character appended and the
+# sentinel removed afterwards. Sets FILE_TEXT.
+read_review_file() {
+    # cat runs first in the && chain, so its failure is the status of the
+    # assignment — otherwise the trailing printf would report success over a
+    # file that was only half read.
+    if ! FILE_TEXT="$(cat -- "$1" && printf 'x')"; then
+        echo "ERROR: Could not read $1" >&2
+        return 1
+    fi
+    FILE_TEXT="${FILE_TEXT%x}"
+}
+
+# A file holding nothing but whitespace has no review in it.
+file_text_is_blank() {
+    [[ -z "${FILE_TEXT//[[:space:]]/}" ]]
+}
+
+if [[ -n "$DESCRIPTION_FILE" ]]; then
+    if [[ -n "$PLAN_FILE" ]]; then
+        echo "ERROR: Use either --plan-file or --description-file, not both." >&2
+        exit 1
+    fi
+    if [[ -n "$DESCRIPTION" ]]; then
+        echo "ERROR: Description given both inline and via --description-file. Pass it one way." >&2
+        exit 1
+    fi
+    if [[ ! -f "$DESCRIPTION_FILE" ]]; then
+        echo "ERROR: Description file not found: $DESCRIPTION_FILE" >&2
+        exit 1
+    fi
+    if [[ "$COMMAND" == "plan" ]]; then
+        # A plan is a description that happens to live in a file, and --plan-file
+        # already reads one. The two options name the same input here.
+        PLAN_FILE="$DESCRIPTION_FILE"
+        DESCRIPTION_FILE=""
+    else
+        read_review_file "$DESCRIPTION_FILE" || exit 1
+        if file_text_is_blank; then
+            echo "ERROR: Description file is empty: $DESCRIPTION_FILE" >&2
+            exit 1
+        fi
+        DESCRIPTION="$FILE_TEXT"
+    fi
+fi
+
 # --- Validate arguments per command ---
 if [[ "$COMMAND" == "plan" ]]; then
     if [[ -z "$PLAN_FILE" ]]; then
@@ -60,16 +130,40 @@ if [[ "$COMMAND" == "plan" ]]; then
         echo "ERROR: Plan file not found: $PLAN_FILE" >&2
         exit 1
     fi
-    # Read plan file content as description
-    DESCRIPTION="$(cat "$PLAN_FILE")"
-    if [[ -z "$DESCRIPTION" ]]; then
+    read_review_file "$PLAN_FILE" || exit 1
+    if file_text_is_blank; then
         echo "ERROR: Plan file is empty: $PLAN_FILE" >&2
         exit 1
     fi
+    DESCRIPTION="$FILE_TEXT"
 elif [[ -z "$DESCRIPTION" && "$COMMAND" != "status" ]]; then
     echo "ERROR: Description is required." >&2
     echo "Usage: codex-review.sh <init|code> \"description\" [--max-iter N]" >&2
+    echo "   or: codex-review.sh <init|code> --description-file <path> [--max-iter N]" >&2
     exit 1
+fi
+
+# --- Task label that names this session in state.json (init only) ---
+# Checked here, before the session is created or anything is archived, so a
+# rejected label costs nothing.
+if [[ $TASK_LABEL_SET -eq 1 && "$COMMAND" != "init" ]]; then
+    echo "ERROR: --task-label applies to init — it names the task for the whole session." >&2
+    exit 1
+fi
+if [[ "$COMMAND" == "init" ]]; then
+    if [[ $TASK_LABEL_SET -eq 1 ]]; then
+        TASK_LABEL_JSON="$(task_label_for_state "$TASK_LABEL" \
+            'Fix the value passed to --task-label.')" || exit 1
+    else
+        # The description is a document, not a name: its surrounding
+        # whitespace — a trailing newline above all — is not part of what the
+        # caller called the task.
+        LABEL_FROM_DESCRIPTION="$DESCRIPTION"
+        LABEL_FROM_DESCRIPTION="${LABEL_FROM_DESCRIPTION#"${LABEL_FROM_DESCRIPTION%%[![:space:]]*}"}"
+        LABEL_FROM_DESCRIPTION="${LABEL_FROM_DESCRIPTION%"${LABEL_FROM_DESCRIPTION##*[![:space:]]}"}"
+        TASK_LABEL_JSON="$(task_label_for_state "$LABEL_FROM_DESCRIPTION" \
+            'Name the task yourself: --task-label "<one line>". The full description still goes to Codex and to codex-init.request.md.')" || exit 1
+    fi
 fi
 
 # --- Load config & state ---
@@ -216,6 +310,24 @@ save_note() {
     } > "$note_file"
 }
 
+# --- Pick a log path that does not overwrite an earlier attempt ---
+# A run that dies before writing its verdict (killed process, lost connection)
+# leaves the reasoning in its log, and the iteration counter does not advance —
+# so the next attempt would reuse the same name and destroy the only record.
+next_attempt_log() {
+    local base="$1"
+    local candidate="$base.log"
+    local attempt=2
+    # Both files of the pair count as taken: the request is written before the
+    # log exists, so a run killed in between would otherwise have its request
+    # overwritten by the retry.
+    while [[ -e "$candidate" || -e "${candidate%.log}.request.md" ]]; do
+        candidate="$base.$attempt.log"
+        attempt=$((attempt + 1))
+    done
+    echo "$candidate"
+}
+
 # --- Update state.json ---
 update_state() {
     local phase="$1"
@@ -359,6 +471,10 @@ cmd_init() {
     local output_file="$STATE_DIR/last_response.txt"
     local log_file="$STATE_DIR/codex-init.log"
 
+    # The task text in full, beside the log of the run that opened the session.
+    # state.json keeps only the caller's one-line label (see --task-label).
+    printf '%s' "$task_desc" > "$STATE_DIR/codex-init.request.md"
+
     echo "Creating Codex session..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
 
@@ -387,7 +503,7 @@ cmd_init() {
   \"max_iterations\": $MAX_ITERATIONS,
   \"last_review_status\": \"\",
   \"last_review_timestamp\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
-  \"task_description\": \"$task_desc\"
+  \"task_description\": \"$TASK_LABEL_JSON\"
 }"
 
     write_status
@@ -453,7 +569,7 @@ cmd_review() {
 
     # Save plan file copy for history
     if [[ "$phase" == "plan" && -n "$PLAN_FILE" ]]; then
-        cp "$PLAN_FILE" "$STATE_DIR/plan.md"
+        cp -- "$PLAN_FILE" "$STATE_DIR/plan.md"
         echo "Plan saved to: $STATE_DIR/plan.md" >&2
     fi
 
@@ -465,7 +581,12 @@ cmd_review() {
 
     # Call codex with resume
     local output_file="$STATE_DIR/last_response.txt"
-    local log_file="$STATE_DIR/codex-${phase}-${next_iteration}.log"
+    local log_file
+    log_file="$(next_attempt_log "$STATE_DIR/codex-${phase}-${next_iteration}")"
+
+    # What was sent, stored next to the log of the run that sent it. A run that
+    # dies before its verdict otherwise leaves no record of what it reviewed.
+    printf '%s' "$DESCRIPTION" > "${log_file%.log}.request.md"
 
     echo "Sending $phase for review (iteration ${next_iteration}/${MAX_ITERATIONS})..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
@@ -530,6 +651,14 @@ case "$COMMAND" in
         echo "  init \"task\"                    Create a new Codex session for the given task" >&2
         echo "  plan --plan-file <path>        Submit plan for review (reads file, passes inline)" >&2
         echo "  code \"description\"             Submit code for review" >&2
+        echo "" >&2
+        echo "Options:" >&2
+        echo "  --description-file <path>      Read the init/code description from a file" >&2
+        echo "                                 instead of argv (keeps backticks verbatim)" >&2
+        echo "  --task-label \"<one line>\"      init: names the task in state.json." >&2
+        echo "                                 Required when the description spans" >&2
+        echo "                                 more than one line" >&2
+        echo "  --max-iter N                   Override the iteration limit for this call" >&2
         echo "" >&2
         echo "Exit codes:" >&2
         echo "  0 — Review received (APPROVED or CHANGES_REQUESTED)" >&2

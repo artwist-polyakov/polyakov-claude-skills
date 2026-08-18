@@ -102,6 +102,30 @@ Addressed concerns: [if resubmit — point-by-point from previous review]
 bash scripts/codex-review.sh code "What changed: JWT auth middleware + refresh endpoint. Key decisions: RS256 over HS256 for key rotation. Files: auth/jwt.py (middleware), api/auth.py (refresh endpoint). Tests: 3 new tests (expired/invalid/valid tokens), all pass."
 ```
 
+#### Описание из файла
+
+Если в описании есть обратные кавычки (обычное дело — так пишут имена функций и полей), `$` или `$(...)` — передавай текст файлом, а не аргументом: шелл выполняет такие фрагменты внутри двойных кавычек, и до Codex доходит искажённый текст либо вызов падает с `command not found`.
+
+```bash
+bash scripts/codex-review.sh code --description-file /path/to/description.md
+```
+
+Опция работает для `init`, `plan` и `code`; на `plan` она называет файл плана — то же, что `--plan-file`. Одновременно с `--plan-file` или с описанием в аргументе — ошибка. Файл читается до последнего байта: пустые строки в конце и отсутствие перевода строки в конце сохраняются.
+
+Отправленный текст сохраняется рядом с логом попытки байт в байт: `codex-<phase>-<N>.request.md` для ревью, `codex-init.request.md` для сессии.
+
+#### Название задачи для `init`
+
+`state.json` хранит одну строку — название задачи, которое видно в `STATUS.md` и в сводке архива. Название даёшь ты сам:
+
+```bash
+bash scripts/codex-review.sh init --description-file task.md --task-label "JWT auth: middleware + refresh endpoint"
+```
+
+Правила: одна строка, без двойных кавычек, обратных слешей и управляющих символов, без пробелов в начале и в конце, до 200 символов. Название сохраняется ровно таким, каким передано: скрипт ничего не переписывает и не подчищает, а отклоняет с объяснением. Пустое значение в `--task-label` — ошибка. Если описание задачи занимает больше одной строки, а `--task-label` не передан — запуск завершается ошибкой, ничего не создаётся: назови задачу сам, а не рассчитывай, что скрипт угадает. При однострочном описании название берётся из него.
+
+Полный текст задачи в `state.json` не попадает — он целиком уходит в Codex и лежит в `codex-init.request.md`.
+
 ### 5. Управление состоянием
 
 ```bash
@@ -198,6 +222,8 @@ When `AUTO_REVIEW=true` in `.codex-review/config.env`, the entire review cycle r
 7. After implementation, run code review:
    ```bash
    bash scripts/codex-review.sh code "code description"
+   # or, when the description contains backticks / `$` / `$(...)`:
+   bash scripts/codex-review.sh code --description-file /path/to/description.md
    ```
 8. **Formal verdict check** — same as step 3: run `bash scripts/codex-state.sh get verdict` and check for exact string `APPROVED`.
 9. `CHANGES_REQUESTED` → fix code, resubmit automatically.
