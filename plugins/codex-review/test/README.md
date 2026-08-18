@@ -90,8 +90,9 @@ Scenarios:
    exactly as passed, `STATUS.md` points at the full text, and the description
    itself is kept in `codex-init.request.md`.
 7. A label no reader of `state.json` could handle is refused: containing a
-   double quote, longer than 200 characters, spanning two lines, or blank. So is
-   `--task-label` passed to a phase other than `init`.
+   double quote, a backslash, a carriage return, longer than 200 characters,
+   spanning two lines, or blank. So is `--task-label` passed to a phase other
+   than `init`.
 8. A single-line description still names itself — no label needed.
 9. Opening a new session archives the saved requests together with their logs,
    leaving none behind for the next attempt numbering to overwrite.

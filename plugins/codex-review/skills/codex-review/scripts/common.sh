@@ -138,12 +138,15 @@ get_effective_session_id() {
 
 # --- Task label for state.json ---
 # Values in state.json are written into string literals and read back with a
-# quote-delimited grep, so a value has to stay on one line and carry no double
-# quote of its own. A label that breaks either rule is refused: rewriting it
-# here would put a mangled string in front of every reader of the file, and
-# only the caller knows how to name its own task in one line.
+# quote-delimited grep that does not decode JSON escapes. So the label has to be
+# a string that survives that round trip unchanged: one line, no double quote
+# (readers cut the value there), no backslash and no control character (a
+# JSON-escaped one would be read back as the escape itself, e.g. C:\tmp coming
+# out as C:\\tmp). Anything else is refused rather than rewritten — a mangled
+# label in front of every reader is worse than an error, and only the caller
+# knows how to name its own task in one line.
 #
-# Prints the label ready to embed; on rejection prints the reason to stderr and
+# Prints the label unchanged; on rejection prints the reason to stderr and
 # returns 1 (the caller must pass that on — a bare exit inside $(...) would only
 # leave the subshell).
 TASK_LABEL_MAX=200
@@ -160,7 +163,7 @@ task_label_for_state() {
         echo "ERROR: task label is empty. $hint" >&2
         return 1
     fi
-    if [[ "$label" == *$'\n'* ]]; then
+    if [[ "$label" == *$'\n'* || "$label" == *$'\r'* ]]; then
         echo "ERROR: task label must be a single line. $hint" >&2
         return 1
     fi
@@ -168,18 +171,21 @@ task_label_for_state() {
         echo "ERROR: task label must not contain a double quote — every reader of state.json cuts the value there. $hint" >&2
         return 1
     fi
+    if [[ "$label" == *'\'* ]]; then
+        echo "ERROR: task label must not contain a backslash — readers of state.json do not decode JSON escapes, so it would come back doubled. $hint" >&2
+        return 1
+    fi
     if [[ ${#label} -gt $TASK_LABEL_MAX ]]; then
         echo "ERROR: task label is ${#label} characters, the limit is $TASK_LABEL_MAX. $hint" >&2
         return 1
     fi
-    if [[ "$label" == *[$'\001'-$'\010'$'\013'$'\014'$'\016'-$'\037']* ]]; then
+    if [[ "$label" == *[$'\001'-$'\037']* ]]; then
         echo "ERROR: task label contains control characters. $hint" >&2
         return 1
     fi
 
-    # Escape what JSON requires and no reader is confused by.
-    label="${label//\\/\\\\}"
-    label="${label//$'\t'/\\t}"
+    # No escaping: everything that would need it has been refused above, so the
+    # label reaches every reader exactly as the caller wrote it.
     printf '%s' "$label"
 }
 

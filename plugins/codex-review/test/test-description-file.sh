@@ -234,6 +234,14 @@ assert_contains "over-long label is refused" "$out" "the limit is 200"
 out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label "$(printf 'first\nsecond')")"
 assert_contains "two-line label is refused" "$out" "single line"
 
+# A bare carriage return is invisible in a terminal but would land raw inside
+# state.json and break every reader of it.
+out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label "$(printf 'first\rsecond')")"
+assert_contains "carriage return in the label is refused" "$out" "single line"
+
+out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label 'path C:\tmp\out')"
+assert_contains "backslash in the label is refused" "$out" "backslash"
+
 out="$(run_review "$REPO" init --description-file "$REPO/task.md" --task-label '   ')"
 assert_contains "blank label is refused" "$out" "empty"
 
