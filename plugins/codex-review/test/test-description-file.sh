@@ -77,6 +77,9 @@ make_repo() {
     cat > "$repo/bin/codex" <<'STUB'
 #!/bin/sh
 # Test stub: records the prompt it was given, writes the verdict to -o target.
+# The marker is written before anything is parsed, so "codex never ran" can be
+# checked without depending on what it was called with.
+: > "$(dirname "$0")/../codex-called"
 out=""
 prompt=""
 while [ $# -gt 0 ]; do
@@ -192,12 +195,19 @@ echo "=== A read that fails is not an empty file ==="
 REPO="$(make_repo)"
 printf 'a body that never arrives whole\n' > "$REPO/partial.md"
 # Stands in for a file the reader cannot finish — a device error, a truncated
-# mount, a permission that root would not hit. It prints part of the text and
-# then fails, which is exactly the case a trailing `printf` would paper over.
-cat > "$REPO/bin/cat" <<'STUB'
+# mount, a permission that root would not hit. Only this one file fails: every
+# other read is handed to the real cat, so what the test proves is that the
+# description read itself stopped the run, and not some later reader.
+REAL_CAT="$(command -v cat)"
+cat > "$REPO/bin/cat" <<STUB
 #!/bin/sh
-printf 'half of the '
-exit 1
+case "\$*" in
+    *partial.md*)
+        printf 'half of the '
+        exit 1
+        ;;
+esac
+exec "$REAL_CAT" "\$@"
 STUB
 chmod +x "$REPO/bin/cat"
 
@@ -207,14 +217,18 @@ out="$(run_review "$REPO" code --description-file "$REPO/partial.md")"
 unset FAKE_CODEX_PROMPT
 
 assert_refusal "a failed read is reported as one" "$out" "Could not read"
-if [ -f "$PROMPT_LOG" ]; then
-    fail "nothing was sent to codex" "the stub was called anyway"
+if [ -f "$REPO/codex-called" ] || [ -f "$PROMPT_LOG" ]; then
+    fail "codex was never called" "the stub ran anyway"
 else
-    pass "nothing was sent to codex"
+    pass "codex was never called"
 fi
 STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
-if [ -f "$STATE_DIR/codex-code-1.request.md" ]; then
-    fail "the half-read text was not saved" "a request file was written"
+leftovers=""
+for f in "$STATE_DIR"/codex-*.request.md; do
+    [ -e "$f" ] && leftovers="$leftovers $f"
+done
+if [ -n "$leftovers" ]; then
+    fail "the half-read text was not saved" "written:$leftovers"
 else
     pass "the half-read text was not saved"
 fi
