@@ -4,7 +4,7 @@
 
 | Бэкенд    | Endpoint                                       | Авторизация               | Статус |
 |-----------|------------------------------------------------|---------------------------|--------|
-| `cloud`   | `searchapi.api.cloud.yandex.net/v2/wordstat/*` | IAM token (Service Account JWT) | Preview, актуальный |
+| `cloud`   | `searchapi.api.cloud.yandex.net/v2/wordstat/*` | AI Studio API key или IAM token | Preview, актуальный |
 | `legacy`  | `api.wordstat.yandex.net/v1/*`                 | OAuth Bearer              | Deprecated, новых пользователей не подключают |
 
 С 2026 года Яндекс перестал выдавать новые токены для legacy. Старые токены всё ещё работают (бесплатно), но новые установки скилла должны использовать `cloud`.
@@ -13,7 +13,7 @@
 
 ## Cloud mode (рекомендуется для новых установок)
 
-Нужен сервисный аккаунт в Яндекс.Облаке.
+Самый простой вариант — API-ключ AI Studio. Сервисный аккаунт и ручное получение IAM-токена для него не нужны.
 
 ### Шаг 1: Создайте каталог в Яндекс.Облаке
 1. Откройте https://console.yandex.cloud/
@@ -21,26 +21,20 @@
 3. Создайте **каталог** или используйте существующий
 4. Скопируйте **ID каталога** (`b1g...`) — он понадобится дальше
 
-### Шаг 2: Создайте сервисный аккаунт
-1. В консоли откройте ваш каталог
-2. Слева выберите **Сервисные аккаунты** (раздел IAM)
-3. Нажмите **Создать сервисный аккаунт**
-4. Имя: `wordstat-sa` (или любое)
-5. Нажмите **Создать**
+### Шаг 2: Создайте API-ключ AI Studio
+1. Откройте AI Studio в нужном каталоге.
+2. Создайте API-ключ со scope `yc.search-api.execute`.
+3. Убедитесь, что субъекту ключа назначена роль `search-api.webSearch.user` на каталог.
+4. Сохраните ключ в `config/.env`:
 
-### Шаг 3: Назначьте роль
-1. Откройте созданный сервисный аккаунт
-2. Назначьте роль `search-api.webSearch.user` (та же роль используется для Yandex Search API — см. yandex-search-api скилл)
+```dotenv
+YANDEX_AI_API_KEY=AQVN...
+YANDEX_WORDSTAT_BACKEND=cloud
+```
 
-### Шаг 4: Создайте ключ авторизации
-1. В сервисном аккаунте → **Авторизованные ключи** → **Создать**
-2. Скачайте JSON-файл
-3. Переименуйте в `service_account_key.json`
-4. Положите в `config/` (рядом с этим README)
+Файл `config/.env` должен иметь права `600` и не должен попадать в Git.
 
-> Файл секретный — он уже в `.gitignore`.
-
-### Шаг 5: Создайте config.json
+### Шаг 3: Создайте config.json
 ```bash
 cp config/config.example.json config/config.json
 ```
@@ -50,19 +44,31 @@ cp config/config.example.json config/config.json
 {
   "yandex_cloud_folder_id": "b1g_ваш_id_каталога",
   "auth": {
+    "mode": "api_key"
+  }
+}
+```
+
+### Шаг 4: Проверьте
+
+Первую проверку лучше делать бесплатным методом `GetRegionsTree`. Скрипты анализа запросов используют тарифицируемые методы Wordstat согласно актуальному тарифу Yandex Cloud.
+
+### Альтернатива: IAM сервисного аккаунта
+
+Старый способ остаётся рабочим. Создайте сервисный аккаунт с ролью `search-api.webSearch.user`, скачайте авторизованный JSON-ключ и используйте:
+
+```json
+{
+  "yandex_cloud_folder_id": "b1g_ваш_id_каталога",
+  "auth": {
+    "mode": "iam",
     "service_account_key_file": "config/service_account_key.json",
     "openssl_bin": "openssl"
   }
 }
 ```
 
-`auth.service_account_key_file` — путь к ключу. Относительные пути резолвятся от корня скилла, не от `config/`. Можно указать абсолютный путь.
-
-### Шаг 6: Проверьте
-```bash
-sh scripts/quota.sh
-```
-Должно вывести `Backend: cloud (auto: config.json present)` и список endpoints.
+Относительные пути резолвятся от корня скилла, не от `config/`.
 
 ### Если используете уже настроенный yandex-search-api
 Если у вас уже есть `service_account_key.json` для скилла `yandex-search-api`, схема `config.json` идентична — можно скопировать оба файла:
@@ -110,7 +116,8 @@ sh scripts/quota.sh
 2. **Cloud structurally configured** → `cloud`. Это значит:
    - `config/config.json` существует и валидно парсится
    - `yandex_cloud_folder_id` непустой
-   - `auth.service_account_key_file` резолвится в существующий читаемый файл
+   - для `auth.mode=api_key` задан `YANDEX_AI_API_KEY`
+   - для `auth.mode=iam` файл `auth.service_account_key_file` существует и читается
 3. **`YANDEX_WORDSTAT_TOKEN` задан** → `legacy`
 4. **Ничего не задано** → ошибка с ссылкой на этот README
 
@@ -119,7 +126,7 @@ sh scripts/quota.sh
 YANDEX_WORDSTAT_BACKEND=legacy
 ```
 
-**Selector делает только структурную проверку** — никаких сетевых запросов, никакой проверки IAM. Если SA-ключ битый или роль не назначена, ошибка появится при первом реальном API-запросе.
+**Selector делает только структурную проверку** — никаких сетевых запросов. Если API/SA-ключ битый, scope отсутствует или роль не назначена, ошибка появится при первом реальном API-запросе.
 
 ---
 
@@ -149,11 +156,12 @@ Legacy-бэкенд исторически принимает все опера�
 ## Troubleshooting
 
 ### `Wordstat API: Error` / `wordstat 401`
-- **Cloud**: SA-ключ битый или истёк → пересоздайте ключ; либо роль `search-api.webSearch.user` не назначена → назначьте.
+- **Cloud API key**: ключ неверен/удалён или создан без scope `yc.search-api.execute` → пересоздайте ключ.
+- **Cloud IAM**: SA-ключ битый или истёк → пересоздайте ключ.
 - **Legacy**: токен истёк (срок жизни 1 год) → получите новый через `get_token.sh`.
 
 ### `Wordstat 403 Forbidden`
-- Роль `search-api.webSearch.user` не назначена сервисному аккаунту, либо вы пытаетесь обратиться не к тому каталогу.
+- Роль `search-api.webSearch.user` не назначена субъекту ключа, scope API-ключа недостаточен, либо выбран не тот каталог.
 - Проверьте `yandex_cloud_folder_id` в `config.json`.
 
 ### `LibreSSL detected` (macOS)
@@ -173,7 +181,8 @@ brew install openssl@3
 
 ### `config/config.json present but invalid`
 - `yandex_cloud_folder_id` пустой → заполните
-- Файл ключа не найден по пути из `auth.service_account_key_file` → проверьте, что файл есть и читается. Помните: относительные пути резолвятся от корня скилла, а не от `config/`.
+- `auth.mode=api_key`, но `YANDEX_AI_API_KEY` отсутствует в `config/.env`
+- `auth.mode=iam`, но файл ключа не найден по пути из `auth.service_account_key_file`
 
 ### Хочу переключиться на другой бэкенд
 В `config/.env` добавьте:
