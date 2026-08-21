@@ -10,6 +10,10 @@
 #     and neither is a request saved by an attempt that never got a log
 #   - the description sent for review is stored next to that attempt's log
 #   - the task label is validated as given and never rewritten
+#   - a plan past the per-argument limit the kernel enforces still reaches Codex
+#     whole, and the prompt sent is kept beside the log; init sends a task of
+#     that size whole too, on its own path
+#   - a new session archives the prompts along with the logs and requests
 #
 # Does NOT require the real `codex` binary: a stub on PATH records the prompt
 # and writes the verdict, so the whole review path runs offline.
@@ -79,17 +83,25 @@ make_repo() {
 # Test stub: records the prompt it was given, writes the verdict to -o target.
 # The marker is written before anything is parsed, so "codex never ran" can be
 # checked without depending on what it was called with.
+# `-` in place of the prompt means the real codex reads it from stdin, which is
+# how codex-review.sh sends it; the stub records that text the same way.
 : > "$(dirname "$0")/../codex-called"
 out=""
 prompt=""
+from_stdin=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -o) out="$2"; shift 2 ;;
+        -) from_stdin=1; shift ;;
         *) prompt="$1"; shift ;;
     esac
 done
-if [ -n "$FAKE_CODEX_PROMPT" ] && [ -n "$prompt" ]; then
-    printf '%s' "$prompt" > "$FAKE_CODEX_PROMPT"
+if [ -n "$FAKE_CODEX_PROMPT" ]; then
+    if [ -n "$from_stdin" ]; then
+        cat > "$FAKE_CODEX_PROMPT"
+    elif [ -n "$prompt" ]; then
+        printf '%s' "$prompt" > "$FAKE_CODEX_PROMPT"
+    fi
 fi
 [ -n "$out" ] && printf 'APPROVED\n' > "$out"
 # Printed to the run log, where `init` looks for the new session id.
@@ -280,6 +292,67 @@ else
     fail "a file without a final newline is kept as it is" \
         "$(od -c "$STATE_DIR/codex-code-1.request.md" | tail -3)"
 fi
+
+rm -rf "$REPO"
+
+echo "=== A prompt past the argument limit still reaches Codex ==="
+
+REPO="$(make_repo)"
+STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
+
+# The kernel caps a single argument at 128 KB, so a plan this long cannot be
+# passed on the command line at all — the exec fails with "Argument list too
+# long" before codex starts. The plan built here is past that cap on purpose.
+BIG="$REPO/big-plan.md"
+i=0
+while [ "$i" -lt 3000 ]; do
+    printf 'Stage %04d: prose that makes the plan long enough to matter.\n' "$i"
+    i=$((i + 1))
+done > "$BIG"
+printf 'PLAN TAIL: %s\n' "$MARKER" >> "$BIG"
+
+PROMPT_LOG="$REPO/big-prompt.txt"
+export FAKE_CODEX_PROMPT="$PROMPT_LOG"
+out="$(run_review "$REPO" plan --plan-file "$BIG")"
+unset FAKE_CODEX_PROMPT
+
+assert_status "a plan past the argument limit is sent" 0
+# The marker sits on the last line, so finding it proves the plan was not cut
+# short somewhere in the middle.
+assert_file_contains "the plan's last line reaches Codex" "$PROMPT_LOG" "$MARKER"
+if [ "$(wc -c < "$PROMPT_LOG")" -ge "$(wc -c < "$BIG")" ]; then
+    pass "the whole plan is in the prompt"
+else
+    fail "the whole plan is in the prompt" \
+        "prompt $(wc -c < "$PROMPT_LOG") bytes, plan $(wc -c < "$BIG") bytes"
+fi
+assert_file_exists "the prompt sent is kept beside the log" "$STATE_DIR/codex-plan-1.prompt.md"
+
+rm -rf "$REPO"
+
+echo "=== init sends a task past the argument limit too ==="
+
+# init builds and sends its prompt on its own path, so the plan case above does
+# not cover it.
+REPO="$(make_repo)"
+STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
+
+BIG="$REPO/big-task.md"
+i=0
+while [ "$i" -lt 3000 ]; do
+    printf 'Requirement %04d: prose that makes the task long enough to matter.\n' "$i"
+    i=$((i + 1))
+done > "$BIG"
+printf 'TASK TAIL: %s\n' "$MARKER" >> "$BIG"
+
+PROMPT_LOG="$REPO/big-init-prompt.txt"
+export FAKE_CODEX_PROMPT="$PROMPT_LOG"
+out="$(run_review "$REPO" init --description-file "$BIG" --task-label "a very long task")"
+unset FAKE_CODEX_PROMPT
+
+assert_status "a task past the argument limit is sent" 0
+assert_file_contains "the task's last line reaches Codex" "$PROMPT_LOG" "$MARKER"
+assert_file_exists "init keeps the prompt it sent" "$STATE_DIR/codex-init.prompt.md"
 
 rm -rf "$REPO"
 
@@ -564,6 +637,35 @@ if ls "$REVIEW_ROOT"/archive/*/codex-code-1.request.md >/dev/null 2>&1; then
     pass "archived request sits next to its log"
 else
     fail "archived request sits next to its log" "not found under $REVIEW_ROOT/archive/"
+fi
+
+# The prompt of the review just archived must not stay behind either. Its own
+# name is unique per attempt, but codex-init.prompt.md is fixed, so a session
+# left in place would be overwritten by the next one.
+leftovers=""
+for f in "$STATE_DIR"/codex-*.prompt.md; do
+    case "$f" in
+        */codex-init.prompt.md) ;;
+        *) [ -e "$f" ] && leftovers="$leftovers $f" ;;
+    esac
+done
+if [ -z "$leftovers" ]; then
+    pass "old prompts left the active state dir"
+else
+    fail "old prompts left the active state dir" "still there: $leftovers"
+fi
+
+if ls "$REVIEW_ROOT"/archive/*/codex-code-1.prompt.md >/dev/null 2>&1; then
+    pass "archived prompt sits next to its log"
+else
+    fail "archived prompt sits next to its log" "not found under $REVIEW_ROOT/archive/"
+fi
+
+if ls "$REVIEW_ROOT"/archive/*/codex-init.prompt.md >/dev/null 2>&1; then
+    pass "the replaced session's init prompt is archived, not overwritten"
+else
+    fail "the replaced session's init prompt is archived, not overwritten" \
+        "not found under $REVIEW_ROOT/archive/"
 fi
 
 rm -rf "$REPO"

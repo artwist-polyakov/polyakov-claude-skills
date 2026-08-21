@@ -2,7 +2,7 @@
 # Main codex-review script: init, plan, code
 # Usage: codex-review.sh <init|plan|code> <args> [--max-iter N]
 #   init "task description"
-#   plan --plan-file <path>   (reads file content, passes inline to Codex)
+#   plan --plan-file <path>   (reads file content, sends it to Codex on stdin)
 #   code "description"
 #   init|plan|code --description-file <path>  (reads file content instead of argv;
 #                                             on plan it names the plan file)
@@ -475,6 +475,14 @@ cmd_init() {
     # state.json keeps only the caller's one-line label (see --task-label).
     printf '%s' "$task_desc" > "$STATE_DIR/codex-init.request.md"
 
+    # The prompt goes to codex on stdin, so it is written to a file first. As an
+    # argument it would be capped by the per-argument limit the kernel enforces
+    # (128 KB on Linux), which a long task description reaches on its own.
+    # A regular file also ends at EOF, so codex never waits on input the way it
+    # did when stdin was an open pipe.
+    local prompt_file="$STATE_DIR/codex-init.prompt.md"
+    printf '%s' "$prompt" > "$prompt_file"
+
     echo "Creating Codex session..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
 
@@ -487,7 +495,7 @@ cmd_init() {
         "${MODEL_FLAG[@]}" \
         "${YOLO_FLAG[@]}" \
         -o "$output_file" \
-        "$prompt" </dev/null > "$log_file" 2>&1 || {
+        - < "$prompt_file" > "$log_file" 2>&1 || {
         echo "ERROR: Failed to create Codex session." >&2
         cat "$log_file" >&2
         exit 1
@@ -588,6 +596,10 @@ cmd_review() {
     # dies before its verdict otherwise leaves no record of what it reviewed.
     printf '%s' "$DESCRIPTION" > "${log_file%.log}.request.md"
 
+    # The prompt goes to codex on stdin — see cmd_init for why it is a file.
+    local prompt_file="${log_file%.log}.prompt.md"
+    printf '%s' "$codex_prompt" > "$prompt_file"
+
     echo "Sending $phase for review (iteration ${next_iteration}/${MAX_ITERATIONS})..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
 
@@ -607,7 +619,7 @@ cmd_review() {
         "${YOLO_FLAG[@]}" \
         -o "$output_file" \
         resume "$SESSION_ID" \
-        "$codex_prompt" </dev/null > "$log_file" 2>&1 || {
+        - < "$prompt_file" > "$log_file" 2>&1 || {
         local exit_code=$?
         echo "ERROR: Codex exec failed (exit $exit_code)." >&2
         cat "$log_file" >&2
@@ -649,7 +661,7 @@ case "$COMMAND" in
         echo "" >&2
         echo "Commands:" >&2
         echo "  init \"task\"                    Create a new Codex session for the given task" >&2
-        echo "  plan --plan-file <path>        Submit plan for review (reads file, passes inline)" >&2
+        echo "  plan --plan-file <path>        Submit plan for review (reads file, sends it on stdin)" >&2
         echo "  code \"description\"             Submit code for review" >&2
         echo "" >&2
         echo "Options:" >&2
