@@ -53,7 +53,7 @@ bash scripts/codex-review.sh init "Implement JWT authentication for API"
    bash scripts/codex-review.sh plan --plan-file ~/.claude/plans/<slug>.md
    ```
 3. `CHANGES_REQUESTED` → скорректируй план в файле, отправь снова (см. «Accept or Argue»)
-4. `APPROVED` → вызови `ExitPlanMode` для одобрения пользователем
+4. `APPROVED` → обработай `## Non-blocking` и `## Pre-existing` (см. «Разделы ответа ревьюера»), затем вызови `ExitPlanMode` для одобрения пользователем
 
 Таким образом план проходит два ревью: техническое (Codex) и бизнес-приоритетное (пользователь).
 
@@ -144,7 +144,7 @@ bash scripts/codex-state.sh set phase implementing  # Обновить фазу
 
 | Exit | Status | Действие |
 |------|--------|----------|
-| 0 | APPROVED | Продолжай работу |
+| 0 | APPROVED | Обработай `## Non-blocking` и `## Pre-existing` (см. «Разделы ответа ревьюера»), затем продолжай работу |
 | 0 | CHANGES_REQUESTED | Скорректируй и отправь снова (см. «Accept or Argue») |
 | 1 | ERROR | Сообщи об ошибке, предложи проверить session_id |
 | 2 | ESCALATE | Оповести пользователя, выведи краткое резюме, предложи варианты (см. «Обработка ESCALATE») |
@@ -199,7 +199,7 @@ Codex пишет свой вердикт в `verdict.txt` внутри state-к�
 - НИКОГДА не вызывай `codex exec` напрямую — только через скрипты `codex-review.sh` и `codex-state.sh`. Скрипты сами знают модель, конфиг и session_id
 - Описывай ЧТО ты сделал и ПОЧЕМУ, какие решения принимал — используй шаблоны описания
 - НЕ передавай git diff — Codex сам посмотрит, он в той же директории
-- APPROVED → продолжай работу
+- APPROVED → обработай `## Non-blocking` и `## Pre-existing`, затем продолжай работу
 - Перед реализацией вызови `codex-state.sh set phase implementing`
 - Есть заказчик (пользователь) — уточняй у него неоднозначные вопросы
 - Опция `--max-iter N` позволяет изменить лимит итераций
@@ -223,7 +223,7 @@ When `AUTO_REVIEW=true` in `.codex-review/config.env`, the entire review cycle r
    **IMPORTANT**: Always run `init` before the first `plan` review in a conversation. Even if `codex-state.sh show` reports an existing session, it may be stale (from a previous conversation). The `init` command safely archives the old session and creates a fresh one. Only skip `init` when re-submitting after `CHANGES_REQUESTED` within the same review cycle.
 3. **Formal verdict check** — run `bash scripts/codex-state.sh get verdict`. Proceed ONLY if it outputs the exact string `APPROVED`. Do NOT interpret review text — only the helper output matters.
 4. `CHANGES_REQUESTED` → fix the plan, resubmit (follow «Accept or Argue» rules). Iterate automatically up to the iteration limit.
-5. `APPROVED` → call `ExitPlanMode` (the hook auto-approves it)
+5. `APPROVED` → handle `## Non-blocking` and `## Pre-existing` first (see «Разделы ответа ревьюера»), then call `ExitPlanMode` (the hook auto-approves it)
 
 #### Implementation phase
 
@@ -239,7 +239,7 @@ When `AUTO_REVIEW=true` in `.codex-review/config.env`, the entire review cycle r
    ```
 8. **Formal verdict check** — same as step 3: run `bash scripts/codex-state.sh get verdict` and check for exact string `APPROVED`.
 9. `CHANGES_REQUESTED` → fix code, resubmit automatically.
-10. `APPROVED` → work is complete, report to user.
+10. `APPROVED` → handle `## Non-blocking` and `## Pre-existing` (see «Разделы ответа ревьюера»), then report to user.
 
 #### ESCALATE handling in auto mode
 

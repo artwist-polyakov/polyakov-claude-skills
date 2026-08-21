@@ -142,9 +142,11 @@ Scenarios:
    vocabulary reach Codex on the code phase, together with the three headings
    `## Blocking`, `## Non-blocking` and `## Pre-existing` and the threshold that
    ties `CHANGES_REQUESTED` to a non-empty `## Blocking`.
-2. A defect in code the change only touches keeps its own severity under
-   `## Pre-existing` instead of being flattened into the nice-to-have pile, and
-   moves to `## Blocking` when the change makes it reachable in a new way.
+2. A defect that already exists in the files the change touches keeps its own
+   severity under `## Pre-existing` instead of being flattened into the
+   nice-to-have pile, and moves to `## Blocking` when the change makes it
+   reachable in a new way. The heading is scoped to those files — the reviewer is
+   told not to roam the rest of the repository.
 3. The plan phase gets the same scale in its own wording — what the plan leaves
    broken, an unverified behaviour change, a plan that need not enumerate every
    failure mode — with no code-phase wording leaking in.
@@ -153,11 +155,19 @@ Scenarios:
    `minor` unless it is `critical`.
 5. `CODEX_SEVERITY_CALIBRATION=false` restores the previous prompt: no scale, no
    headings, and the two original verdict lines back in place.
-6. A project's `CODEX_CODE_GUIDE` still reaches Codex alongside the calibration.
+6. A codex call that fails spends an iteration but no round: after a failed call
+   the next two reviews still carry no narrowing, the third one does, and it
+   reports the round number the reviews earned rather than the iteration counter.
+7. Clearing the cycle with the state helper starts the round count over — notes
+   from the previous cycle survive it and must not push the next review into a
+   narrowed round.
+8. A project's `CODEX_CODE_GUIDE` still reaches Codex alongside the calibration.
 
 Does **not** require the `codex` binary — a stub on `PATH` accepts the prompt on
 stdin and writes the verdict; the assertions read the prompt copy the run keeps
-as `codex-<phase>-<N>.prompt.md`.
+as `codex-<phase>-<N>.prompt.md`. A `fail-next` marker file makes the stub fail
+one review call, and only a review call: `common.sh` probes `codex --version`
+before every run, and failing that probe would abort before any review ran.
 
 Run:
 

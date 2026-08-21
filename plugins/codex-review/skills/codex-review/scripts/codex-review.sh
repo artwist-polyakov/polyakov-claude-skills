@@ -333,6 +333,7 @@ update_state() {
     local phase="$1"
     local iteration="$2"
     local status="$3"
+    local reviews_completed="$4"
     local timestamp
     timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
     local task_desc
@@ -345,6 +346,7 @@ update_state() {
   \"max_iterations\": $MAX_ITERATIONS,
   \"last_review_status\": \"$status\",
   \"last_review_timestamp\": \"$timestamp\",
+  \"reviews_completed\": $reviews_completed,
   \"task_description\": \"$task_desc\"
 }"
 }
@@ -392,8 +394,8 @@ severity_calibration() {
   scenario needs a sub-second race window, simultaneous independent failures, or inputs the
   running system cannot produce; wording, section order, naming; a tightening that would be nice
   to have"
-        phase_note="A plan does not have to enumerate every failure mode to be approvable. Accept an item deferred
-to the test plan, to implementation, or to a follow-up task, instead of raising it again."
+        phase_note="A plan does not have to enumerate every failure mode to be approvable: an item that belongs
+under '## Non-blocking' may be deferred to the test plan, to implementation, or to a follow-up task."
     else
         scope_subject="this change"
         critical="this change introduces a break that must not ship: a wrong result on a path a
@@ -425,11 +427,12 @@ reachable scenario belongs one level down.
 Group your findings under these headings, and use exactly these headings:
 - '## Blocking' — critical or important findings in $scope_subject.
 - '## Non-blocking' — minor findings in $scope_subject.
-- '## Pre-existing' — defects in code $scope_subject only touches or leaves as it is. Grade them
-  on the same scale and keep the scenario line: a pre-existing critical finding is reported as
-  critical here. Never soften it or leave it out because it is outside the current work. If
-  $scope_subject makes a pre-existing defect reachable in a new way, it belongs under '## Blocking'
-  instead — say explicitly what makes it newly reachable.
+- '## Pre-existing' — defects that already exist in the files $scope_subject touches, found while
+  reading them. Do not go looking beyond those files: code $scope_subject does not touch is
+  outside this review. Grade what you do find on the same scale and keep the scenario line — a
+  pre-existing critical finding is reported as critical here, never softened or left out because
+  it is outside the current work. If $scope_subject makes a pre-existing defect reachable in a
+  new way, it belongs under '## Blocking' instead — say explicitly what makes it newly reachable.
 
 Verdict:
 - Write CHANGES_REQUESTED when '## Blocking' has at least one entry.
@@ -439,9 +442,13 @@ Verdict:
 - $phase_note
 - Propose no guard, branch, or fallback for a scenario the running system cannot produce.
   Report such a scenario as minor, spell the scenario out, and write 'fix: none — record only'.
-- When the implementer answers a finding with reasoning and defers it, accept the deferral
-  instead of raising it again. Raise a finding from an earlier round again only when the new
-  work still leaves its scenario reachable.
+- Accept a deferral of a '## Non-blocking' or '## Pre-existing' item the implementer answers with
+  reasoning, instead of raising it again. A '## Blocking' finding closes on one of three things
+  only: the new work leaves its scenario unreachable, the reasoning shows the scenario was never
+  reachable, or the implementer states that the user decided to defer it. Say which one closed it.
+  A '## Blocking' finding answered with a bare deferral stays open.
+- Raise a finding from an earlier round again only when the new work still leaves its scenario
+  reachable.
 CALIBRATION
 }
 
@@ -450,13 +457,22 @@ CALIBRATION
 # this round on, only a critical finding may open a new subject.
 NARROW_FROM_ROUND=3
 
+# --- Rounds that actually produced a review ---
+# `reviews_completed` in state.json counts the rounds of the current review
+# cycle that came back with a review. It is what narrowing is measured against:
+# the iteration counter advances on a failed codex call too (see the ERROR
+# branch in cmd_review), and note files outlive `codex-state.sh reset`, so
+# neither of those tracks the current cycle. Reset to 0 by init, by a phase
+# change, and by `codex-state.sh reset`; a state.json written before this field
+# existed reads as 0.
+
 late_round_narrowing() {
-    local iteration="$1"
+    local round="$1"
     cat <<NARROWING
 
-Round $iteration of this phase. Earlier rounds have already covered this ground:
+Round $round of this phase. Earlier rounds have already covered this ground:
 - Work through the '## Blocking' findings of the earlier rounds first and say, for each, whether
-  it is closed. A finding is closed when the new work leaves its scenario unreachable.
+  it is closed, on the three conditions stated above and no others.
 - Open a subject no earlier round raised only when it is critical. A subject first surfacing this
   late that is not critical is minor by this rule: report it under '## Non-blocking' and let the
   verdict stand on the earlier findings.
@@ -467,7 +483,7 @@ NARROWING
 build_review_prompt() {
     local phase="$1"
     local description="$2"
-    local iteration="${3:-1}"
+    local round="${3:-1}"
     local skill_path
     skill_path="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -518,9 +534,9 @@ $guide
 - If changes needed, provide specific actionable feedback"
     if [[ "$CODEX_SEVERITY_CALIBRATION" != "false" ]]; then
         calibration_section="$(severity_calibration "$phase")"
-        if [[ $iteration -ge $NARROW_FROM_ROUND ]]; then
+        if [[ $round -ge $NARROW_FROM_ROUND ]]; then
             calibration_section="$calibration_section
-$(late_round_narrowing "$iteration")"
+$(late_round_narrowing "$round")"
         fi
         verdict_lines="- The severity scale above sets the verdict and the headings above set where each finding goes
 - Give every finding you report a specific, actionable fix, whichever heading it sits under"
@@ -620,6 +636,7 @@ cmd_init() {
   \"max_iterations\": $MAX_ITERATIONS,
   \"last_review_status\": \"\",
   \"last_review_timestamp\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
+  \"reviews_completed\": 0,
   \"task_description\": \"$TASK_LABEL_JSON\"
 }"
 
@@ -659,6 +676,7 @@ cmd_review() {
   \"max_iterations\": $MAX_ITERATIONS,
   \"last_review_status\": \"\",
   \"last_review_timestamp\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
+  \"reviews_completed\": 0,
   \"task_description\": \"$task_desc\"
 }"
         echo "Phase changed ($previous_phase → $phase), iteration counter reset." >&2
@@ -691,7 +709,13 @@ cmd_review() {
     fi
 
     local codex_prompt
-    codex_prompt="$(build_review_prompt "$phase" "$DESCRIPTION" "$next_iteration")"
+    # Narrowing counts rounds that came back with a review, not iterations: a
+    # failed codex call advances the iteration counter without reviewing anything.
+    local reviews_completed review_round
+    reviews_completed="$(read_state_number "reviews_completed")"
+    review_round=$((reviews_completed + 1))
+
+    codex_prompt="$(build_review_prompt "$phase" "$DESCRIPTION" "$review_round")"
 
     # Clean previous verdict before calling codex
     rm -f "$STATE_DIR/verdict.txt"
@@ -732,7 +756,8 @@ cmd_review() {
         local exit_code=$?
         echo "ERROR: Codex exec failed (exit $exit_code)." >&2
         cat "$log_file" >&2
-        update_state "$phase" "$next_iteration" "ERROR"
+        # The call reviewed nothing, so the round count stands where it was.
+        update_state "$phase" "$next_iteration" "ERROR" "$reviews_completed"
         exit 1
     }
 
@@ -747,7 +772,7 @@ cmd_review() {
     save_note "$phase" "$next_iteration" "$output"
 
     # Update state
-    update_state "$phase" "$next_iteration" "$status"
+    update_state "$phase" "$next_iteration" "$status" "$review_round"
 
     # Update or remove STATUS.md
     if [[ "$phase" == "code" && "$status" == "APPROVED" ]]; then

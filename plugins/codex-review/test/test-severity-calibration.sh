@@ -21,6 +21,10 @@ PROD_SCRIPTS="$SCRIPT_DIR/../skills/codex-review/scripts"
 REVIEW_CMD="$PROD_SCRIPTS/codex-review.sh"
 STATE_CMD="$PROD_SCRIPTS/codex-state.sh"
 
+# The state helper's command that clears the iteration counter but keeps the
+# session and the notes.
+CLEAR_CYCLE_CMD=reset
+
 PASS=0
 FAIL=0
 
@@ -45,6 +49,15 @@ assert_file_contains() {
         pass "$1"
     else
         fail "$1" "expected $2 to contain: $3"
+    fi
+}
+
+assert_file_exists() {
+    # name, file
+    if [ -f "$2" ]; then
+        pass "$1"
+    else
+        fail "$1" "file not found: $2"
     fi
 }
 
@@ -79,6 +92,15 @@ while [ $# -gt 0 ]; do
     esac
 done
 [ -n "$from_stdin" ] && cat >/dev/null
+# A marker file makes one review call fail the way a lost connection or an
+# exhausted quota does: a non-zero exit with no verdict written. Only a real
+# review is failed — `common.sh` probes `codex --version` before every run, and
+# failing that probe would abort before any review was attempted.
+if [ -n "$from_stdin" ] && [ -f "$(dirname "$0")/../fail-next" ]; then
+    rm -f "$(dirname "$0")/../fail-next"
+    printf 'stream error: connection reset\n' >&2
+    exit 1
+fi
 [ -n "$out" ] && printf 'APPROVED\n' > "$out"
 printf 'session sess_teststub01 ready\n'
 exit 0
@@ -123,18 +145,23 @@ assert_file_contains "pre-existing heading is named" "$P" "'## Pre-existing'"
 assert_file_contains "the threshold is stated" "$P" "Write CHANGES_REQUESTED when '## Blocking' has at least one entry"
 assert_file_contains "approved-with-findings is normal" "$P" "APPROVED with findings listed under them is a normal verdict"
 assert_file_contains "unreachable scenarios get no guard" "$P" "fix: none — record only"
-assert_file_contains "a deferral with reasoning is accepted" "$P" "accept the deferral"
+assert_file_contains "a non-blocking deferral is accepted" "$P" \
+    "Accept a deferral of a '## Non-blocking' or '## Pre-existing' item"
+assert_file_contains "a blocking finding needs more than a deferral" "$P" \
+    "A '## Blocking' finding answered with a bare deferral stays open"
 assert_file_contains "the loose threshold is replaced" "$P" "The severity scale above sets the verdict"
 assert_file_lacks "the loose threshold is gone" "$P" "- If acceptable, respond with APPROVED"
 
 echo "=== A pre-existing defect keeps its own severity ==="
 
-assert_file_contains "legacy findings are graded on the same scale" "$P" \
-    "a pre-existing critical finding is reported as"
-assert_file_contains "legacy findings may not be dropped" "$P" \
-    "Never soften it or leave it out because it is outside the current work"
+assert_file_contains "the heading covers the files the change touches" "$P" \
+    "defects that already exist in the files this change touches"
+assert_file_contains "the reviewer may not roam beyond those files" "$P" \
+    "Do not go looking beyond those files"
+assert_file_contains "legacy findings keep their severity" "$P" \
+    "never softened or left out because"
 assert_file_contains "newly reachable legacy defects block" "$P" \
-    "makes a pre-existing defect reachable in a new way, it belongs under '## Blocking'"
+    "new way, it belongs under '## Blocking' instead"
 
 rm -rf "$REPO"
 
@@ -151,6 +178,8 @@ assert_file_contains "an unverified behaviour change is important" "$P" \
     "without naming how that behaviour will be verified is also important"
 assert_file_contains "a plan need not enumerate every failure mode" "$P" \
     "A plan does not have to enumerate every failure mode to be approvable"
+assert_file_lacks "deferring on the plan phase is scoped to non-blocking items" "$P" \
+    "Accept an item deferred"
 assert_file_contains "the plan phase gets the three headings too" "$P" "'## Pre-existing'"
 assert_file_lacks "no code-phase wording leaks into the plan prompt" "$P" \
     "this change introduces a break"
@@ -176,9 +205,75 @@ assert_file_contains "round 3 narrows what may be opened" "$P" \
     "Open a subject no earlier round raised only when it is critical"
 assert_file_contains "round 3 says which round it is" "$P" "Round 3 of this phase"
 assert_file_contains "earlier blockers are worked through first" "$P" \
-    "A finding is closed when the new work leaves its scenario unreachable"
+    "it is closed, on the three conditions stated above and no others"
 assert_file_contains "a late non-critical subject is minor" "$P" \
     "that is not critical is minor by this rule"
+
+rm -rf "$REPO"
+
+echo "=== A failed codex call does not spend a round ==="
+
+REPO="$(make_repo)"
+printf 'What changed: nothing much.\n' > "$REPO/desc.md"
+
+# Round 1 dies inside codex: the iteration counter advances, no review comes back.
+: > "$REPO/fail-next"
+run_review "$REPO" code --description-file "$REPO/desc.md"
+if [ -f "$(state_dir "$REPO")/notes/code-review-1.md" ]; then
+    fail "a failed call leaves no review note" "note written for a call that failed"
+else
+    pass "a failed call leaves no review note"
+fi
+
+# Two real reviews follow. They are rounds 1 and 2 of the review, whatever the
+# iteration counter now says, so neither may carry the narrowing.
+run_review "$REPO" code --description-file "$REPO/desc.md"
+run_review "$REPO" code --description-file "$REPO/desc.md"
+assert_file_lacks "first review after the failure is not narrowed" \
+    "$(prompt_file "$REPO" code 2)" "Open a subject no earlier round raised only when it is critical"
+assert_file_lacks "second review after the failure is not narrowed" \
+    "$(prompt_file "$REPO" code 3)" "Open a subject no earlier round raised only when it is critical"
+
+# The third review is the one that narrows, and it says round 3, not round 4.
+run_review "$REPO" code --description-file "$REPO/desc.md"
+P="$(prompt_file "$REPO" code 4)"
+assert_file_contains "third review after the failure narrows" "$P" \
+    "Open a subject no earlier round raised only when it is critical"
+assert_file_contains "the round number counts reviews, not iterations" "$P" "Round 3 of this phase"
+assert_file_lacks "the iteration number is not used as the round" "$P" "Round 4 of this phase"
+
+rm -rf "$REPO"
+
+echo "=== A cleared cycle starts the round count over ==="
+
+REPO="$(make_repo)"
+printf 'What changed: nothing much.\n' > "$REPO/desc.md"
+run_review "$REPO" code --description-file "$REPO/desc.md"
+run_review "$REPO" code --description-file "$REPO/desc.md"
+
+# The state helper's cycle-clearing command keeps the session and the notes and
+# starts the cycle over. The next review is round 1 of the new cycle, not round
+# 3 of the old one.
+(cd "$REPO" && bash "$STATE_CMD" "$CLEAR_CYCLE_CMD" >/dev/null 2>&1)
+run_review "$REPO" code --description-file "$REPO/desc.md"
+
+# The new cycle restarts at iteration 1, and iteration 1 already has a log from
+# the old cycle — so this run's prompt is the retry name, not `codex-code-1`.
+# Reading `codex-code-1` here would assert against the old cycle's first review
+# and pass whether or not the count was cleared.
+P="$(state_dir "$REPO")/codex-code-1.2.prompt.md"
+assert_file_exists "the new cycle's prompt is kept under its own name" "$P"
+
+assert_file_lacks "the first review of a new cycle is not narrowed" "$P" \
+    "Open a subject no earlier round raised only when it is critical"
+assert_file_lacks "the notes of the previous cycle do not count" "$P" "Round 3 of this phase"
+
+if grep -q '"reviews_completed": 1' "$(state_dir "$REPO")/state.json"; then
+    pass "the round count restarted at 1"
+else
+    fail "the round count restarted at 1" \
+        "$(grep reviews_completed "$(state_dir "$REPO")/state.json")"
+fi
 
 rm -rf "$REPO"
 
