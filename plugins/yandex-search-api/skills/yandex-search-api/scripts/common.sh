@@ -98,14 +98,19 @@ else:
 
 # --- Temp file management ---
 
-# Create secure temp directory
+# Create secure temp directory (0700)
 # Usage: _tmpdir=$(make_secure_tmpdir)
+# The umask is restored before returning, so the directory is 0700 but files
+# written into it follow the caller's umask. A caller that puts secrets there
+# must set its own umask 077 around those writes (see iam_token_get.sh).
+# POSIX sh has no locals: variables are prefixed to avoid clobbering a
+# caller's variable of the same name.
 make_secure_tmpdir() {
-    _old_umask=$(umask)
+    _mstd_old_umask=$(umask)
     umask 077
-    _td=$(mktemp -d "${TMPDIR:-/tmp}/ysa_XXXXXX")
-    umask "$_old_umask"
-    echo "$_td"
+    _mstd_td=$(mktemp -d "${TMPDIR:-/tmp}/ysa_XXXXXX")
+    umask "$_mstd_old_umask"
+    echo "$_mstd_td"
 }
 
 # --- JSON helpers (via python3) ---
