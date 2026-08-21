@@ -370,10 +370,104 @@ print_result() {
     echo "Status: $status"
 }
 
+# --- Severity scale and verdict threshold ---
+# One scale for both phases, so a finding means the same thing on a plan and on
+# a diff. Only `## Blocking` sets the verdict; `## Pre-existing` keeps its own
+# severity so a legacy defect is reported at its real weight instead of being
+# flattened into the nice-to-have pile.
+severity_calibration() {
+    local phase="$1"
+    local critical important minor phase_note scope_subject
+
+    if [[ "$phase" == "plan" ]]; then
+        scope_subject="the plan"
+        critical="the plan as written leaves a break that must not ship: a main flow it does not
+  cover, data lost or corrupted, an access check it drops, a migration or deploy it breaks, or a
+  contract another component relies on that it changes without saying so"
+        important="a real gap below that bar, with a scenario you can state in one sentence as
+  \"who does what, in normal operation, and what goes wrong\": an actor the system has, inputs it
+  produces, no coincidence of independent failures required. A plan that changes behaviour
+  without naming how that behaviour will be verified is also important"
+        minor="worth raising, does not hold up the plan. This is the ceiling for: a gap whose
+  scenario needs a sub-second race window, simultaneous independent failures, or inputs the
+  running system cannot produce; wording, section order, naming; a tightening that would be nice
+  to have"
+        phase_note="A plan does not have to enumerate every failure mode to be approvable. Accept an item deferred
+to the test plan, to implementation, or to a follow-up task, instead of raising it again."
+    else
+        scope_subject="this change"
+        critical="this change introduces a break that must not ship: a wrong result on a path a
+  caller reaches, data lost or corrupted, an access check that no longer holds, a crash on an
+  ordinary input, or an error swallowed in a way that hides one of those. Name the mechanism:
+  the input or state, then what happens"
+        important="a real defect below that bar, with a scenario you can state in one sentence as
+  \"who does what, in normal operation, and what goes wrong\": an actor the system has, inputs it
+  produces, no coincidence of independent failures required. A bug fix shipping without the
+  regression test that would fail without it is also important"
+        minor="worth fixing, does not hold up the work. This is the ceiling for: a defect whose
+  scenario needs a sub-second race window, simultaneous independent failures, or inputs the
+  running system cannot produce; a missing test or coverage gap, apart from the regression-test
+  rule above; a type that admits a state the code forbids; comment, naming, or wording"
+        phase_note="Test hygiene, naming, and comment wording never set the verdict on their own."
+    fi
+
+    cat <<CALIBRATION
+
+Severity scale — grade every finding with one of these three words and no other vocabulary
+(no numeric ratings, no letter grades, no HIGH/MEDIUM/LOW):
+- critical — $critical.
+- important — $important.
+- minor — $minor.
+
+Between two levels, take the lower one: a finding whose severity you cannot back with a stated,
+reachable scenario belongs one level down.
+
+Group your findings under these headings, and use exactly these headings:
+- '## Blocking' — critical or important findings in $scope_subject.
+- '## Non-blocking' — minor findings in $scope_subject.
+- '## Pre-existing' — defects in code $scope_subject only touches or leaves as it is. Grade them
+  on the same scale and keep the scenario line: a pre-existing critical finding is reported as
+  critical here. Never soften it or leave it out because it is outside the current work. If
+  $scope_subject makes a pre-existing defect reachable in a new way, it belongs under '## Blocking'
+  instead — say explicitly what makes it newly reachable.
+
+Verdict:
+- Write CHANGES_REQUESTED when '## Blocking' has at least one entry.
+- Write APPROVED otherwise. '## Pre-existing' and '## Non-blocking' never set the verdict.
+  APPROVED with findings listed under them is a normal verdict, not a concession — say so
+  plainly rather than inflating a minor finding to justify another round.
+- $phase_note
+- Propose no guard, branch, or fallback for a scenario the running system cannot produce.
+  Report such a scenario as minor, spell the scenario out, and write 'fix: none — record only'.
+- When the implementer answers a finding with reasoning and defers it, accept the deferral
+  instead of raising it again. Raise a finding from an earlier round again only when the new
+  work still leaves its scenario reachable.
+CALIBRATION
+}
+
+# --- Late-round narrowing ---
+# Every round is free to open new ground, and the verdict never settles. From
+# this round on, only a critical finding may open a new subject.
+NARROW_FROM_ROUND=3
+
+late_round_narrowing() {
+    local iteration="$1"
+    cat <<NARROWING
+
+Round $iteration of this phase. Earlier rounds have already covered this ground:
+- Work through the '## Blocking' findings of the earlier rounds first and say, for each, whether
+  it is closed. A finding is closed when the new work leaves its scenario unreachable.
+- Open a subject no earlier round raised only when it is critical. A subject first surfacing this
+  late that is not critical is minor by this rule: report it under '## Non-blocking' and let the
+  verdict stand on the earlier findings.
+NARROWING
+}
+
 # --- Build phase-specific prompt ---
 build_review_prompt() {
     local phase="$1"
     local description="$2"
+    local iteration="${3:-1}"
     local skill_path
     skill_path="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -417,6 +511,21 @@ $guide
 "
     fi
 
+    # With the calibration on, the threshold is stated once, in the scale above;
+    # repeating a looser "if acceptable" here would compete with it.
+    local calibration_section=""
+    local verdict_lines="- If acceptable, respond with APPROVED
+- If changes needed, provide specific actionable feedback"
+    if [[ "$CODEX_SEVERITY_CALIBRATION" != "false" ]]; then
+        calibration_section="$(severity_calibration "$phase")"
+        if [[ $iteration -ge $NARROW_FROM_ROUND ]]; then
+            calibration_section="$calibration_section
+$(late_round_narrowing "$iteration")"
+        fi
+        verdict_lines="- The severity scale above sets the verdict and the headings above set where each finding goes
+- Give every finding you report a specific, actionable fix, whichever heading it sits under"
+    fi
+
     cat <<PROMPT
 You are reviewing work by Claude Code on this project.
 Phase: $phase
@@ -425,10 +534,10 @@ Description from Claude:
 $description
 
 $phase_instructions
+$calibration_section
 $guide_section
 General instructions:
-- If acceptable, respond with APPROVED
-- If changes needed, provide specific actionable feedback
+$verdict_lines
 - You can inspect the code yourself — you're in the same directory
 - The codex-review skill is at: $skill_path
 
@@ -582,7 +691,7 @@ cmd_review() {
     fi
 
     local codex_prompt
-    codex_prompt="$(build_review_prompt "$phase" "$DESCRIPTION")"
+    codex_prompt="$(build_review_prompt "$phase" "$DESCRIPTION" "$next_iteration")"
 
     # Clean previous verdict before calling codex
     rm -f "$STATE_DIR/verdict.txt"

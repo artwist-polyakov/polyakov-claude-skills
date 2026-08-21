@@ -117,7 +117,20 @@ CODEX_YOLO=true
 
 # Additional guidance for code review phase (optional, appended to built-in focus areas)
 # CODEX_CODE_GUIDE="Check that all DB queries use parameterized statements"
+
+# Severity calibration (default: true) — see «Severity и вердикт» below.
+# CODEX_SEVERITY_CALIBRATION=false
 ```
+
+### Severity и вердикт
+
+Ревьюер оценивает каждую находку как `critical`, `important` или `minor` и раскладывает находки по трём разделам ответа: `## Blocking` (`critical` и `important` в текущей работе), `## Non-blocking` (`minor` в текущей работе) и `## Pre-existing` (дефекты затронутого, но не изменённого кода — по той же шкале, с сохранением уровня).
+
+`CHANGES_REQUESTED` приходит только при непустом `## Blocking`. `APPROVED` со списком в `## Non-blocking` — нормальный вердикт.
+
+С третьего круга ревьюер отчитывается по блокерам прошлых кругов и открывает новую тему только уровня `critical`.
+
+`CODEX_SEVERITY_CALIBRATION=false` возвращает прежний промпт, где вердикт может удержать любое замечание.
 
 ## Использование
 

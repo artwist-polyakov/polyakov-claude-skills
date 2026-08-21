@@ -13,6 +13,7 @@ test/
 ├── test-auto-approve-plan.sh   # unit tests for the auto-approve hook
 ├── test-integration.sh         # path-contract tests (hook ↔ state dir)
 ├── test-description-file.sh    # --description-file, per-attempt logs, saved request
+├── test-severity-calibration.sh # severity scale, finding headings, verdict threshold
 ├── test-e2e.sh                 # opt-in end-to-end with real codex / claude
 └── test-fixtures/              # plan markdown fixtures used by test-e2e.sh
     ├── approve_plan.md         # trivial plan → APPROVED
@@ -130,6 +131,40 @@ Run:
 sh plugins/codex-review/test/test-description-file.sh
 ```
 
+## test-severity-calibration.sh
+
+Covers the severity calibration `build_review_prompt` adds to every review it
+sends.
+
+Scenarios:
+
+1. The three-word scale, the tie-break rule and the ban on any other severity
+   vocabulary reach Codex on the code phase, together with the three headings
+   `## Blocking`, `## Non-blocking` and `## Pre-existing` and the threshold that
+   ties `CHANGES_REQUESTED` to a non-empty `## Blocking`.
+2. A defect in code the change only touches keeps its own severity under
+   `## Pre-existing` instead of being flattened into the nice-to-have pile, and
+   moves to `## Blocking` when the change makes it reachable in a new way.
+3. The plan phase gets the same scale in its own wording — what the plan leaves
+   broken, an unverified behaviour change, a plan that need not enumerate every
+   failure mode — with no code-phase wording leaking in.
+4. The late-round narrowing is absent on rounds 1 and 2, appears on round 3,
+   names the round it was sent for, and caps a subject first raised that late at
+   `minor` unless it is `critical`.
+5. `CODEX_SEVERITY_CALIBRATION=false` restores the previous prompt: no scale, no
+   headings, and the two original verdict lines back in place.
+6. A project's `CODEX_CODE_GUIDE` still reaches Codex alongside the calibration.
+
+Does **not** require the `codex` binary — a stub on `PATH` accepts the prompt on
+stdin and writes the verdict; the assertions read the prompt copy the run keeps
+as `codex-<phase>-<N>.prompt.md`.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-severity-calibration.sh
+```
+
 ## test-e2e.sh
 
 Opt-in end-to-end tests that exercise real `codex` / `claude` CLIs.
@@ -208,5 +243,5 @@ scenario — as an `init` task and as a code description, not as plans:
 
 ## Exit codes
 
-All four scripts exit `0` on success and `1` if any assertion failed.
+All five scripts exit `0` on success and `1` if any assertion failed.
 `test-e2e.sh` additionally exits `0` (skip) when `CODEX_E2E` is not set.

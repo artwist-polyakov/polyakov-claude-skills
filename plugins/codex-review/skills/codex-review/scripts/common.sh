@@ -88,6 +88,7 @@ load_config() {
     CODEX_REVIEWER_PROMPT="${CODEX_REVIEWER_PROMPT:-}"
     CODEX_PLAN_GUIDE="${CODEX_PLAN_GUIDE:-}"
     CODEX_CODE_GUIDE="${CODEX_CODE_GUIDE:-}"
+    CODEX_SEVERITY_CALIBRATION="${CODEX_SEVERITY_CALIBRATION:-true}"
 }
 
 # --- Read a field from state.json (no jq dependency) ---
