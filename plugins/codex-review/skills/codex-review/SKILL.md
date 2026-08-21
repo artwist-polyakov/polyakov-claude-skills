@@ -53,7 +53,7 @@ bash scripts/codex-review.sh init "Implement JWT authentication for API"
    bash scripts/codex-review.sh plan --plan-file ~/.claude/plans/<slug>.md
    ```
 3. `CHANGES_REQUESTED` → скорректируй план в файле, отправь снова (см. «Accept or Argue»)
-4. `APPROVED` → вызови `ExitPlanMode` для одобрения пользователем
+4. `APPROVED` → обработай `## Non-blocking` и `## Pre-existing` (см. «Разделы ответа ревьюера»), затем вызови `ExitPlanMode` для одобрения пользователем
 
 Таким образом план проходит два ревью: техническое (Codex) и бизнес-приоритетное (пользователь).
 
@@ -144,7 +144,7 @@ bash scripts/codex-state.sh set phase implementing  # Обновить фазу
 
 | Exit | Status | Действие |
 |------|--------|----------|
-| 0 | APPROVED | Продолжай работу |
+| 0 | APPROVED | Обработай `## Non-blocking` и `## Pre-existing` (см. «Разделы ответа ревьюера»), затем продолжай работу |
 | 0 | CHANGES_REQUESTED | Скорректируй и отправь снова (см. «Accept or Argue») |
 | 1 | ERROR | Сообщи об ошибке, предложи проверить session_id |
 | 2 | ESCALATE | Оповести пользователя, выведи краткое резюме, предложи варианты (см. «Обработка ESCALATE») |
@@ -182,12 +182,24 @@ bash scripts/codex-state.sh set phase implementing  # Обновить фазу
 
 Codex пишет свой вердикт в `verdict.txt` внутри state-каталога ветки (одно слово: `APPROVED` или `CHANGES_REQUESTED`). **Для чтения вердикта используй `bash scripts/codex-state.sh get verdict`** — helper возвращает `APPROVED`, `CHANGES_REQUESTED` или пустую строку (нет/невалидно). Файл очищается перед каждым запросом ревью. Если Codex не создал файл — скрипт парсит вердикт из текста ответа (fallback). Плагинный хук `ExitPlanMode` дополнительно связывает вердикт с текущей Claude-сессией через `current_session.txt` в том же каталоге — verdict, пришедший из другой сессии, удаляется.
 
+## Разделы ответа ревьюера
+
+Ответ ревьюера разложен на три раздела. Что делать с каждым:
+
+| Раздел | Действие |
+|---|---|
+| `## Blocking` | исправь или оспорь каждый пункт — см. «Accept or Argue» |
+| `## Non-blocking` | не исправляй по своей инициативе; вынеси список пользователю через `AskUserQuestion` (взять в работу / отдельной задачей / не делать) |
+| `## Pre-existing` | вынеси каждый пункт уровня `critical` пользователю через `AskUserQuestion` (чинить сейчас / отдельной задачей / не чинить) до того, как объявишь ревью законченным; остальные пункты — вместе с `## Non-blocking` |
+
+При `APPROVED` с непустым `## Non-blocking` работа считается принятой: отправлять новый круг ревью из-за этих пунктов не нужно.
+
 ## Правила
 
 - НИКОГДА не вызывай `codex exec` напрямую — только через скрипты `codex-review.sh` и `codex-state.sh`. Скрипты сами знают модель, конфиг и session_id
 - Описывай ЧТО ты сделал и ПОЧЕМУ, какие решения принимал — используй шаблоны описания
 - НЕ передавай git diff — Codex сам посмотрит, он в той же директории
-- APPROVED → продолжай работу
+- APPROVED → обработай `## Non-blocking` и `## Pre-existing`, затем продолжай работу
 - Перед реализацией вызови `codex-state.sh set phase implementing`
 - Есть заказчик (пользователь) — уточняй у него неоднозначные вопросы
 - Опция `--max-iter N` позволяет изменить лимит итераций
@@ -211,7 +223,7 @@ When `AUTO_REVIEW=true` in `.codex-review/config.env`, the entire review cycle r
    **IMPORTANT**: Always run `init` before the first `plan` review in a conversation. Even if `codex-state.sh show` reports an existing session, it may be stale (from a previous conversation). The `init` command safely archives the old session and creates a fresh one. Only skip `init` when re-submitting after `CHANGES_REQUESTED` within the same review cycle.
 3. **Formal verdict check** — run `bash scripts/codex-state.sh get verdict`. Proceed ONLY if it outputs the exact string `APPROVED`. Do NOT interpret review text — only the helper output matters.
 4. `CHANGES_REQUESTED` → fix the plan, resubmit (follow «Accept or Argue» rules). Iterate automatically up to the iteration limit.
-5. `APPROVED` → call `ExitPlanMode` (the hook auto-approves it)
+5. `APPROVED` → handle `## Non-blocking` and `## Pre-existing` first (see «Разделы ответа ревьюера»), then call `ExitPlanMode` (the hook auto-approves it)
 
 #### Implementation phase
 
@@ -227,7 +239,7 @@ When `AUTO_REVIEW=true` in `.codex-review/config.env`, the entire review cycle r
    ```
 8. **Formal verdict check** — same as step 3: run `bash scripts/codex-state.sh get verdict` and check for exact string `APPROVED`.
 9. `CHANGES_REQUESTED` → fix code, resubmit automatically.
-10. `APPROVED` → work is complete, report to user.
+10. `APPROVED` → handle `## Non-blocking` and `## Pre-existing` (see «Разделы ответа ревьюера»), then report to user.
 
 #### ESCALATE handling in auto mode
 
@@ -238,9 +250,11 @@ Same as standard ESCALATE handling — present summary and ask user via `AskUser
 При получении CHANGES_REQUESTED:
 
 1. Прочитай предыдущую review note из `$(bash scripts/codex-state.sh dir)/notes/{phase}-review-{N}.md`
-2. Критически оцени каждое замечание. В описании к повторной отправке ОБЯЗАТЕЛЬНО адресуй каждое замечание поточечно:
+2. Критически оцени каждый пункт раздела `## Blocking`. В описании к повторной отправке адресуй каждый из них поточечно:
    - **Исправлено**: [что именно исправил и как]
    - **Не согласен**: [контраргумент с обоснованием — Codex видит историю и может принять или настоять]
    - **Отложено**: [причина — только с согласия пользователя через AskUserQuestion]
-3. Если одно и то же замечание повторяется 2+ раза без нового содержания (Codex настаивает, ты уже аргументировал) — эскалируй пользователю через AskUserQuestion: покажи замечание, свои аргументы, и спроси решение
-4. При исчерпании лимита итераций — следуй процедуре «Обработка ESCALATE»
+3. Запиши в то же описание решение пользователя по пунктам `## Non-blocking` и `## Pre-existing`
+4. Если один и тот же пункт `## Blocking` повторяется 2+ раза без нового содержания (Codex настаивает, ты уже аргументировал) — эскалируй пользователю через AskUserQuestion: покажи замечание, свои аргументы, и спроси решение
+5. Если два круга подряд весь `## Blocking` состоит из дефектов в коде, который породили правки прошлых кругов, — останови круги и спроси пользователя через AskUserQuestion: ещё круг правок или откат механизма к состоянию до ревью
+6. При исчерпании лимита итераций — следуй процедуре «Обработка ESCALATE»

@@ -19,7 +19,7 @@ cmd_show() {
         # Replace session_id in output with effective value (config.env takes priority)
         sed "s|\"session_id\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"session_id\": \"$effective_sid\"|" "$STATE_FILE"
     else
-        echo "{\"session_id\":\"$effective_sid\",\"phase\":\"\",\"iteration\":0,\"max_iterations\":3,\"last_review_status\":\"\",\"last_review_timestamp\":\"\",\"task_description\":\"\"}"
+        echo "{\"session_id\":\"$effective_sid\",\"phase\":\"\",\"iteration\":0,\"max_iterations\":3,\"last_review_status\":\"\",\"last_review_timestamp\":\"\",\"reviews_completed\":0,\"task_description\":\"\"}"
     fi
 }
 
@@ -40,6 +40,7 @@ cmd_reset() {
   \"max_iterations\": $CODEX_MAX_ITERATIONS,
   \"last_review_status\": \"\",
   \"last_review_timestamp\": \"\",
+  \"reviews_completed\": 0,
   \"task_description\": \"$task_desc\"
 }"
         write_status
@@ -77,6 +78,7 @@ cmd_set() {
   \"max_iterations\": 3,
   \"last_review_status\": \"\",
   \"last_review_timestamp\": \"\",
+  \"reviews_completed\": 0,
   \"task_description\": \"\"
 }"
     fi
