@@ -286,12 +286,17 @@ print_backend_info() {
 # IAM token — JWT PS256 with SA key (inline-copied from yandex-search-api)
 # ---------------------------------------------------------------------
 
+# Create a 0700 temp directory under $TMPDIR. The umask is restored before
+# returning, so a caller that writes secrets into the directory must set its
+# own umask 077 around those writes (see _iam_token_issue).
+# POSIX sh has no locals: every variable here is prefixed to avoid clobbering
+# a caller's variable of the same name.
 _make_secure_tmpdir() {
-    _old_umask=$(umask)
+    _mstd_old_umask=$(umask)
     umask 077
-    _td=$(mktemp -d "${TMPDIR:-/tmp}/wordstat_XXXXXX")
-    umask "$_old_umask"
-    echo "$_td"
+    _mstd_td=$(mktemp -d "${TMPDIR:-/tmp}/wordstat_XXXXXX")
+    umask "$_mstd_old_umask"
+    echo "$_mstd_td"
 }
 
 _check_openssl() {
@@ -313,9 +318,9 @@ _check_openssl() {
 }
 
 _get_cached_iam_token() {
-    _cf="$WORDSTAT_CACHE_DIR/iam_token.json"
-    [ -f "$_cf" ] || return 0
-    _CACHE_FILE="$_cf" python3 - <<'PYEOF' 2>/dev/null
+    _gcit_cf="$WORDSTAT_CACHE_DIR/iam_token.json"
+    [ -f "$_gcit_cf" ] || return 0
+    _CACHE_FILE="$_gcit_cf" python3 - <<'PYEOF' 2>/dev/null
 import json, os, time
 cf = os.environ["_CACHE_FILE"]
 try:
@@ -329,22 +334,26 @@ except Exception:
 PYEOF
 }
 
+# NOTE: every variable is prefixed _sit_ on purpose. This function is called
+# from _iam_token_issue while that function still owns a temp directory; an
+# unprefixed _tmp here would overwrite the caller's path and strand the
+# private key on disk (that bug shipped once already).
 _save_iam_token() {
-    _tok="$1"
-    _exp="$2"
+    _sit_tok="$1"
+    _sit_exp="$2"
     mkdir -p "$WORDSTAT_CACHE_DIR"
-    _cf="$WORDSTAT_CACHE_DIR/iam_token.json"
-    _old_umask=$(umask)
+    _sit_cf="$WORDSTAT_CACHE_DIR/iam_token.json"
+    _sit_old_umask=$(umask)
     umask 077
-    _tmp="$WORDSTAT_CACHE_DIR/.iam_token_tmp_$$.json"
-    _SAVE_TOKEN="$_tok" _SAVE_EXP="$_exp" _TMP_FILE="$_tmp" python3 - <<'PYEOF'
+    _sit_tmp="$WORDSTAT_CACHE_DIR/.iam_token_tmp_$$.json"
+    _SAVE_TOKEN="$_sit_tok" _SAVE_EXP="$_sit_exp" _TMP_FILE="$_sit_tmp" python3 - <<'PYEOF'
 import json, os
 d = {"iam_token": os.environ["_SAVE_TOKEN"], "expires_at": int(os.environ["_SAVE_EXP"])}
 with open(os.environ["_TMP_FILE"], "w") as f:
     json.dump(d, f)
 PYEOF
-    mv "$_tmp" "$_cf"
-    umask "$_old_umask"
+    mv "$_sit_tmp" "$_sit_cf"
+    umask "$_sit_old_umask"
 }
 
 # Issue a fresh IAM token from the SA key. Echoes token on stdout.
@@ -355,12 +364,19 @@ _iam_token_issue() {
         die_with_help "Service account key file not readable: $WORDSTAT_CLOUD_SA_KEY_PATH"
     fi
 
-    _tmp=$(_make_secure_tmpdir)
+    _iti_tmp=$(_make_secure_tmpdir)
     # shellcheck disable=SC2064
-    trap "rm -rf '$_tmp'" EXIT INT TERM
+    trap "rm -rf '$_iti_tmp'" EXIT INT TERM
+
+    # Every file below (key.pem, the JWT parts, openssl's signature) is written
+    # while umask 077 is in effect, so they land 0600 rather than 0644.
+    # _make_secure_tmpdir restores the umask before it returns, so we set our
+    # own here and restore it on the way out.
+    _iti_old_umask=$(umask)
+    umask 077
 
     # Build JWT header + payload, write key.pem and signing_input.txt
-    _SA_KEY="$WORDSTAT_CLOUD_SA_KEY_PATH" _TMP="$_tmp" python3 - <<'PYEOF' || die_with_help "Failed to build JWT from SA key"
+    _SA_KEY="$WORDSTAT_CLOUD_SA_KEY_PATH" _TMP="$_iti_tmp" python3 - <<'PYEOF' || die_with_help "Failed to build JWT from SA key"
 import json, base64, time, os, sys
 sa_key_file = os.environ["_SA_KEY"]
 tmp_dir = os.environ["_TMP"]
@@ -399,17 +415,17 @@ PYEOF
     "$WORDSTAT_CLOUD_OPENSSL_BIN" dgst -sha256 \
         -sigopt rsa_padding_mode:pss \
         -sigopt rsa_pss_saltlen:-1 \
-        -sign "$_tmp/key.pem" \
-        -out "$_tmp/signature.bin" \
-        "$_tmp/signing_input.txt" 2>/dev/null \
+        -sign "$_iti_tmp/key.pem" \
+        -out "$_iti_tmp/signature.bin" \
+        "$_iti_tmp/signing_input.txt" 2>/dev/null \
         || die_with_help "openssl PS256 signing failed"
 
     _sig=$(python3 -c "
 import base64, sys
-with open('$_tmp/signature.bin', 'rb') as f:
+with open('$_iti_tmp/signature.bin', 'rb') as f:
     print(base64.urlsafe_b64encode(f.read()).rstrip(b'=').decode())
 ")
-    _hp=$(cat "$_tmp/header_payload.txt")
+    _hp=$(cat "$_iti_tmp/header_payload.txt")
     _jwt="${_hp}.${_sig}"
 
     _resp=$(curl -s -X POST "$WORDSTAT_IAM_API" \
@@ -451,13 +467,18 @@ print(f'{tok}|{exp}')
         NO_TOKEN:*)    die_with_help "IAM response missing iamToken" "${_result#NO_TOKEN:}" ;;
     esac
 
-    _tok=$(printf '%s' "$_result" | cut -d'|' -f1)
-    _exp=$(printf '%s' "$_result" | cut -d'|' -f2)
-    _save_iam_token "$_tok" "$_exp"
+    _iti_tok=$(printf '%s' "$_result" | cut -d'|' -f1)
+    _iti_exp=$(printf '%s' "$_result" | cut -d'|' -f2)
 
-    rm -rf "$_tmp"
+    # Drop the key material first: nothing below needs the temp directory, and
+    # doing it here means no later call can clobber $_iti_tmp before the rm.
+    rm -rf "$_iti_tmp"
+    umask "$_iti_old_umask"
     trap - EXIT INT TERM
-    printf '%s' "$_tok"
+
+    _save_iam_token "$_iti_tok" "$_iti_exp"
+
+    printf '%s' "$_iti_tok"
 }
 
 _iam_token_get() {
@@ -728,9 +749,9 @@ _cloud_request() {
     _backoff=2
     while [ "$_attempt" -lt "$_max_attempts" ]; do
         _attempt=$((_attempt + 1))
-        _tmp=$(_make_secure_tmpdir)
-        _resp_file="$_tmp/resp"
-        _status=$(curl -s -o "$_resp_file" -w '%{http_code}' \
+        _cr_tmp=$(_make_secure_tmpdir)
+        _cr_resp_file="$_cr_tmp/resp"
+        _status=$(curl -s -o "$_cr_resp_file" -w '%{http_code}' \
             -X POST "$WORDSTAT_CLOUD_API/$_method" \
             -H "Authorization: Bearer $_tok" \
             -H "Content-Type: application/json" \
@@ -738,8 +759,8 @@ _cloud_request() {
 
         case "$_status" in
             2[0-9][0-9])
-                _normalize_response "$_method" "$_resp_file"
-                rm -rf "$_tmp"
+                _normalize_response "$_method" "$_cr_resp_file"
+                rm -rf "$_cr_tmp"
                 return 0
                 ;;
             401)
@@ -747,33 +768,33 @@ _cloud_request() {
                 if [ "$_attempt" = "1" ]; then
                     rm -f "$WORDSTAT_CACHE_DIR/iam_token.json"
                     _tok=$(_iam_token_issue)
-                    rm -rf "$_tmp"
+                    rm -rf "$_cr_tmp"
                     continue
                 fi
-                _err=$(cat "$_resp_file" 2>/dev/null)
-                rm -rf "$_tmp"
+                _err=$(cat "$_cr_resp_file" 2>/dev/null)
+                rm -rf "$_cr_tmp"
                 die_with_help "Cloud Wordstat 401 Unauthorized after token refresh" "$_err"
                 ;;
             403)
-                _err=$(cat "$_resp_file" 2>/dev/null)
-                rm -rf "$_tmp"
+                _err=$(cat "$_cr_resp_file" 2>/dev/null)
+                rm -rf "$_cr_tmp"
                 die_with_help "Cloud Wordstat 403 Forbidden" \
                     "Check that your service account has the role 'search-api.webSearch.user' on folder $WORDSTAT_CLOUD_FOLDER_ID. Raw: $_err"
                 ;;
             5[0-9][0-9]|000)
                 if [ "$_attempt" -lt "$_max_attempts" ]; then
-                    rm -rf "$_tmp"
+                    rm -rf "$_cr_tmp"
                     sleep "$_backoff"
                     _backoff=$((_backoff * 2))
                     continue
                 fi
-                _err=$(cat "$_resp_file" 2>/dev/null)
-                rm -rf "$_tmp"
+                _err=$(cat "$_cr_resp_file" 2>/dev/null)
+                rm -rf "$_cr_tmp"
                 die_with_help "Cloud Wordstat $_status after $_max_attempts retries" "$_err"
                 ;;
             *)
-                _err=$(cat "$_resp_file" 2>/dev/null)
-                rm -rf "$_tmp"
+                _err=$(cat "$_cr_resp_file" 2>/dev/null)
+                rm -rf "$_cr_tmp"
                 die_with_help "Cloud Wordstat HTTP $_status" "$_err"
                 ;;
         esac
