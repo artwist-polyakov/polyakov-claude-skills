@@ -52,6 +52,7 @@ npm install -g @openai/codex
 .codex-review/*/last_response.txt
 .codex-review/*/codex-*.log
 .codex-review/*/codex-*.request.md
+.codex-review/*/codex-*.prompt.md
 .codex-review/*/plan.md
 .codex-review/archive/
 ```
@@ -178,8 +179,10 @@ bash scripts/codex-state.sh set phase implementing  # Обновить фазу
 │   ├── last_response.txt       # gitignore — последний ответ Codex
 │   ├── codex-init.log          # gitignore — лог инициализации сессии
 │   ├── codex-init.request.md   # gitignore — текст задачи, отправленный в сессию
+│   ├── codex-init.prompt.md    # gitignore — промпт, который получил Codex
 │   ├── codex-{phase}-{N}.log   # gitignore — логи итераций ревью
 │   ├── codex-{phase}-{N}.request.md  # gitignore — текст, отправленный на итерацию
+│   ├── codex-{phase}-{N}.prompt.md   # gitignore — промпт, который получил Codex
 │   ├── plan.md                 # gitignore — копия последнего плана, ушедшего на ревью
 │   └── notes/                  # В GIT — журнал текущего ревью для команды
 │       ├── .gitkeep

@@ -267,6 +267,7 @@ archive_previous_session() {
     if ls "$state_dir"/notes/*.md &>/dev/null; then has_artifacts=true; fi
     if ls "$state_dir"/codex-*.log &>/dev/null; then has_artifacts=true; fi
     if ls "$state_dir"/codex-*.request.md &>/dev/null; then has_artifacts=true; fi
+    if ls "$state_dir"/codex-*.prompt.md &>/dev/null; then has_artifacts=true; fi
 
     if [[ "$has_artifacts" == "false" ]]; then
         return
@@ -289,6 +290,9 @@ archive_previous_session() {
     # Requests travel with the logs of the attempts that sent them: left behind,
     # they would be overwritten once a new session reuses the attempt numbers.
     mv "$state_dir"/codex-*.request.md "$archive_dir/" 2>/dev/null || true
+    # The prompts travel with them: codex-init.prompt.md carries a fixed name, so
+    # a new session would overwrite it where it stands.
+    mv "$state_dir"/codex-*.prompt.md "$archive_dir/" 2>/dev/null || true
     mv "$state_dir"/notes/*.md "$archive_dir/notes/" 2>/dev/null || true
 
     echo "Previous session archived to: $archive_dir" >&2

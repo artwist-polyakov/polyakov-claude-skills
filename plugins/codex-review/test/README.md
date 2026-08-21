@@ -110,11 +110,19 @@ Scenarios:
 10. Every file a run leaves in the state directory is covered by a line of the
     ignore list the skill's README tells a project to add — an artefact nobody
     ignores ends up untracked in the user's worktree.
-11. Opening a new session archives the saved requests together with their logs,
-    leaving none behind for the next attempt numbering to overwrite.
+11. Opening a new session archives the saved requests and the prompts together
+    with their logs, leaving none behind for the next attempt numbering to
+    overwrite — `codex-init.prompt.md` carries a fixed name, so a prompt left in
+    place would be overwritten rather than kept.
+12. A plan past the 128 KB the kernel allows in one argument is still sent whole:
+    the run succeeds, the prompt the stub receives holds the plan's last line,
+    and the prompt is kept beside the log as `codex-<phase>-<N>.prompt.md`.
+13. `init` sends a task of that size whole as well — it builds and sends its
+    prompt on its own path, and keeps it in `codex-init.prompt.md`.
 
 Does **not** require the `codex` binary — a stub on `PATH` records the prompt
-and writes the verdict.
+and writes the verdict. The prompt reaches it on stdin, which is how
+`codex-review.sh` sends it: the stub is called with `-` in place of the text.
 
 Run:
 
