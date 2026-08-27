@@ -169,6 +169,9 @@ stdin and writes the verdict; the assertions read the prompt copy the run keeps
 as `codex-<phase>-<N>.prompt.md`. A `fail-next` marker file makes the stub fail
 one review call, and only a review call: `common.sh` probes `codex --version`
 before every run, and failing that probe would abort before any review ran.
+`run_review` clears every setting `load_config` reads, so an exported
+`CODEX_SEVERITY_CALIBRATION` or `CODEX_MAX_ITERATIONS` cannot decide the
+outcome of an assertion.
 
 Run:
 
@@ -197,6 +200,10 @@ every exec call, one argument per line, as `argv-<N>.txt` beside the repo. The
 `codex --version` probe `common.sh` runs before every review is not an exec
 call and is not recorded, so `argv-1.txt` is the session call and `argv-2.txt`
 the review.
+
+`run_review` clears every setting `load_config` reads before each run, so the
+assertions answer to the repo's own `config.env` and not to a `CODEX_MODEL` or
+`CODEX_REASONING_EFFORT` exported on the machine running the suite.
 
 Run:
 

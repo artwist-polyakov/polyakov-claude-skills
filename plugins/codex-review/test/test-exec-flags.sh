@@ -100,8 +100,17 @@ run_review() {
     # repo, then codex-review.sh arguments. Never fails the suite on its own.
     _repo="$1"
     shift
-    (cd "$_repo" && PATH="$_repo/bin:$PATH" CODEX_HOME="$_repo/codex-home" \
-        bash "$REVIEW_CMD" "$@" >/dev/null 2>&1) || true
+    (
+        # Only the repo's own `.codex-review/config.env` may decide what a run
+        # sees. Every setting `load_config` reads is cleared first, so a value
+        # exported on the machine running the suite cannot answer an assertion
+        # that was written about a repo which configures nothing.
+        unset CODEX_MODEL CODEX_REASONING_EFFORT CODEX_MAX_ITERATIONS \
+              CODEX_YOLO CODEX_SESSION_ID AUTO_REVIEW CODEX_REVIEWER_PROMPT \
+              CODEX_PLAN_GUIDE CODEX_CODE_GUIDE CODEX_SEVERITY_CALIBRATION
+        cd "$_repo" && PATH="$_repo/bin:$PATH" CODEX_HOME="$_repo/codex-home" \
+            bash "$REVIEW_CMD" "$@" >/dev/null 2>&1
+    ) || true
 }
 
 argv_file() {
