@@ -60,6 +60,12 @@ check_prerequisites() {
 # --- Config loading (JSON via python3) ---
 
 load_config() {
+    _env_file="$SKILL_DIR/config/.env"
+    if [ -f "$_env_file" ]; then
+        # shellcheck disable=SC1090
+        . "$_env_file"
+    fi
+
     if [ ! -f "$CONFIG_FILE" ]; then
         echo "Error: config.json not found at $CONFIG_FILE" >&2
         echo "Copy config.example.json to config.json and fill in your values." >&2
@@ -94,6 +100,60 @@ else:
     print(v)
 " 2>/dev/null)
     echo "$_val"
+}
+
+# Select API-key or IAM authorization. A missing mode preserves the original
+# service-account configuration, while allowing key-only installs to opt in
+# without an extra config field.
+cloud_auth_mode() {
+    _cam_mode=$(cfg_get "auth.mode")
+    _cam_sa_path=$(cfg_get "auth.service_account_key_file")
+
+    if [ -z "$_cam_mode" ]; then
+        if [ -n "${YANDEX_AI_API_KEY:-}" ] && [ -z "$_cam_sa_path" ]; then
+            _cam_mode="api_key"
+        else
+            _cam_mode="iam"
+        fi
+    fi
+
+    case "$_cam_mode" in
+        api_key|iam)
+            printf '%s\n' "$_cam_mode"
+            ;;
+        *)
+            echo "Error: auth.mode must be api_key or iam" >&2
+            return 1
+            ;;
+    esac
+}
+
+# Print one complete Authorization header. Callers must pass it directly to
+# curl and must never log the result.
+cloud_auth_header() {
+    _cah_mode=$(cloud_auth_mode) || return 1
+
+    case "$_cah_mode" in
+        api_key)
+            if [ -z "${YANDEX_AI_API_KEY:-}" ]; then
+                echo "Error: auth.mode=api_key requires YANDEX_AI_API_KEY" >&2
+                return 1
+            fi
+            printf 'Authorization: Api-Key %s\n' "$YANDEX_AI_API_KEY"
+            ;;
+        iam)
+            _cah_token=$(get_cached_iam_token)
+            if [ -z "$_cah_token" ]; then
+                sh "$SCRIPT_DIR/iam_token_get.sh" >&2 || return 1
+                _cah_token=$(get_cached_iam_token)
+            fi
+            if [ -z "$_cah_token" ]; then
+                echo "Error: IAM token generation produced no token" >&2
+                return 1
+            fi
+            printf 'Authorization: Bearer %s\n' "$_cah_token"
+            ;;
+    esac
 }
 
 # --- Temp file management ---
@@ -238,7 +298,8 @@ http_request() {
                 ;;
             403)
                 echo "Error: 403 Forbidden. Check:" >&2
-                echo "  - Role 'search-api.webSearch.user' assigned to SA" >&2
+                echo "  - Role 'search-api.webSearch.user' assigned to the key subject" >&2
+                echo "  - API-key scope 'yc.search-api.execute'" >&2
                 echo "  - Correct folder_id in config.json" >&2
                 cat "$_resp_file" >&2
                 rm -rf "$_tmpdir_http" "$_hr_tmpdir"
@@ -267,18 +328,15 @@ http_request() {
     return 1
 }
 
-# Authenticated request (adds IAM token and folder-id headers)
+# Authenticated request (adds API-key or IAM authorization and folder header)
 # Usage: auth_request "POST" "url" "body"
 auth_request() {
     _ar_method="$1"
     _ar_url="$2"
     _ar_body="$3"
 
-    _iam_token=$(get_cached_iam_token)
-    if [ -z "$_iam_token" ]; then
-        echo "Error: No valid IAM token. Run iam_token_get.sh first." >&2
-        return 1
-    fi
+    _auth_mode=$(cloud_auth_mode) || return 1
+    _auth_header=$(cloud_auth_header) || return 1
 
     _folder_id=$(cfg_get "yandex_cloud_folder_id")
     if [ -z "$_folder_id" ]; then
@@ -287,22 +345,22 @@ auth_request() {
     fi
 
     _result=$(http_request "$_ar_method" "$_ar_url" "$_ar_body" \
-        "Authorization: Bearer $_iam_token" \
+        "$_auth_header" \
         "x-folder-id: $_folder_id" \
         "Content-Type: application/json") || {
-        # On 401, auto-refresh token and retry once
-        if echo "$_result" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('code')==16 else 1)" 2>/dev/null; then
+        # Only IAM credentials can be refreshed. Static API keys fail closed.
+        if [ "$_auth_mode" = "iam" ] && echo "$_result" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('code')==16 else 1)" 2>/dev/null; then
             echo "Token expired, auto-refreshing..." >&2
             rm -f "$CACHE_DIR/iam_token.json"
             sh "$SCRIPT_DIR/iam_token_get.sh" >&2 || { echo "Error: Token refresh failed" >&2; return 1; }
-            _iam_token=$(get_cached_iam_token)
-            if [ -z "$_iam_token" ]; then
+            _auth_header=$(cloud_auth_header) || return 1
+            if [ -z "$_auth_header" ]; then
                 echo "Error: Token refresh produced no token" >&2
                 return 1
             fi
             # Retry with new token
             _result=$(http_request "$_ar_method" "$_ar_url" "$_ar_body" \
-                "Authorization: Bearer $_iam_token" \
+                "$_auth_header" \
                 "x-folder-id: $_folder_id" \
                 "Content-Type: application/json") || return 1
         else
