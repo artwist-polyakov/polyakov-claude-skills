@@ -14,6 +14,7 @@ test/
 ├── test-integration.sh         # path-contract tests (hook ↔ state dir)
 ├── test-description-file.sh    # --description-file, per-attempt logs, saved request
 ├── test-severity-calibration.sh # severity scale, finding headings, verdict threshold
+├── test-exec-flags.sh          # model and reasoning effort on every codex exec call
 ├── test-e2e.sh                 # opt-in end-to-end with real codex / claude
 └── test-fixtures/              # plan markdown fixtures used by test-e2e.sh
     ├── approve_plan.md         # trivial plan → APPROVED
@@ -175,6 +176,34 @@ Run:
 sh plugins/codex-review/test/test-severity-calibration.sh
 ```
 
+## test-exec-flags.sh
+
+Covers the flags `codex-review.sh` puts on every `codex exec` call.
+
+Scenarios:
+
+1. `CODEX_MODEL` and `CODEX_REASONING_EFFORT` reach the call that opens the
+   session as `--model <name>` and `-c model_reasoning_effort="<effort>"`, and
+   the review that follows carries the same pair.
+2. The two call sites open with an identical flag block — everything up to
+   `-o`, where the per-call arguments begin. A flag added to one site and not
+   the other fails here, which is what keeps a session from being created under
+   one setting and reviewed under another.
+3. With neither setting configured, no `--model` and no `-c` are passed at all,
+   and no empty argument goes out in their place.
+
+Does **not** require the `codex` binary — a stub on `PATH` records the argv of
+every exec call, one argument per line, as `argv-<N>.txt` beside the repo. The
+`codex --version` probe `common.sh` runs before every review is not an exec
+call and is not recorded, so `argv-1.txt` is the session call and `argv-2.txt`
+the review.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-exec-flags.sh
+```
+
 ## test-e2e.sh
 
 Opt-in end-to-end tests that exercise real `codex` / `claude` CLIs.
@@ -253,5 +282,5 @@ scenario — as an `init` task and as a code description, not as plans:
 
 ## Exit codes
 
-All five scripts exit `0` on success and `1` if any assertion failed.
+All six scripts exit `0` on success and `1` if any assertion failed.
 `test-e2e.sh` additionally exits `0` (skip) when `CODEX_E2E` is not set.
