@@ -18,36 +18,32 @@
             <passages>
               <passage>Короткий <hlword>сниппет</hlword> выдачи.</passage>
             </passages>
-            <ysa-test-extract>Первый абзац выдержки со страницы.
-Он длиннее сниппета и годится для цитирования.</ysa-test-extract>
             <properties><lang>ru</lang></properties>
           </doc>
         </group>
         <group>
-          <categ attr="d" name="nopack.example.org"/>
+          <categ attr="d" name="second.example.org"/>
           <doccount>1</doccount>
           <doc id="Z2">
-            <url>https://nopack.example.org/b</url>
-            <domain>nopack.example.org</domain>
-            <title>Документ без выдержки</title>
+            <url>https://second.example.org/b</url>
+            <domain>second.example.org</domain>
+            <title>Второй документ</title>
             <passages>
-              <passage>Только обычный сниппет, выдержки страница не отдала.</passage>
+              <passage>Сниппет второго документа.</passage>
             </passages>
             <properties><lang>ru</lang></properties>
           </doc>
         </group>
         <group>
-          <categ attr="d" name="split.example.net"/>
+          <categ attr="d" name="third.example.net"/>
           <doccount>1</doccount>
           <doc id="Z3">
-            <url>https://split.example.net/c</url>
-            <domain>split.example.net</domain>
-            <title>Выдержка из двух кусков</title>
+            <url>https://third.example.net/c</url>
+            <domain>third.example.net</domain>
+            <title>Третий документ</title>
             <passages>
               <passage>Сниппет третьего документа.</passage>
             </passages>
-            <ysa-test-extract>Кусок один.</ysa-test-extract>
-            <ysa-test-extract>Кусок два.</ysa-test-extract>
             <properties><lang>ru</lang></properties>
           </doc>
         </group>

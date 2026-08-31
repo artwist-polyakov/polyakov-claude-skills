@@ -41,7 +41,6 @@ expect "$(cfg_get 'search.region_id.deeper' 'fallback')" "fallback" "default whe
 printf '{"yandex_cloud_folder_id": "b1g", "search": {}}\n' > "$TMP_DIR/minimal.json"
 CONFIG_FILE="$TMP_DIR/minimal.json"
 expect "$(cfg_get 'search.smart_snippets.enabled' 'true')" "true" "default for an older config"
-expect "$(cfg_get 'search.smart_snippets.docs' "$SMART_SNIPPETS_MAX_DOCS")" "20" \
-    "docs default for an older config"
+expect "$(cfg_get 'search.smart_snippets.docs' '20')" "20" "docs default for an older config"
 
 echo PASS

@@ -18,7 +18,7 @@ FAMILY_MODE=$(cfg_get "search.family_mode" "FAMILY_MODE_MODERATE")
 FIX_TYPO=$(cfg_get "search.fix_typo_mode" "FIX_TYPO_MODE_ON")
 RESULTS_PER_PAGE=$(cfg_get "search.results_per_page" "10")
 SNIPPETS=$(cfg_get "search.smart_snippets.enabled" "true")
-SNIPPET_DOCS=$(cfg_get "search.smart_snippets.docs" "$SMART_SNIPPETS_MAX_DOCS")
+SNIPPET_DOCS=$(cfg_get "search.smart_snippets.docs" "20")
 PAGE=0
 QUERIES_FILE=""
 RESULTS_EXPLICIT=0
@@ -47,7 +47,7 @@ if [ -z "$QUERY" ] && [ -z "$QUERIES_FILE" ]; then
     echo "  --query, -q        Search query text"
     echo "  --file, -f         File with queries (one per line)"
     echo "  --region-id, -r    Region ID (default: $REGION_ID)"
-    echo "  --results, -n      Results per page (default: $SNIPPET_DOCS with snippets, else $RESULTS_PER_PAGE)"
+    echo "  --results, -n      Results per page 1-100 (default: $SNIPPET_DOCS with snippets, else $RESULTS_PER_PAGE)"
     echo "  --page, -p         Page number 0+ (default: 0)"
     echo "  --search-type      SEARCH_TYPE_RU|SEARCH_TYPE_TR|SEARCH_TYPE_COM|SEARCH_TYPE_KK|SEARCH_TYPE_BE|SEARCH_TYPE_UZ"
     echo "  --family-mode      FAMILY_MODE_NONE|FAMILY_MODE_MODERATE|FAMILY_MODE_STRICT"
@@ -60,22 +60,23 @@ if [ -z "$QUERY" ] && [ -z "$QUERIES_FILE" ]; then
     exit 1
 fi
 
-# Smart snippets отдаются максимум для SMART_SNIPPETS_MAX_DOCS документов,
-# поэтому вместе с ними число результатов на странице упирается в тот же потолок.
 SNIPPETS_ON=0
 if [ "$SNIPPETS" = "true" ]; then
-    SNIPPETS_ON=1
-    if [ "$RESULTS_EXPLICIT" -eq 0 ]; then
-        RESULTS_PER_PAGE="$SNIPPET_DOCS"
-    fi
-    if [ "$RESULTS_PER_PAGE" -gt "$SMART_SNIPPETS_MAX_DOCS" ]; then
-        echo "Note: smart snippets cover at most $SMART_SNIPPETS_MAX_DOCS docs, capping --results" >&2
-        RESULTS_PER_PAGE="$SMART_SNIPPETS_MAX_DOCS"
+    if [ "$SEARCH_TYPE" != "$SMART_SNIPPETS_SEARCH_TYPE" ]; then
+        # Инфоконтексты живут только в русской поисковой базе. Молча подменять
+        # выбранный пользователем тип поиска нельзя — ищем то, что просили,
+        # но уже без них.
+        echo "Note: smart snippets need $SMART_SNIPPETS_SEARCH_TYPE, got $SEARCH_TYPE — searching without them" >&2
+    else
+        SNIPPETS_ON=1
+        if [ "$RESULTS_EXPLICIT" -eq 0 ]; then
+            RESULTS_PER_PAGE="$SNIPPET_DOCS"
+        fi
     fi
 fi
 
 # Показать тело запроса и выйти, ничего не оплачивая. Этим же режимом
-# офлайн-тесты проверяют разбор флагов и потолок числа документов.
+# офлайн-тесты проверяют разбор флагов и подстановку дефолтов.
 if [ "${YSA_DRY_RUN:-0}" = "1" ]; then
     build_search_body "$QUERY" "$REGION_ID" "$RESULTS_PER_PAGE" "$PAGE" "$SNIPPETS_ON"
     exit 0
@@ -120,12 +121,12 @@ print(d.get('rawData', ''))
         return 1
     fi
 
-    # Decode base64 -> raw XML/HTML
+    # Decode base64 -> тело ответа (XML или JSON, решает сервер)
     echo "$_raw_b64" | b64_decode > "$CACHE_DIR/results/${_sq_hash}.raw"
 
-    # Parse XML to JSON
+    # Разобрать ответ: XML для обычной выдачи, JSON для инфоконтекстов
     _sq_json="$CACHE_DIR/results/${_sq_hash}.json"
-    parse_search_xml "$CACHE_DIR/results/${_sq_hash}.raw" > "$_sq_json"
+    parse_search_response "$CACHE_DIR/results/${_sq_hash}.raw" > "$_sq_json"
 
     # Выдержки целиком не помещаются в буфер stdout песочницы — складываем их
     # в markdown-пак, а печатаем только индекс.

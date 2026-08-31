@@ -13,21 +13,18 @@ SEARCH_API_URL="https://searchapi.api.cloud.yandex.net"
 IAM_API_URL="https://iam.api.cloud.yandex.net/iam/v1/tokens"
 OPERATION_API_URL="https://operation.api.cloud.yandex.net/operations"
 
-# --- Smart snippets ---
-# Содержательные выдержки со страниц выдачи: до 20 документов на запрос,
-# до 2048 токенов на документ, только в синхронном API.
-# Справка: references/SMART_SNIPPETS.md
+# --- Smart snippets (инфоконтексты) ---
+# Инфоконтекст — фрагмент найденной страницы (~500 токенов) с цитатами,
+# релевантный запросу. Только синхронный WebSearchService/Search и только
+# русская поисковая база. Справка: references/SMART_SNIPPETS.md
 #
-# Три константы ниже — единственное место, где живут имена из протокола.
-# SMART_SNIPPETS_FLAG_* уходят в metadata.fields запроса,
-# SMART_SNIPPETS_XML_TAG ищется внутри <doc> в XML-ответе.
-SMART_SNIPPETS_FLAG_KEY="__SMART_SNIPPETS_FLAG_KEY__"
-SMART_SNIPPETS_FLAG_VALUE="__SMART_SNIPPETS_FLAG_VALUE__"
-SMART_SNIPPETS_XML_TAG="__SMART_SNIPPETS_XML_TAG__"
-# Максимум документов с выдержками, который принимает API.
-SMART_SNIPPETS_MAX_DOCS=20
+# Флаг уезжает в metadata.fields запроса.
+SMART_SNIPPETS_FLAG_KEY="x-genesis-info-context"
+SMART_SNIPPETS_FLAG_VALUE="on"
+# Инфоконтексты отдаются только для этого типа поиска.
+SMART_SNIPPETS_SEARCH_TYPE="SEARCH_TYPE_RU"
 # Сколько строк таблицы печатать в stdout: у песочницы жёсткий лимит вывода,
-# полные выдержки всегда уходят в файл.
+# полные инфоконтексты всегда уходят в файл.
 YSA_PRINT_LIMIT="${YSA_PRINT_LIMIT:-20}"
 
 # --- Prerequisites check ---
@@ -432,24 +429,25 @@ print(json.dumps(body, ensure_ascii=False))
 '
 }
 
-# --- XML parsing (python3 xml.etree.ElementTree) ---
+# --- Response parsing ---
 
-# Parse Yandex Search API XML response to JSON
-# Usage: parse_search_xml "input.xml" > "output.json"
+# Разобрать ответ Search API в единый JSON-массив.
+# Usage: parse_search_response "decoded_rawData_file" > "output.json"
 #
-# Каждый элемент: position, url, title, snippet, domain, extract.
-# extract — выдержка smart snippets; пустая строка, когда её нет в ответе
-# (флаг не запрашивали, страница недоступна или не разобрана).
-# Пути и имена тегов уходят в python через окружение, чтобы кавычки и
-# спецсимволы в них не ломали код.
-parse_search_xml() {
-    _YSA_XML_FILE="$1" \
-    _YSA_SNIPPET_TAG="$SMART_SNIPPETS_XML_TAG" \
-    python3 -c '
+# Форматов два, и выбирает их сервер: обычная выдача приходит XML, а запрос с
+# инфоконтекстами — JSON {"docs": [...]}. Формат определяется по первому
+# непробельному символу, чтобы вызывающему коду не приходилось это знать.
+#
+# Каждый элемент результата: position, url, title, snippet, domain, extract.
+# extract — инфоконтекст; пустая строка, когда его в ответе нет.
+# Путь уезжает в python через окружение, чтобы кавычки в нём не ломали код.
+parse_search_response() {
+    _YSA_BODY_FILE="$1" python3 -c '
 import json
 import os
 import sys
 import xml.etree.ElementTree as ET
+from urllib.parse import urlsplit
 
 
 def text_of(elem):
@@ -459,16 +457,10 @@ def text_of(elem):
     return "".join(elem.itertext()).strip()
 
 
-xml_file = os.environ["_YSA_XML_FILE"]
-snippet_tag = os.environ.get("_YSA_SNIPPET_TAG", "")
-
-try:
-    root = ET.parse(xml_file).getroot()
-
+def parse_xml(path):
     results = []
     position = 0
-
-    for grouping in root.iter("grouping"):
+    for grouping in ET.parse(path).getroot().iter("grouping"):
         for group in grouping.iter("group"):
             for doc in group.iter("doc"):
                 position += 1
@@ -479,26 +471,50 @@ try:
                     if snippet:
                         break
 
-                extract = ""
-                if snippet_tag:
-                    found = [text_of(e) for e in doc.iter(snippet_tag)]
-                    extract = "\n\n".join(part for part in found if part)
-
                 url = doc.find("url")
                 domain = doc.find("domain")
-
                 results.append({
                     "position": position,
                     "url": url.text if url is not None else "",
                     "title": text_of(doc.find("title")),
                     "snippet": snippet[:300],
                     "domain": domain.text if domain is not None else "",
-                    "extract": extract,
+                    "extract": "",
                 })
+    return results
 
-    json.dump(results, sys.stdout, ensure_ascii=False, indent=2)
+
+def parse_infocontext(path):
+    """Ответ с инфоконтекстами: docs[] с полями Num/DocumentTitle/FullUrl/
+    Description/info_context. Имена полей — как в документации, вперемешку."""
+    with open(path, encoding="utf-8") as fh:
+        payload = json.load(fh)
+
+    results = []
+    for index, doc in enumerate(payload.get("docs") or [], start=1):
+        url = doc.get("FullUrl") or ""
+        results.append({
+            "position": doc.get("Num") or index,
+            "url": url,
+            "title": doc.get("DocumentTitle") or "",
+            "snippet": (doc.get("Description") or "")[:300],
+            "domain": urlsplit(url).netloc,
+            "extract": doc.get("info_context") or "",
+        })
+    return results
+
+
+body_file = os.environ["_YSA_BODY_FILE"]
+
+try:
+    with open(body_file, encoding="utf-8", errors="replace") as fh:
+        head = fh.read(64).lstrip()
+    parse = parse_infocontext if head.startswith(("{", "[")) else parse_xml
+    json.dump(parse(body_file), sys.stdout, ensure_ascii=False, indent=2)
 except ET.ParseError as exc:
     print(json.dumps({"error": "XML parse error: %s" % exc, "raw_saved": True}))
+except ValueError as exc:
+    print(json.dumps({"error": "JSON parse error: %s" % exc, "raw_saved": True}))
 except Exception as exc:  # парсер не должен ронять уже оплаченный поиск
     print(json.dumps({"error": str(exc), "raw_saved": True}))
 '
@@ -533,8 +549,8 @@ lines = [
     "",
     "Регион %s · документов: %d · с выдержками: %d" % (region, len(results), with_extract),
     "",
-    "Источник: Yandex Search API, smart snippets. Текст выдержек — оригинальный",
-    "фрагмент страницы, а не пересказ модели: его можно цитировать как есть.",
+    "Источник: Yandex Search API, инфоконтексты — подготовленные фрагменты",
+    "найденных страниц с цитатами из документа, релевантные запросу.",
 ]
 
 for r in results:

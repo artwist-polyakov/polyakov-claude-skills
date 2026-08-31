@@ -154,7 +154,7 @@ print(resp.get('rawData', ''))
         if [ -n "$_raw_b64" ]; then
             # Decode and parse
             echo "$_raw_b64" | b64_decode > "$CACHE_DIR/results/${_result_hash}.raw"
-            parse_search_xml "$CACHE_DIR/results/${_result_hash}.raw" > "$CACHE_DIR/results/${_result_hash}.json"
+            parse_search_response "$CACHE_DIR/results/${_result_hash}.raw" > "$CACHE_DIR/results/${_result_hash}.json"
 
             # Update operation status
             python3 -c "

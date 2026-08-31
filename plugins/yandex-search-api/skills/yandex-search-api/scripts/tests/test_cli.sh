@@ -59,20 +59,18 @@ check "$TMP_DIR/plain.json" '"metadata" not in body' "--no-snippets must drop th
 check "$TMP_DIR/plain.json" 'body["groupSpec"]["groupsOnPage"] == 10' \
     "--no-snippets must fall back to search.results_per_page"
 
-# --- явный --results уважается, пока он в пределах потолка ---
+# --- явный --results перекрывает дефолт ---
 YSA_DRY_RUN=1 sh "$SYNC" --query q --results 5 > "$TMP_DIR/five.json"
 check "$TMP_DIR/five.json" 'body["groupSpec"]["groupsOnPage"] == 5' "--results 5 not honoured"
 
-# --- --results выше потолка обрезается, и об этом говорят вслух ---
-YSA_DRY_RUN=1 sh "$SYNC" --query q --results 50 > "$TMP_DIR/many.json" 2>"$TMP_DIR/many.err"
-check "$TMP_DIR/many.json" 'body["groupSpec"]["groupsOnPage"] == 20' \
-    "--results above the smart snippets ceiling must be capped"
-grep -q 'capping' "$TMP_DIR/many.err" || fail "capping must be reported on stderr"
-
-# --- без snippets потолка нет: сотня результатов проходит как раньше ---
-YSA_DRY_RUN=1 sh "$SYNC" --query q --no-snippets --results 50 > "$TMP_DIR/plain50.json"
-check "$TMP_DIR/plain50.json" 'body["groupSpec"]["groupsOnPage"] == 50' \
-    "--no-snippets must not cap --results"
+# --- инфоконтексты есть только в русской поисковой базе ---
+YSA_DRY_RUN=1 sh "$SYNC" --query q --search-type SEARCH_TYPE_TR \
+    > "$TMP_DIR/tr.json" 2>"$TMP_DIR/tr.err"
+check "$TMP_DIR/tr.json" '"metadata" not in body' \
+    "smart snippets must be dropped for a non-RU search type"
+check "$TMP_DIR/tr.json" 'body["query"]["searchType"] == "SEARCH_TYPE_TR"' \
+    "the requested search type must be kept, not silently swapped for RU"
+grep -q 'SEARCH_TYPE_RU' "$TMP_DIR/tr.err" || fail "the search type conflict must be reported"
 
 # --- регион и страница доезжают до тела запроса ---
 YSA_DRY_RUN=1 sh "$SYNC" --query q --region-id 213 --page 2 > "$TMP_DIR/region.json"
