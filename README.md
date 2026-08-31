@@ -206,7 +206,7 @@ SSH подключение к удалённым серверам по ключ�
 Кросс-агентное ревью: Claude реализует, Codex (GPT-5.2) ревьюит.
 
 - Workflow: init session → plan review → implementation → code review
-- Журнал ревью в `.codex-review/notes/` (коммитится в git)
+- Локальный журнал ревью в `.codex-review/<ветка>/notes/`
 - Анти-рекурсия через env guard `CODEX_REVIEWER`
 
 **Триггеры (RU):**

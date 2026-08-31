@@ -45,19 +45,18 @@ npm install -g @openai/codex
 Добавь в `.gitignore` (или `.git/info/exclude`) проекта:
 
 ```
-.codex-review/config.env
-.codex-review/*/state.json
-.codex-review/*/STATUS.md
-.codex-review/*/verdict.txt
-.codex-review/*/last_response.txt
-.codex-review/*/codex-*.log
-.codex-review/*/codex-*.request.md
-.codex-review/*/codex-*.prompt.md
-.codex-review/*/plan.md
-.codex-review/archive/
+.codex-review/
 ```
 
-> `notes/` **НЕ** игнорируем — это журнал ревью для команды.
+Весь каталог, включая `notes/`, содержит локальное состояние ревью и не должен попадать в Git.
+
+Если проект следовал прежней рекомендации и уже отслеживает `notes/`, после обновления `.gitignore` убери каталог только из индекса Git:
+
+```bash
+git rm -r --cached --ignore-unmatch .codex-review/
+```
+
+Локальные файлы сохранятся. Закоммить подготовленные удаления вместе с новым правилом `.gitignore`.
 
 ### AGENTS.md (для Codex)
 
@@ -175,27 +174,28 @@ bash scripts/codex-state.sh set phase implementing  # Обновить фазу
 
 ## Структура .codex-review/
 
-В корне основного репо (не worktree) создается директория с per-branch изоляцией:
+В корне основного репо (не worktree) создается директория с per-branch изоляцией. Всё её содержимое локальное:
 
 ```
 .codex-review/
-├── config.env                  # gitignore — общие настройки проекта
+├── config.env                  # общие локальные настройки проекта
 ├── .gitkeep
-├── archive/                    # gitignore — общий архив всех сессий
+├── archive/                    # локальный архив всех сессий
 │   └── {timestamp}/            # артефакты одной сессии (branch в summary.json)
 ├── feat-auth/                  # per-branch state (имя ветки, / → -)
-│   ├── state.json              # gitignore — транзиентное состояние
-│   ├── STATUS.md               # gitignore — автогенерируемый статус для Claude
-│   ├── verdict.txt             # gitignore — последний вердикт от Codex
-│   ├── last_response.txt       # gitignore — последний ответ Codex
-│   ├── codex-init.log          # gitignore — лог инициализации сессии
-│   ├── codex-init.request.md   # gitignore — текст задачи, отправленный в сессию
-│   ├── codex-init.prompt.md    # gitignore — промпт, который получил Codex
-│   ├── codex-{phase}-{N}.log   # gitignore — логи итераций ревью
-│   ├── codex-{phase}-{N}.request.md  # gitignore — текст, отправленный на итерацию
-│   ├── codex-{phase}-{N}.prompt.md   # gitignore — промпт, который получил Codex
-│   ├── plan.md                 # gitignore — копия последнего плана, ушедшего на ревью
-│   └── notes/                  # В GIT — журнал текущего ревью для команды
+│   ├── state.json              # транзиентное состояние
+│   ├── STATUS.md               # автогенерируемый статус для Claude
+│   ├── verdict.txt             # последний вердикт от Codex
+│   ├── last_response.txt       # последний ответ Codex
+│   ├── current_session.txt     # привязка вердикта к сессии Claude
+│   ├── codex-init.log          # лог инициализации сессии
+│   ├── codex-init.request.md   # текст задачи, отправленный в сессию
+│   ├── codex-init.prompt.md    # промпт, который получил Codex
+│   ├── codex-{phase}-{N}.log   # логи итераций ревью
+│   ├── codex-{phase}-{N}.request.md  # текст, отправленный на итерацию
+│   ├── codex-{phase}-{N}.prompt.md   # промпт, который получил Codex
+│   ├── plan.md                 # копия последнего плана, ушедшего на ревью
+│   └── notes/                  # локальный журнал текущего ревью
 │       ├── .gitkeep
 │       ├── plan-review-1.md
 │       └── code-review-1.md

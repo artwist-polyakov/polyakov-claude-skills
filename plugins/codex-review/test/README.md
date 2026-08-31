@@ -109,9 +109,9 @@ Scenarios:
    is `--task-label` passed to a phase other than `init`, empty value included.
 9. A single-line description still names itself — no label needed. Read from a
    file, its trailing newline is not carried into the name.
-10. Every file a run leaves in the state directory is covered by a line of the
-    ignore list the skill's README tells a project to add — an artefact nobody
-    ignores ends up untracked in the user's worktree.
+10. The skill's README recommends the single `.codex-review/` rule, so current
+    and future review artefacts stay local without maintaining a file-by-file
+    ignore list.
 11. Opening a new session archives the saved requests and the prompts together
     with their logs, leaving none behind for the next attempt numbering to
     overwrite — `codex-init.prompt.md` carries a fixed name, so a prompt left in
