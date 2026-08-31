@@ -44,6 +44,10 @@ done
 mkdir -p "$CACHE_DIR/ops"
 mkdir -p "$CACHE_DIR/results"
 
+# См. комментарий в web_search_sync.sh: кеш folderId греется в теле скрипта,
+# иначе подоболочка $(build_search_body ...) выбросит его на каждом запросе.
+ysa_warm_folder_id
+
 # --- Helper: count pending operations ---
 count_pending() {
     _pending=0

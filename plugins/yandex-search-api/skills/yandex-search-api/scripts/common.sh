@@ -383,11 +383,22 @@ with open('$_tmp_file', 'w') as f:
 
 # folderId один и тот же на весь прогон, а build_search_body зовётся на каждый
 # запрос батча — читаем конфиг один раз, чтобы не поднимать python3 повторно.
+#
+# Кеш обязан наполняться в том шелле, который переживёт запрос. Вызывающие
+# скрипты собирают тело как `_body=$(build_search_body ...)`, то есть вся
+# функция целиком уходит в подоболочку: присваивание внутри неё умрёт вместе
+# с ней. Поэтому кеш греется один раз в самом скрипте (ysa_warm_folder_id),
+# а подоболочки просто наследуют готовое значение.
 ysa_folder_id() {
     if [ -z "${_YSA_FOLDER_ID_CACHED:-}" ]; then
         _YSA_FOLDER_ID_CACHED=$(cfg_get 'yandex_cloud_folder_id')
     fi
     echo "$_YSA_FOLDER_ID_CACHED"
+}
+
+# Прогреть кеш folderId. Звать из тела скрипта, НЕ внутри $( ) и не в пайпе.
+ysa_warm_folder_id() {
+    ysa_folder_id >/dev/null
 }
 
 # Собрать тело запроса POST /v2/web/search.
@@ -397,9 +408,6 @@ ysa_folder_id() {
 # дефолты продублированы здесь, чтобы забытая переменная не уехала в API
 # пустой строкой.
 build_search_body() {
-    # Наполняем кеш в текущем шелле: внутри подстановки $(...) ниже присваивание
-    # ушло бы в подоболочку и до родителя не добралось бы никогда.
-    ysa_folder_id >/dev/null
     _YSA_QUERY="$1" \
     _YSA_REGION="$2" \
     _YSA_GROUPS="$3" \
@@ -408,7 +416,7 @@ build_search_body() {
     _YSA_SEARCH_TYPE="${SEARCH_TYPE:-SEARCH_TYPE_RU}" \
     _YSA_FAMILY_MODE="${FAMILY_MODE:-FAMILY_MODE_MODERATE}" \
     _YSA_FIX_TYPO="${FIX_TYPO:-FIX_TYPO_MODE_ON}" \
-    _YSA_FOLDER_ID="$_YSA_FOLDER_ID_CACHED" \
+    _YSA_FOLDER_ID="$(ysa_folder_id)" \
     _YSA_FLAG_KEY="$SMART_SNIPPETS_FLAG_KEY" \
     _YSA_FLAG_VALUE="$SMART_SNIPPETS_FLAG_VALUE" \
     python3 -c '

@@ -103,6 +103,11 @@ fi
 # Create results directory
 mkdir -p "$CACHE_DIR/results"
 
+# Прогреваем folderId здесь, в теле скрипта: тело запроса собирается как
+# _body=$(build_search_body ...), и всё, что функция запишет, умрёт вместе с
+# подоболочкой. Без этого батч на сто запросов поднимет python3 сто раз.
+ysa_warm_folder_id
+
 # Function to search a single query
 search_single() {
     _sq_query="$1"

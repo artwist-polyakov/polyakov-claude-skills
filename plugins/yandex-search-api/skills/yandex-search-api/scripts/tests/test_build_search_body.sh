@@ -63,4 +63,40 @@ check "$TMP_DIR/tricky.json" 'body["query"]["queryText"] == os.environ["_YSA_T_Q
     "quotes or newlines corrupted the query"
 check "$TMP_DIR/tricky.json" '"injected" not in body' "query text escaped into the request body"
 
+# --- folderId читается из конфига один раз на прогон ---
+# Тело собирается как _body=$(build_search_body ...), то есть функция целиком
+# уходит в подоболочку: кеш, наполненный внутри неё, умирает вместе с ней.
+# Греть его обязан сам скрипт, а подоболочки — наследовать готовое значение.
+CALLS="$TMP_DIR/cfg_calls"
+: > "$CALLS"
+cfg_get() { echo "call" >> "$CALLS"; echo "b1gtestfolder000000"; }
+
+_YSA_FOLDER_ID_CACHED=""
+ysa_warm_folder_id
+for _i in 1 2 3; do
+    _body=$(build_search_body "запрос $_i" "225" "10" "0" "1")
+done
+COUNT=$(wc -l < "$CALLS" | tr -d ' ')
+[ "$COUNT" = "1" ] \
+    || fail "folderId must be read once per run, got $COUNT config reads for 3 queries"
+check_body() { printf '%s' "$_body" > "$TMP_DIR/last.json"; }
+check_body
+check "$TMP_DIR/last.json" 'body["folderId"] == "b1gtestfolder000000"' \
+    "the warmed folderId must still reach the request body"
+
+# Без прогрева тело всё равно обязано собраться: build_search_body сам сходит
+# в конфиг, просто без экономии.
+_YSA_FOLDER_ID_CACHED=""
+: > "$CALLS"
+_body=$(build_search_body "без прогрева" "225" "10" "0" "0")
+check_body
+check "$TMP_DIR/last.json" 'body["folderId"] == "b1gtestfolder000000"' \
+    "folderId must be read on demand when the cache was never warmed"
+
+# --- оба скрипта греют кеш ---
+grep -q 'ysa_warm_folder_id' "$SKILL_DIR/scripts/web_search_sync.sh" \
+    || fail "web_search_sync.sh must warm the folderId cache in the script body"
+grep -q 'ysa_warm_folder_id' "$SKILL_DIR/scripts/web_search_async.sh" \
+    || fail "web_search_async.sh must warm the folderId cache in the script body"
+
 echo PASS
