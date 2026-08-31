@@ -20,20 +20,8 @@ export YSA_SCRIPT_DIR YSA_SKILL_DIR YSA_CONFIG_FILE YSA_CACHE_DIR
 # shellcheck disable=SC1091
 . "$SKILL_DIR/scripts/common.sh"
 
-check() {
-    _chk_file="$1"
-    _chk_expr="$2"
-    _chk_msg="$3"
-    if ! _YSA_T_FILE="$_chk_file" _YSA_T_EXPR="$_chk_expr" python3 -c '
-import json, os, sys
-with open(os.environ["_YSA_T_FILE"], encoding="utf-8") as fh:
-    data = json.load(fh)
-sys.exit(0 if eval(os.environ["_YSA_T_EXPR"]) else 1)
-'; then
-        echo "$_chk_msg"
-        exit 1
-    fi
-}
+# shellcheck disable=SC1091
+. "$TESTS_DIR/helpers.sh"
 
 # --- обычная выдача: XML ---
 parse_search_response "$TESTS_DIR/fixtures/search_response.xml" > "$TMP_DIR/xml.json"

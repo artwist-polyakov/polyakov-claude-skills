@@ -23,7 +23,8 @@ export YSA_SCRIPT_DIR YSA_SKILL_DIR YSA_CONFIG_FILE YSA_CACHE_DIR
 parse_search_response "$TESTS_DIR/fixtures/infocontext_response.json" > "$TMP_DIR/results.json"
 parse_search_response "$TESTS_DIR/fixtures/search_response.xml" > "$TMP_DIR/plain.json"
 
-fail() { echo "$1"; exit 1; }
+# shellcheck disable=SC1091
+. "$TESTS_DIR/helpers.sh"
 
 # --- markdown-пак ---
 COUNT=$(render_snippet_pack "$TMP_DIR/results.json" "$TMP_DIR/pack.md" "Yandex Cloud" "225")
@@ -64,6 +65,38 @@ render_results_table "$TMP_DIR/results.json" "$TMP_DIR/pack.md" "line" "Yandex C
 [ "$(wc -l < "$TMP_DIR/line.txt" | tr -d ' ')" = "1" ] || fail "line mode must print exactly one line"
 grep -q 'Yandex Cloud' "$TMP_DIR/line.txt" || fail "line mode must name the query"
 grep -q 'выдержек  2' "$TMP_DIR/line.txt" || fail "line mode must report the extract count"
+
+# без пака строка батча всё равно обязана назвать файл с результатами,
+# иначе после `--file --no-snippets` до ответа не добраться
+render_results_table "$TMP_DIR/plain.json" "" "line" "купить дымоход" > "$TMP_DIR/line_plain.txt"
+grep -q "$TMP_DIR/plain.json" "$TMP_DIR/line_plain.txt" \
+    || fail "line mode must fall back to the JSON path when there is no pack"
+[ "$(wc -l < "$TMP_DIR/line_plain.txt" | tr -d ' ')" = "1" ] \
+    || fail "line mode must stay at one line without a pack"
+
+# --- флаг не сработал: пак есть, выдержек ноль ---
+# Вид выбирается по запрошенным выдержкам, а не по пришедшим: развёрнутый
+# список на 20 документов молча выносит буфер stdout песочницы.
+render_results_table "$TMP_DIR/plain.json" "$TMP_DIR/pack.md" "full" "q" > "$TMP_DIR/nofx.txt"
+grep -q 'символов' "$TMP_DIR/nofx.txt" \
+    || fail "a requested-but-empty snippet run must keep the compact table"
+[ "$(wc -l < "$TMP_DIR/nofx.txt" | tr -d ' ')" -le 12 ] \
+    || fail "empty-extract output must stay compact"
+
+# развёрнутый вид ограничен жёстче таблицы: три строки на документ
+OUT="$TMP_DIR/many.json" python3 -c '
+import json, os
+docs = [{"position": i, "url": "https://e%d.ru/p" % i, "title": "T%d" % i,
+         "snippet": "s" * 200, "domain": "e%d.ru" % i, "extract": ""}
+        for i in range(1, 21)]
+with open(os.environ["OUT"], "w") as fh:
+    json.dump(docs, fh)
+'
+render_results_table "$TMP_DIR/many.json" "" "full" "q" > "$TMP_DIR/many.txt"
+[ "$(wc -l < "$TMP_DIR/many.txt" | tr -d ' ')" -le 45 ] \
+    || fail "the verbose listing must stay within the sandbox stdout budget"
+grep -q 'ещё 10 результатов' "$TMP_DIR/many.txt" \
+    || fail "the verbose listing must say how many results it hid"
 
 # --- лимит печати ---
 YSA_PRINT_LIMIT=1 render_results_table "$TMP_DIR/results.json" "" "full" "q" > "$TMP_DIR/limit.txt"

@@ -40,13 +40,6 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# Smart snippets есть только в синхронном API — предупреждаем, чтобы никто не
-# ждал выдержек от батча, который их физически не вернёт.
-if [ "$(cfg_get "search.smart_snippets.enabled" "true")" = "true" ]; then
-    echo "Note: smart snippets are sync-only — this batch returns links and short snippets." >&2
-    echo "      Need page extracts? Use web_search_sync.sh --file instead." >&2
-fi
-
 # Create directories
 mkdir -p "$CACHE_DIR/ops"
 mkdir -p "$CACHE_DIR/results"
@@ -242,6 +235,14 @@ elif [ -n "$QUERIES_FILE" ]; then
     if [ -z "$_token" ]; then
         echo "No valid IAM token. Generating..." >&2
         sh "$SCRIPT_DIR/iam_token_get.sh"
+    fi
+
+    # Smart snippets есть только в синхронном API — предупреждаем ровно там,
+    # где человек мог их ждать: при отправке нового батча. На --resume и на
+    # подсказке по использованию это была бы пустая ругань.
+    if [ "$(cfg_get "search.smart_snippets.enabled" "true")" = "true" ]; then
+        echo "Note: smart snippets are sync-only — this batch returns links and short snippets." >&2
+        echo "      Need page extracts? Use web_search_sync.sh --file instead." >&2
     fi
 
     echo "=== Async Search: Submitting queries ==="

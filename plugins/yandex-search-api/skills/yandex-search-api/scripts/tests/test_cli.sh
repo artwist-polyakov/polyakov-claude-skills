@@ -17,23 +17,8 @@ YSA_CONFIG_FILE="$TESTS_DIR/fixtures/config.json"
 YSA_CACHE_DIR="$TMP_DIR/cache"
 export YSA_CONFIG_FILE YSA_CACHE_DIR
 
-fail() { echo "$1"; exit 1; }
-
-# body <output-file> <python-expr> <message>
-check() {
-    _chk_file="$1"
-    _chk_expr="$2"
-    _chk_msg="$3"
-    if ! _YSA_T_FILE="$_chk_file" _YSA_T_EXPR="$_chk_expr" python3 -c '
-import json, os, sys
-with open(os.environ["_YSA_T_FILE"], encoding="utf-8") as fh:
-    body = json.load(fh)
-sys.exit(0 if eval(os.environ["_YSA_T_EXPR"]) else 1)
-'; then
-        echo "$_chk_msg"
-        exit 1
-    fi
-}
+# shellcheck disable=SC1091
+. "$TESTS_DIR/helpers.sh"
 
 # --- без аргументов: подсказка и ненулевой код ---
 if sh "$SYNC" > "$TMP_DIR/usage.txt" 2>&1; then
@@ -71,6 +56,12 @@ check "$TMP_DIR/tr.json" '"metadata" not in body' \
 check "$TMP_DIR/tr.json" 'body["query"]["searchType"] == "SEARCH_TYPE_TR"' \
     "the requested search type must be kept, not silently swapped for RU"
 grep -q 'SEARCH_TYPE_RU' "$TMP_DIR/tr.err" || fail "the search type conflict must be reported"
+
+# --- --file: образец собирается по первой строке файла, а не по пустому запросу ---
+printf '\n  первый запрос  \nвторой запрос\n' > "$TMP_DIR/queries.txt"
+YSA_DRY_RUN=1 sh "$SYNC" --file "$TMP_DIR/queries.txt" > "$TMP_DIR/batch.json"
+check "$TMP_DIR/batch.json" 'body["query"]["queryText"] == "первый запрос"' \
+    "--file dry run must show the first query, not an empty one"
 
 # --- регион и страница доезжают до тела запроса ---
 YSA_DRY_RUN=1 sh "$SYNC" --query q --region-id 213 --page 2 > "$TMP_DIR/region.json"

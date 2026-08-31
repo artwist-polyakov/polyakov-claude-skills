@@ -381,20 +381,31 @@ with open('$_tmp_file', 'w') as f:
 
 # --- Request building ---
 
+# folderId один и тот же на весь прогон, а build_search_body зовётся на каждый
+# запрос батча — читаем конфиг один раз, чтобы не поднимать python3 повторно.
+ysa_folder_id() {
+    if [ -z "${_YSA_FOLDER_ID_CACHED:-}" ]; then
+        _YSA_FOLDER_ID_CACHED=$(cfg_get 'yandex_cloud_folder_id')
+    fi
+    echo "$_YSA_FOLDER_ID_CACHED"
+}
+
 # Собрать тело запроса POST /v2/web/search.
 # Usage: build_search_body "query" "region" "groups_on_page" "page" "snippets_on"
 # snippets_on: 1 — просить smart snippets, иначе обычная выдача.
-# Остальные параметры берутся из конфига вызывающим скриптом.
+# SEARCH_TYPE/FAMILY_MODE/FIX_TYPO берутся из окружения вызывающего скрипта;
+# дефолты продублированы здесь, чтобы забытая переменная не уехала в API
+# пустой строкой.
 build_search_body() {
     _YSA_QUERY="$1" \
     _YSA_REGION="$2" \
     _YSA_GROUPS="$3" \
     _YSA_PAGE="$4" \
     _YSA_SNIPPETS_ON="$5" \
-    _YSA_SEARCH_TYPE="$SEARCH_TYPE" \
-    _YSA_FAMILY_MODE="$FAMILY_MODE" \
-    _YSA_FIX_TYPO="$FIX_TYPO" \
-    _YSA_FOLDER_ID="$(cfg_get 'yandex_cloud_folder_id')" \
+    _YSA_SEARCH_TYPE="${SEARCH_TYPE:-SEARCH_TYPE_RU}" \
+    _YSA_FAMILY_MODE="${FAMILY_MODE:-FAMILY_MODE_MODERATE}" \
+    _YSA_FIX_TYPO="${FIX_TYPO:-FIX_TYPO_MODE_ON}" \
+    _YSA_FOLDER_ID="$(ysa_folder_id)" \
     _YSA_FLAG_KEY="$SMART_SNIPPETS_FLAG_KEY" \
     _YSA_FLAG_VALUE="$SMART_SNIPPETS_FLAG_VALUE" \
     python3 -c '
@@ -580,8 +591,8 @@ print(with_extract)
 # Компактный индекс результатов в stdout.
 # Usage: render_results_table "results.json" "pack.md_or_empty" "full|line" "label"
 #
-# Когда выдержки есть, печатается одна строка на документ, а тексты остаются в
-# паке: 20 выдержек по 2048 токенов не помещаются в буфер вывода песочницы и
+# Когда выдержки просили, печатается одна строка на документ, а тексты остаются
+# в паке: 20 выдержек по ~500 токенов не помещаются в буфер вывода песочницы и
 # превращаются в молчаливый отказ. В режиме "line" на весь запрос печатается
 # одна строка — иначе батч из десяти запросов упирается в тот же лимит.
 render_results_table() {
@@ -615,14 +626,20 @@ if isinstance(results, dict) and "error" in results:
 with_extract = sum(1 for r in results if r.get("extract"))
 
 if mode == "line":
+    # Без пака (обычная выдача) в батче не остаётся ни одного пути к ответу,
+    # поэтому подставляем разобранный JSON.
     print("  %-40s  %2d док., выдержек %2d  %s" % (
-        cut(label, 40), len(results), with_extract, pack))
+        cut(label, 40), len(results), with_extract,
+        pack or os.environ["_YSA_JSON_FILE"]))
     raise SystemExit(0)
 
 limit = int(os.environ["_YSA_LIMIT"])
-shown = results[:limit]
 
-if with_extract:
+# Вид выбирается по тому, ЗАПРАШИВАЛИСЬ ли выдержки (пак собран), а не по тому,
+# сколько их пришло: когда флаг не сработал и with_extract == 0, развёрнутый
+# список из 20 документов по три строки выносит буфер stdout песочницы.
+if pack or with_extract:
+    shown = results[:limit]
     print("    #  символов  домен                     заголовок")
     for r in shown:
         print("  %3d  %8d  %-24s  %s" % (
@@ -632,6 +649,8 @@ if with_extract:
             cut(r.get("title"), 60),
         ))
 else:
+    # Три строки на документ — вчетверо дороже таблицы, поэтому потолок ниже.
+    shown = results[: min(limit, 10)]
     for r in shown:
         print("  %d. %s" % (r.get("position", 0), cut(r.get("title"), 80)))
         print("     %s" % (r.get("url") or ""))

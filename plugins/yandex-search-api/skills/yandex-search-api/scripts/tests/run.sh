@@ -25,6 +25,10 @@ for t in "$TESTS_DIR"/test_*.sh; do
     echo "FAIL"
     FAIL=$((FAIL + 1))
     FAILED_NAMES="${FAILED_NAMES}${name} "
+    # Без этого падение выглядит как голое FAIL: сообщение теста, ради которого
+    # он и писался, оставалось в проглоченной переменной. Хвост — чтобы
+    # питоновский traceback не вынес буфер stdout песочницы.
+    printf '%s\n' "$out" | tail -20 | sed 's/^/      /'
 done
 
 echo ""

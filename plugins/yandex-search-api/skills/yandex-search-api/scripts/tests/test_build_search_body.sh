@@ -24,22 +24,8 @@ SEARCH_TYPE="SEARCH_TYPE_RU"
 FAMILY_MODE="FAMILY_MODE_MODERATE"
 FIX_TYPO="FIX_TYPO_MODE_ON"
 
-# check <json-file> <python-expr> <message-on-failure>
-# Выражение видит тело запроса как `body` и окружение как `os.environ`.
-check() {
-    _chk_file="$1"
-    _chk_expr="$2"
-    _chk_msg="$3"
-    if ! _YSA_T_FILE="$_chk_file" _YSA_T_EXPR="$_chk_expr" python3 -c '
-import json, os, sys
-with open(os.environ["_YSA_T_FILE"], encoding="utf-8") as fh:
-    body = json.load(fh)
-sys.exit(0 if eval(os.environ["_YSA_T_EXPR"]) else 1)
-'; then
-        echo "$_chk_msg"
-        exit 1
-    fi
-}
+# shellcheck disable=SC1091
+. "$TESTS_DIR/helpers.sh"
 
 export _YSA_T_KEY="$SMART_SNIPPETS_FLAG_KEY"
 export _YSA_T_VALUE="$SMART_SNIPPETS_FLAG_VALUE"

@@ -61,6 +61,9 @@ if [ -z "$QUERY" ] && [ -z "$QUERIES_FILE" ]; then
 fi
 
 SNIPPETS_ON=0
+# Что реально уехало в запрос — конфиг мог просить выдержки, а тип поиска их
+# запретить. В шапку результатов идёт именно это значение, а не желание.
+SNIPPETS_EFFECTIVE="false"
 if [ "$SNIPPETS" = "true" ]; then
     if [ "$SEARCH_TYPE" != "$SMART_SNIPPETS_SEARCH_TYPE" ]; then
         # Инфоконтексты живут только в русской поисковой базе. Молча подменять
@@ -69,6 +72,7 @@ if [ "$SNIPPETS" = "true" ]; then
         echo "Note: smart snippets need $SMART_SNIPPETS_SEARCH_TYPE, got $SEARCH_TYPE — searching without them" >&2
     else
         SNIPPETS_ON=1
+        SNIPPETS_EFFECTIVE="true"
         if [ "$RESULTS_EXPLICIT" -eq 0 ]; then
             RESULTS_PER_PAGE="$SNIPPET_DOCS"
         fi
@@ -78,7 +82,14 @@ fi
 # Показать тело запроса и выйти, ничего не оплачивая. Этим же режимом
 # офлайн-тесты проверяют разбор флагов и подстановку дефолтов.
 if [ "${YSA_DRY_RUN:-0}" = "1" ]; then
-    build_search_body "$QUERY" "$REGION_ID" "$RESULTS_PER_PAGE" "$PAGE" "$SNIPPETS_ON"
+    # С --file запроса в $QUERY нет: показываем тело для первой строки файла,
+    # иначе получился бы образец с пустым queryText.
+    _dry_query="$QUERY"
+    if [ -z "$_dry_query" ] && [ -f "$QUERIES_FILE" ]; then
+        _dry_query=$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$QUERIES_FILE" \
+            | grep -v '^$' | head -1)
+    fi
+    build_search_body "$_dry_query" "$REGION_ID" "$RESULTS_PER_PAGE" "$PAGE" "$SNIPPETS_ON"
     exit 0
 fi
 
@@ -131,9 +142,16 @@ print(d.get('rawData', ''))
     # Выдержки целиком не помещаются в буфер stdout песочницы — складываем их
     # в markdown-пак, а печатаем только индекс.
     _sq_pack=""
+    _sq_pack_file="$CACHE_DIR/results/${_sq_hash}.md"
     if [ "$SNIPPETS_ON" -eq 1 ]; then
-        _sq_pack="$CACHE_DIR/results/${_sq_hash}.md"
+        _sq_pack="$_sq_pack_file"
         render_snippet_pack "$_sq_json" "$_sq_pack" "$_sq_query" "$REGION_ID" >/dev/null || _sq_pack=""
+    fi
+    # Хэш считается только от текста запроса, поэтому поиск той же фразы без
+    # выдержек перезапишет .json/.raw, но оставит пак от прошлого раза. Агент
+    # знает путь и прочитает его как свежий — убираем.
+    if [ -z "$_sq_pack" ]; then
+        rm -f "$_sq_pack_file"
     fi
 
     if [ "$BATCH" -eq 1 ]; then
@@ -143,7 +161,7 @@ print(d.get('rawData', ''))
 
     echo ""
     echo "=== Results for: $_sq_query ==="
-    echo "Region: $REGION_ID | Page: $PAGE | Snippets: $SNIPPETS"
+    echo "Region: $REGION_ID | Page: $PAGE | Snippets: $SNIPPETS_EFFECTIVE"
     echo ""
 
     render_results_table "$_sq_json" "$_sq_pack" "full" "$_sq_query"
