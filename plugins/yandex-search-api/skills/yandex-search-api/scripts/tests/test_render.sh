@@ -74,6 +74,26 @@ grep -q "$TMP_DIR/plain.json" "$TMP_DIR/line_plain.txt" \
 [ "$(wc -l < "$TMP_DIR/line_plain.txt" | tr -d ' ')" = "1" ] \
     || fail "line mode must stay at one line without a pack"
 
+# --- пак с нулём выдержек не должен обещать выдержки ---
+# Иначе шапка зовёт «читай его вместо повторного поиска» у пака, где читать
+# нечего, а вводная обещает «фрагменты страниц», которых не пришло.
+ZERO=$(render_snippet_pack "$TMP_DIR/plain.json" "$TMP_DIR/zero.md" "купить дымоход" "225")
+[ "$ZERO" = "0" ] || fail "expected 0 documents with extracts, got '$ZERO'"
+grep -q 'Инфоконтекстов в ответе не оказалось' "$TMP_DIR/zero.md" \
+    || fail "a pack with no extracts must say so"
+grep -q 'подготовленные фрагменты' "$TMP_DIR/zero.md" \
+    && fail "a pack with no extracts must not promise page fragments"
+
+render_results_table "$TMP_DIR/plain.json" "$TMP_DIR/zero.md" "full" "q" > "$TMP_DIR/zerotab.txt"
+grep -q 'выдержек нет, внутри сниппеты выдачи' "$TMP_DIR/zerotab.txt" \
+    || fail "the pack line must not advertise an empty pack as a substitute for searching"
+grep -q 'читай его вместо повторного поиска' "$TMP_DIR/zerotab.txt" \
+    && fail "an empty pack must not be advertised as a substitute for searching"
+
+# а с выдержками — по-прежнему зовёт читать
+grep -q 'читай его вместо повторного поиска' "$TMP_DIR/table.txt" \
+    || fail "a pack with extracts must still be advertised"
+
 # --- флаг не сработал: пак есть, выдержек ноль ---
 # Вид выбирается по запрошенным выдержкам, а не по пришедшим: развёрнутый
 # список на 20 документов молча выносит буфер stdout песочницы.
