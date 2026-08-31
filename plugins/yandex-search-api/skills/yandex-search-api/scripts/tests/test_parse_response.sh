@@ -84,6 +84,34 @@ printf '{"docs": [{"Num": "abc", "DocumentTitle": "A"}]}' > "$TMP_DIR/badnum.jso
 parse_search_response "$TMP_DIR/badnum.json.in" > "$TMP_DIR/badnum.json"
 check "$TMP_DIR/badnum.json" 'data[0]["position"] == 1' "an unparsable Num must fall back to the order"
 
+# --- живая форма ответа: метаданные лежат в rich_data ---
+# Документация показывает Num/DocumentTitle/Description на верхнем уровне
+# документа, живой API кладёт их во вложенный rich_data. Пока парсер читал
+# только верхний уровень, у КАЖДОГО документа пропадали заголовок и описание,
+# а офлайн-тесты этого не видели: фикстура повторяла документацию.
+parse_search_response "$TESTS_DIR/fixtures/infocontext_live.json" > "$TMP_DIR/live.json"
+
+check "$TMP_DIR/live.json" 'len(data) == 3' "expected 3 documents from the live-shape JSON"
+check "$TMP_DIR/live.json" 'data[0]["title"] == "Об изменениях в главе 26.2 НК РФ"' \
+    "DocumentTitle must be read out of rich_data"
+check "$TMP_DIR/live.json" 'data[0]["snippet"] == "ФНС России разъясняет порядок уплаты НДС на УСН"' \
+    "Description must be read out of rich_data"
+check "$TMP_DIR/live.json" '[d["position"] for d in data] == [1, 2, 3]' \
+    "Num must be read out of rich_data"
+check "$TMP_DIR/live.json" 'data[0]["domain"] == "www.nalog.gov.ru"' \
+    "domain must still come from the url"
+check "$TMP_DIR/live.json" 'all(d["title"] for d in data)' \
+    "no document may end up without a title when the API sent one"
+
+# info_context остаётся на верхнем уровне документа, не в rich_data
+check "$TMP_DIR/live.json" '"снижен порог дохода" in data[0]["extract"]' \
+    "info_context must be read from the top level"
+check "$TMP_DIR/live.json" 'data[2]["extract"] == ""' "an empty info_context must stay empty"
+
+# пустое поле в rich_data не должно выдаваться за значение
+check "$TMP_DIR/live.json" 'data[1]["snippet"] == ""' \
+    "an empty Description in rich_data must not become a non-empty snippet"
+
 # --- битый ответ не роняет уже оплаченный поиск ---
 parse_search_response "$TESTS_DIR/fixtures/broken_response.xml" > "$TMP_DIR/broken.json"
 check "$TMP_DIR/broken.json" 'isinstance(data, dict) and "error" in data' \

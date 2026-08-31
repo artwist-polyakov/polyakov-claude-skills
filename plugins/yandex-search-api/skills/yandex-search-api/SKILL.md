@@ -39,6 +39,8 @@ stdout приходит индекс по строке на документ. Д
 - **Только синхронный режим.** `web_search_async.sh` инфоконтекстов не вернёт.
 - **Только `SEARCH_TYPE_RU`.** С другим типом поиска скилл выполнит запрос, но
   без инфоконтекстов, и скажет об этом.
+- **Не больше 20 документов.** Попросить больше нельзя: при `--results` выше 20
+  API отдаёт не 20, а вдвое меньше — по той же цене. Скилл клампит сам.
 - **Дороже.** 1 500 ₽ за 1000 запросов против 488 ₽ у обычного синхронного.
 
 Когда нужны только позиции и домены — `--no-snippets` (или
@@ -125,7 +127,7 @@ bash scripts/web_search_sync.sh \
 | `--query, -q` | yes* | - | Search text |
 | `--file, -f` | yes* | - | File with queries (one per line) |
 | `--region-id, -r` | no | from config (225) | Region ID |
-| `--results, -n` | no | 20 со snippets, иначе из конфига (10) | Results per page (1-100) |
+| `--results, -n` | no | 20 со snippets, иначе из конфига (10) | Со snippets клампится до 20; без них 1-100 |
 | `--page, -p` | no | 0 | Page number |
 | `--search-type` | no | SEARCH_TYPE_RU | SEARCH_TYPE_RU / SEARCH_TYPE_TR / SEARCH_TYPE_COM / SEARCH_TYPE_KK / SEARCH_TYPE_BE / SEARCH_TYPE_UZ |
 | `--family-mode` | no | FAMILY_MODE_MODERATE | FAMILY_MODE_NONE / FAMILY_MODE_MODERATE / FAMILY_MODE_STRICT |

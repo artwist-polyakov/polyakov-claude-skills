@@ -23,6 +23,11 @@ SMART_SNIPPETS_FLAG_KEY="x-genesis-info-context"
 SMART_SNIPPETS_FLAG_VALUE="on"
 # Инфоконтексты отдаются только для этого типа поиска.
 SMART_SNIPPETS_SEARCH_TYPE="SEARCH_TYPE_RU"
+# Потолок документов с инфоконтекстами. В документации его нет, он измерен на
+# живом API: при groupsOnPage 21 и выше сервер не обрезает выдачу до 20, а
+# роняет её до дефолтных 10 — при той же цене запроса. То есть без клампа
+# --results 50 стоит столько же, а возвращает вдвое меньше.
+SMART_SNIPPETS_MAX_DOCS=20
 # Сколько строк таблицы печатать в stdout: у песочницы жёсткий лимит вывода,
 # полные инфоконтексты всегда уходят в файл.
 YSA_PRINT_LIMIT="${YSA_PRINT_LIMIT:-20}"
@@ -507,25 +512,35 @@ def parse_xml(path):
 
 
 def parse_infocontext(path):
-    """Ответ с инфоконтекстами: docs[] с полями Num/DocumentTitle/FullUrl/
-    Description/info_context. Имена полей — как в документации, вперемешку."""
+    """Ответ с инфоконтекстами: docs[] с Num/DocumentTitle/FullUrl/Description
+    и самим info_context.
+
+    Живой API кладёт метаданные во вложенный объект rich_data, а документация
+    показывает их на верхнем уровне документа. Встречаются обе формы, поэтому
+    каждое поле ищется сперва в rich_data, потом на верхнем уровне."""
     with open(path, encoding="utf-8") as fh:
         payload = json.load(fh)
 
+    def field(doc, name):
+        rich = doc.get("rich_data")
+        if isinstance(rich, dict) and rich.get(name) not in (None, ""):
+            return rich[name]
+        return doc.get(name)
+
     results = []
     for index, doc in enumerate(payload.get("docs") or [], start=1):
-        url = doc.get("FullUrl") or ""
+        url = field(doc, "FullUrl") or ""
         # Num приводим к числу: отрисовка печатает позицию через %d, и строка
         # уронила бы её уже после оплаченного поиска.
         try:
-            position = int(doc["Num"])
-        except (KeyError, TypeError, ValueError):
+            position = int(field(doc, "Num"))
+        except (TypeError, ValueError):
             position = index
         results.append({
             "position": position,
             "url": url,
-            "title": doc.get("DocumentTitle") or "",
-            "snippet": (doc.get("Description") or "")[:300],
+            "title": field(doc, "DocumentTitle") or "",
+            "snippet": (field(doc, "Description") or "")[:300],
             "domain": urlsplit(url).netloc,
             "extract": doc.get("info_context") or "",
         })

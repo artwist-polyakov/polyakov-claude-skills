@@ -76,6 +76,12 @@ if [ "$SNIPPETS" = "true" ]; then
         if [ "$RESULTS_EXPLICIT" -eq 0 ]; then
             RESULTS_PER_PAGE="$SNIPPET_DOCS"
         fi
+        if [ "$RESULTS_PER_PAGE" -gt "$SMART_SNIPPETS_MAX_DOCS" ]; then
+            # Выше потолка сервер не обрезает до 20, а отдаёт дефолтные 10 —
+            # за ту же цену. Клампим, иначе просьба о большем даёт меньшее.
+            echo "Note: smart snippets cap out at $SMART_SNIPPETS_MAX_DOCS docs; asking for more returns fewer — capping --results" >&2
+            RESULTS_PER_PAGE="$SMART_SNIPPETS_MAX_DOCS"
+        fi
     fi
 fi
 

@@ -48,6 +48,23 @@ check "$TMP_DIR/plain.json" 'body["groupSpec"]["groupsOnPage"] == 10' \
 YSA_DRY_RUN=1 sh "$SYNC" --query q --results 5 > "$TMP_DIR/five.json"
 check "$TMP_DIR/five.json" 'body["groupSpec"]["groupsOnPage"] == 5' "--results 5 not honoured"
 
+# --- выше потолка инфоконтекстов --results обрезается ---
+# Замер на живом API: groupsOnPage 21+ возвращает не 20 и не 21, а дефолтные 10,
+# по цене инфоконтекстного запроса. Проси больше — получишь меньше.
+YSA_DRY_RUN=1 sh "$SYNC" --query q --results 50 > "$TMP_DIR/many.json" 2>"$TMP_DIR/many.err"
+check "$TMP_DIR/many.json" 'body["groupSpec"]["groupsOnPage"] == 20' \
+    "--results above the smart snippets ceiling must be capped to 20"
+grep -q 'capping' "$TMP_DIR/many.err" || fail "the cap must be reported on stderr"
+
+YSA_DRY_RUN=1 sh "$SYNC" --query q --results 20 > "$TMP_DIR/twenty.json" 2>"$TMP_DIR/twenty.err"
+check "$TMP_DIR/twenty.json" 'body["groupSpec"]["groupsOnPage"] == 20' "--results 20 must pass through"
+grep -q 'capping' "$TMP_DIR/twenty.err" && fail "exactly 20 must not be reported as capped"
+
+# без инфоконтекстов потолка нет: обычная выдача берёт до 100
+YSA_DRY_RUN=1 sh "$SYNC" --query q --no-snippets --results 50 > "$TMP_DIR/plain50.json"
+check "$TMP_DIR/plain50.json" 'body["groupSpec"]["groupsOnPage"] == 50' \
+    "--no-snippets must not cap --results"
+
 # --- инфоконтексты есть только в русской поисковой базе ---
 YSA_DRY_RUN=1 sh "$SYNC" --query q --search-type SEARCH_TYPE_TR \
     > "$TMP_DIR/tr.json" 2>"$TMP_DIR/tr.err"
