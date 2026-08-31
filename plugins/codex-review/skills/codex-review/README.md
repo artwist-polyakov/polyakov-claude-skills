@@ -142,8 +142,6 @@ CODEX_YOLO=true
 CODEX_SESSION_ID=sess_ваш_id
 ```
 
-Узнать id: `codex session list`
-
 Альтернативно — через CLI: `bash scripts/codex-state.sh set session_id sess_ваш_id`
 
 После этого команды `plan` и `code` будут отправлять ревью в эту сессию через `resume`.
