@@ -40,6 +40,13 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# Smart snippets есть только в синхронном API — предупреждаем, чтобы никто не
+# ждал выдержек от батча, который их физически не вернёт.
+if [ "$(cfg_get "search.smart_snippets.enabled" "true")" = "true" ]; then
+    echo "Note: smart snippets are sync-only — this batch returns links and short snippets." >&2
+    echo "      Need page extracts? Use web_search_sync.sh --file instead." >&2
+fi
+
 # Create directories
 mkdir -p "$CACHE_DIR/ops"
 mkdir -p "$CACHE_DIR/results"
@@ -85,29 +92,8 @@ submit_query() {
     _aq_query="$1"
     _aq_hash=$(file_hash "$_aq_query")
 
-    # Query passed via env to avoid shell injection
-    _body=$(_YSA_QUERY="$_aq_query" python3 -c "
-import json, os
-body = {
-    'query': {
-        'searchType': '$SEARCH_TYPE',
-        'queryText': os.environ['_YSA_QUERY'],
-        'familyMode': '$FAMILY_MODE',
-        'fixTypoMode': '$FIX_TYPO'
-    },
-    'sortSpec': {},
-    'groupSpec': {
-        'groupMode': 'GROUP_MODE_FLAT',
-        'groupsOnPage': $RESULTS_PER_PAGE,
-        'docsInGroup': 1
-    },
-    'maxPassages': 3,
-    'region': '$REGION_ID',
-    'l10n': 'LOCALIZATION_RU',
-    'folderId': '$(cfg_get "yandex_cloud_folder_id")'
-}
-print(json.dumps(body, ensure_ascii=False))
-")
+    # Smart snippets живут только в синхронном API, поэтому здесь всегда 0.
+    _body=$(build_search_body "$_aq_query" "$REGION_ID" "$RESULTS_PER_PAGE" "0" "0")
 
     _response=$(auth_request "POST" "$SEARCH_API_URL/v2/web/searchAsync" "$_body") || {
         echo "Error: Failed to submit async query: $_aq_query" >&2

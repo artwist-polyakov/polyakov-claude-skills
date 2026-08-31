@@ -17,18 +17,24 @@ SEARCH_TYPE=$(cfg_get "search.search_type" "SEARCH_TYPE_RU")
 FAMILY_MODE=$(cfg_get "search.family_mode" "FAMILY_MODE_MODERATE")
 FIX_TYPO=$(cfg_get "search.fix_typo_mode" "FIX_TYPO_MODE_ON")
 RESULTS_PER_PAGE=$(cfg_get "search.results_per_page" "10")
+SNIPPETS=$(cfg_get "search.smart_snippets.enabled" "true")
+SNIPPET_DOCS=$(cfg_get "search.smart_snippets.docs" "$SMART_SNIPPETS_MAX_DOCS")
 PAGE=0
 QUERIES_FILE=""
+RESULTS_EXPLICIT=0
+BATCH=0
 
 while [ $# -gt 0 ]; do
     case $1 in
         --query|-q) QUERY="$2"; shift 2 ;;
         --region-id|-r) REGION_ID="$2"; shift 2 ;;
-        --results|-n) RESULTS_PER_PAGE="$2"; shift 2 ;;
+        --results|-n) RESULTS_PER_PAGE="$2"; RESULTS_EXPLICIT=1; shift 2 ;;
         --page|-p) PAGE="$2"; shift 2 ;;
         --search-type) SEARCH_TYPE="$2"; shift 2 ;;
         --family-mode) FAMILY_MODE="$2"; shift 2 ;;
         --file|-f) QUERIES_FILE="$2"; shift 2 ;;
+        --snippets) SNIPPETS="true"; shift ;;
+        --no-snippets) SNIPPETS="false"; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -41,15 +47,38 @@ if [ -z "$QUERY" ] && [ -z "$QUERIES_FILE" ]; then
     echo "  --query, -q        Search query text"
     echo "  --file, -f         File with queries (one per line)"
     echo "  --region-id, -r    Region ID (default: $REGION_ID)"
-    echo "  --results, -n      Results per page 1-100 (default: $RESULTS_PER_PAGE)"
+    echo "  --results, -n      Results per page (default: $SNIPPET_DOCS with snippets, else $RESULTS_PER_PAGE)"
     echo "  --page, -p         Page number 0+ (default: 0)"
     echo "  --search-type      SEARCH_TYPE_RU|SEARCH_TYPE_TR|SEARCH_TYPE_COM|SEARCH_TYPE_KK|SEARCH_TYPE_BE|SEARCH_TYPE_UZ"
     echo "  --family-mode      FAMILY_MODE_NONE|FAMILY_MODE_MODERATE|FAMILY_MODE_STRICT"
+    echo "  --snippets         Ask for smart snippets — page extracts (default: $SNIPPETS)"
+    echo "  --no-snippets      Links and short snippets only"
     echo ""
     echo "Examples:"
     echo "  bash scripts/web_search_sync.sh --query \"купить дымоход\" --region-id 213"
     echo "  bash scripts/web_search_sync.sh --file queries.txt --region-id 225"
     exit 1
+fi
+
+# Smart snippets отдаются максимум для SMART_SNIPPETS_MAX_DOCS документов,
+# поэтому вместе с ними число результатов на странице упирается в тот же потолок.
+SNIPPETS_ON=0
+if [ "$SNIPPETS" = "true" ]; then
+    SNIPPETS_ON=1
+    if [ "$RESULTS_EXPLICIT" -eq 0 ]; then
+        RESULTS_PER_PAGE="$SNIPPET_DOCS"
+    fi
+    if [ "$RESULTS_PER_PAGE" -gt "$SMART_SNIPPETS_MAX_DOCS" ]; then
+        echo "Note: smart snippets cover at most $SMART_SNIPPETS_MAX_DOCS docs, capping --results" >&2
+        RESULTS_PER_PAGE="$SMART_SNIPPETS_MAX_DOCS"
+    fi
+fi
+
+# Показать тело запроса и выйти, ничего не оплачивая. Этим же режимом
+# офлайн-тесты проверяют разбор флагов и потолок числа документов.
+if [ "${YSA_DRY_RUN:-0}" = "1" ]; then
+    build_search_body "$QUERY" "$REGION_ID" "$RESULTS_PER_PAGE" "$PAGE" "$SNIPPETS_ON"
+    exit 0
 fi
 
 # Ensure IAM token is available
@@ -69,30 +98,7 @@ search_single() {
 
     echo "--- Searching: $_sq_query (hash: $_sq_hash) ---" >&2
 
-    # Build request body (query passed via env to avoid shell injection)
-    _body=$(_YSA_QUERY="$_sq_query" python3 -c "
-import json, os
-body = {
-    'query': {
-        'searchType': '$SEARCH_TYPE',
-        'queryText': os.environ['_YSA_QUERY'],
-        'familyMode': '$FAMILY_MODE',
-        'fixTypoMode': '$FIX_TYPO',
-        'page': $PAGE
-    },
-    'sortSpec': {},
-    'groupSpec': {
-        'groupMode': 'GROUP_MODE_FLAT',
-        'groupsOnPage': $RESULTS_PER_PAGE,
-        'docsInGroup': 1
-    },
-    'maxPassages': 3,
-    'region': '$REGION_ID',
-    'l10n': 'LOCALIZATION_RU',
-    'folderId': '$(cfg_get "yandex_cloud_folder_id")'
-}
-print(json.dumps(body, ensure_ascii=False))
-")
+    _body=$(build_search_body "$_sq_query" "$REGION_ID" "$RESULTS_PER_PAGE" "$PAGE" "$SNIPPETS_ON")
 
     # Make API call
     _response=$(auth_request "POST" "$SEARCH_API_URL/v2/web/search" "$_body") || {
@@ -118,45 +124,31 @@ print(d.get('rawData', ''))
     echo "$_raw_b64" | b64_decode > "$CACHE_DIR/results/${_sq_hash}.raw"
 
     # Parse XML to JSON
-    parse_search_xml "$CACHE_DIR/results/${_sq_hash}.raw" > "$CACHE_DIR/results/${_sq_hash}.json"
+    _sq_json="$CACHE_DIR/results/${_sq_hash}.json"
+    parse_search_xml "$CACHE_DIR/results/${_sq_hash}.raw" > "$_sq_json"
 
-    # Print summary
+    # Выдержки целиком не помещаются в буфер stdout песочницы — складываем их
+    # в markdown-пак, а печатаем только индекс.
+    _sq_pack=""
+    if [ "$SNIPPETS_ON" -eq 1 ]; then
+        _sq_pack="$CACHE_DIR/results/${_sq_hash}.md"
+        render_snippet_pack "$_sq_json" "$_sq_pack" "$_sq_query" "$REGION_ID" >/dev/null || _sq_pack=""
+    fi
+
+    if [ "$BATCH" -eq 1 ]; then
+        render_results_table "$_sq_json" "$_sq_pack" "line" "$_sq_query"
+        return 0
+    fi
+
     echo ""
     echo "=== Results for: $_sq_query ==="
-    echo "Region: $REGION_ID | Page: $PAGE"
+    echo "Region: $REGION_ID | Page: $PAGE | Snippets: $SNIPPETS"
     echo ""
 
-    python3 -c "
-import json
-with open('$CACHE_DIR/results/${_sq_hash}.json') as f:
-    results = json.load(f)
+    render_results_table "$_sq_json" "$_sq_pack" "full" "$_sq_query"
 
-if isinstance(results, dict) and 'error' in results:
-    print(f'  Parse error: {results[\"error\"]}')
-    print(f'  Raw data saved to: $CACHE_DIR/results/${_sq_hash}.raw')
-else:
-    shown = min(len(results), 10)
-    for r in results[:shown]:
-        pos = r.get('position', '?')
-        title = r.get('title', 'No title')[:80]
-        url = r.get('url', '')
-        snippet = r.get('snippet', '')[:120]
-        print(f'  {pos}. {title}')
-        print(f'     {url}')
-        if snippet:
-            print(f'     {snippet}')
-        print()
-
-    total = len(results)
-    if total > shown:
-        print(f'  ... and {total - shown} more results')
-    print(f'  Total: {total} results')
-
-print()
-print(f'Files:')
-print(f'  Raw: $CACHE_DIR/results/${_sq_hash}.raw')
-print(f'  JSON: $CACHE_DIR/results/${_sq_hash}.json')
-"
+    echo "  JSON: $_sq_json"
+    echo "  Raw:  $CACHE_DIR/results/${_sq_hash}.raw"
 }
 
 # Execute search(es)
@@ -165,6 +157,8 @@ if [ -n "$QUERIES_FILE" ]; then
         echo "Error: Queries file not found: $QUERIES_FILE" >&2
         exit 1
     fi
+    BATCH=1
+    echo "  запрос                                     результаты            пак"
     _total=0
     _ok=0
     while IFS= read -r _line || [ -n "$_line" ]; do

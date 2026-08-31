@@ -1,5 +1,5 @@
 {
-  "yandex_cloud_folder_id": "b1g...",
+  "yandex_cloud_folder_id": "b1gtestfolder000000",
   "auth": {
     "service_account_key_file": "config/service_account_key.json",
     "openssl_bin": "openssl"

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<yandexsearch version="1.0">
+  <response date="20260831T090000">
+    <reqid>test-request-id</reqid>
+    <found priority="phrase">1234</found>
+    <found-human>Нашлось 1 тыс. результатов</found-human>
+    <results>
+      <grouping attr="" mode="flat" groups-on-page="3" docs-in-group="1">
+        <page first="1" last="3">0</page>
+        <group>
+          <categ attr="d" name="example.com"/>
+          <doccount>1</doccount>
+          <doc id="Z1">
+            <url>https://example.com/a</url>
+            <domain>example.com</domain>
+            <title>Пример <hlword>дымоход</hlword> купить</title>
+            <modtime>20260101T101010</modtime>
+            <passages>
+              <passage>Короткий <hlword>сниппет</hlword> выдачи.</passage>
+            </passages>
+            <ysa-test-extract>Первый абзац выдержки со страницы.
+Он длиннее сниппета и годится для цитирования.</ysa-test-extract>
+            <properties><lang>ru</lang></properties>
+          </doc>
+        </group>
+        <group>
+          <categ attr="d" name="nopack.example.org"/>
+          <doccount>1</doccount>
+          <doc id="Z2">
+            <url>https://nopack.example.org/b</url>
+            <domain>nopack.example.org</domain>
+            <title>Документ без выдержки</title>
+            <passages>
+              <passage>Только обычный сниппет, выдержки страница не отдала.</passage>
+            </passages>
+            <properties><lang>ru</lang></properties>
+          </doc>
+        </group>
+        <group>
+          <categ attr="d" name="split.example.net"/>
+          <doccount>1</doccount>
+          <doc id="Z3">
+            <url>https://split.example.net/c</url>
+            <domain>split.example.net</domain>
+            <title>Выдержка из двух кусков</title>
+            <passages>
+              <passage>Сниппет третьего документа.</passage>
+            </passages>
+            <ysa-test-extract>Кусок один.</ysa-test-extract>
+            <ysa-test-extract>Кусок два.</ysa-test-extract>
+            <properties><lang>ru</lang></properties>
+          </doc>
+        </group>
+      </grouping>
+    </results>
+  </response>
+</yandexsearch>

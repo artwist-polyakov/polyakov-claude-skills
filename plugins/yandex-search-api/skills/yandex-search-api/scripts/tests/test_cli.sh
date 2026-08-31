@@ -1,0 +1,82 @@
+#!/bin/sh
+# CLI синхронного поиска: дефолты, --snippets/--no-snippets, потолок документов.
+# Ни одного сетевого вызова: YSA_DRY_RUN печатает тело запроса и выходит.
+
+set -e
+
+TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
+SKILL_DIR="$(cd "$TESTS_DIR/../.." && pwd)"
+SYNC="$SKILL_DIR/scripts/web_search_sync.sh"
+
+TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ysa_cli_test.XXXXXX")
+trap 'rm -rf "$TMP_DIR"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+YSA_CONFIG_FILE="$TESTS_DIR/fixtures/config.json"
+YSA_CACHE_DIR="$TMP_DIR/cache"
+export YSA_CONFIG_FILE YSA_CACHE_DIR
+
+fail() { echo "$1"; exit 1; }
+
+# body <output-file> <python-expr> <message>
+check() {
+    _chk_file="$1"
+    _chk_expr="$2"
+    _chk_msg="$3"
+    if ! _YSA_T_FILE="$_chk_file" _YSA_T_EXPR="$_chk_expr" python3 -c '
+import json, os, sys
+with open(os.environ["_YSA_T_FILE"], encoding="utf-8") as fh:
+    body = json.load(fh)
+sys.exit(0 if eval(os.environ["_YSA_T_EXPR"]) else 1)
+'; then
+        echo "$_chk_msg"
+        exit 1
+    fi
+}
+
+# --- без аргументов: подсказка и ненулевой код ---
+if sh "$SYNC" > "$TMP_DIR/usage.txt" 2>&1; then
+    fail "running without --query must fail"
+fi
+grep -q -- '--snippets' "$TMP_DIR/usage.txt" || fail "usage must document --snippets"
+grep -q -- '--no-snippets' "$TMP_DIR/usage.txt" || fail "usage must document --no-snippets"
+
+# --- неизвестный флаг отвергается ---
+if sh "$SYNC" --query q --bogus > "$TMP_DIR/bogus.txt" 2>&1; then
+    fail "an unknown option must fail"
+fi
+
+# --- дефолт: snippets включены, 20 документов ---
+YSA_DRY_RUN=1 sh "$SYNC" --query "купить дымоход" > "$TMP_DIR/default.json" 2>"$TMP_DIR/default.err"
+check "$TMP_DIR/default.json" '"metadata" in body' "snippets must be on by default"
+check "$TMP_DIR/default.json" 'body["groupSpec"]["groupsOnPage"] == 20' \
+    "default must request 20 documents with snippets"
+
+# --- --no-snippets: обычная выдача и results_per_page из конфига ---
+YSA_DRY_RUN=1 sh "$SYNC" --query "купить дымоход" --no-snippets > "$TMP_DIR/plain.json"
+check "$TMP_DIR/plain.json" '"metadata" not in body' "--no-snippets must drop the flag"
+check "$TMP_DIR/plain.json" 'body["groupSpec"]["groupsOnPage"] == 10' \
+    "--no-snippets must fall back to search.results_per_page"
+
+# --- явный --results уважается, пока он в пределах потолка ---
+YSA_DRY_RUN=1 sh "$SYNC" --query q --results 5 > "$TMP_DIR/five.json"
+check "$TMP_DIR/five.json" 'body["groupSpec"]["groupsOnPage"] == 5' "--results 5 not honoured"
+
+# --- --results выше потолка обрезается, и об этом говорят вслух ---
+YSA_DRY_RUN=1 sh "$SYNC" --query q --results 50 > "$TMP_DIR/many.json" 2>"$TMP_DIR/many.err"
+check "$TMP_DIR/many.json" 'body["groupSpec"]["groupsOnPage"] == 20' \
+    "--results above the smart snippets ceiling must be capped"
+grep -q 'capping' "$TMP_DIR/many.err" || fail "capping must be reported on stderr"
+
+# --- без snippets потолка нет: сотня результатов проходит как раньше ---
+YSA_DRY_RUN=1 sh "$SYNC" --query q --no-snippets --results 50 > "$TMP_DIR/plain50.json"
+check "$TMP_DIR/plain50.json" 'body["groupSpec"]["groupsOnPage"] == 50' \
+    "--no-snippets must not cap --results"
+
+# --- регион и страница доезжают до тела запроса ---
+YSA_DRY_RUN=1 sh "$SYNC" --query q --region-id 213 --page 2 > "$TMP_DIR/region.json"
+check "$TMP_DIR/region.json" 'body["region"] == "213" and body["query"]["page"] == 2' \
+    "--region-id / --page not carried through"
+
+echo PASS

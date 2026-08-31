@@ -57,7 +57,7 @@
     },
     {
       "name": "yandex-search-api",
-      "description": "Парсинг выдачи Яндекса через Yandex Cloud Search API v2 (sync + async)",
+      "description": "Поиск в Яндексе через Search API v2: содержательные выдержки страниц (smart snippets) + парсинг выдачи (sync + async)",
       "source": "./plugins/yandex-search-api",
       "category": "productivity"
     },
