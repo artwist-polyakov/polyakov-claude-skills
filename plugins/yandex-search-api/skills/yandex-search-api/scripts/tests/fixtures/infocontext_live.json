@@ -1,0 +1,45 @@
+{
+  "docs": [
+    {
+      "FullUrl": "https://www.nalog.gov.ru/rn77/news/activities_fts/16001234/",
+      "rich_data": {
+        "Num": 1,
+        "DocumentTitle": "Об изменениях в главе 26.2 НК РФ",
+        "Description": "ФНС России разъясняет порядок уплаты НДС на УСН",
+        "FullUrl": "https://www.nalog.gov.ru/rn77/news/activities_fts/16001234/",
+        "ForcedShortUrl": "nalog.gov.ru",
+        "UrlMenu": []
+      },
+      "info_context": "С 1 января снижен порог дохода по УСН для освобождения от уплаты НДС с 60 млн руб. до 20 млн руб.\nВ 2027 году этот лимит составит 15 млн руб., в 2028 — 10 млн руб.",
+      "full_text": "",
+      "doc_mtime_datetime_seconds": 1767225600,
+      "last_acess_datetime_seconds": 1767312000
+    },
+    {
+      "FullUrl": "https://www.klerk.ru/buh/articles/600123/",
+      "rich_data": {
+        "Num": 2,
+        "DocumentTitle": "НДС при УСН с 2026 года: таблица лимитов",
+        "Description": "",
+        "FullUrl": "https://www.klerk.ru/buh/articles/600123/",
+        "ForcedShortUrl": "klerk.ru",
+        "UrlMenu": []
+      },
+      "info_context": "2026 | 20 млн | 20 млн | 272,5 млн | 490,5 млн",
+      "full_text": ""
+    },
+    {
+      "FullUrl": "https://its.1c.ru/db/answers/content/900123/",
+      "rich_data": {
+        "Num": 3,
+        "DocumentTitle": "Ставки НДС для упрощенцев",
+        "Description": "Материал доступен по подписке",
+        "FullUrl": "https://its.1c.ru/db/answers/content/900123/",
+        "ForcedShortUrl": "its.1c.ru",
+        "UrlMenu": []
+      },
+      "info_context": "",
+      "full_text": ""
+    }
+  ]
+}

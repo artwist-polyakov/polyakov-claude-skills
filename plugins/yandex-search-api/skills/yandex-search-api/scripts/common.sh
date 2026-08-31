@@ -4,13 +4,33 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-CONFIG_FILE="$SKILL_DIR/config/config.json"
-CACHE_DIR="$SKILL_DIR/cache"
+SCRIPT_DIR="${YSA_SCRIPT_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+SKILL_DIR="${YSA_SKILL_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+# Overridable so the offline tests can point at a throwaway config and cache.
+CONFIG_FILE="${YSA_CONFIG_FILE:-$SKILL_DIR/config/config.json}"
+CACHE_DIR="${YSA_CACHE_DIR:-$SKILL_DIR/cache}"
 SEARCH_API_URL="https://searchapi.api.cloud.yandex.net"
 IAM_API_URL="https://iam.api.cloud.yandex.net/iam/v1/tokens"
 OPERATION_API_URL="https://operation.api.cloud.yandex.net/operations"
+
+# --- Smart snippets (инфоконтексты) ---
+# Инфоконтекст — фрагмент найденной страницы (~500 токенов) с цитатами,
+# релевантный запросу. Только синхронный WebSearchService/Search и только
+# русская поисковая база. Справка: references/SMART_SNIPPETS.md
+#
+# Флаг уезжает в metadata.fields запроса.
+SMART_SNIPPETS_FLAG_KEY="x-genesis-info-context"
+SMART_SNIPPETS_FLAG_VALUE="on"
+# Инфоконтексты отдаются только для этого типа поиска.
+SMART_SNIPPETS_SEARCH_TYPE="SEARCH_TYPE_RU"
+# Потолок документов с инфоконтекстами. В документации его нет, он измерен на
+# живом API: при groupsOnPage 21 и выше сервер не обрезает выдачу до 20, а
+# роняет её до дефолтных 10 — при той же цене запроса. То есть без клампа
+# --results 50 стоит столько же, а возвращает вдвое меньше.
+SMART_SNIPPETS_MAX_DOCS=20
+# Сколько строк таблицы печатать в stdout: у песочницы жёсткий лимит вывода,
+# полные инфоконтексты всегда уходят в файл.
+YSA_PRINT_LIMIT="${YSA_PRINT_LIMIT:-20}"
 
 # --- Prerequisites check ---
 
@@ -90,6 +110,9 @@ for k in keys:
 if v is None:
     d = '$_default'
     print(d if d else '')
+elif isinstance(v, bool):
+    # JSON true/false, а не питоновские True/False: значение сравнивается в shell.
+    print('true' if v else 'false')
 else:
     print(v)
 " 2>/dev/null)
@@ -361,69 +384,348 @@ with open('$_tmp_file', 'w') as f:
     umask "$_old_umask"
 }
 
-# --- XML parsing (python3 xml.etree.ElementTree) ---
+# --- Request building ---
 
-# Parse Yandex Search API XML response to JSON
-# Usage: parse_search_xml "input.xml" > "output.json"
-parse_search_xml() {
-    _xml_file="$1"
-    python3 -c "
-import xml.etree.ElementTree as ET
+# folderId один и тот же на весь прогон, а build_search_body зовётся на каждый
+# запрос батча — читаем конфиг один раз, чтобы не поднимать python3 повторно.
+#
+# Кеш обязан наполняться в том шелле, который переживёт запрос. Вызывающие
+# скрипты собирают тело как `_body=$(build_search_body ...)`, то есть вся
+# функция целиком уходит в подоболочку: присваивание внутри неё умрёт вместе
+# с ней. Поэтому кеш греется один раз в самом скрипте (ysa_warm_folder_id),
+# а подоболочки просто наследуют готовое значение.
+ysa_folder_id() {
+    if [ -z "${_YSA_FOLDER_ID_CACHED:-}" ]; then
+        _YSA_FOLDER_ID_CACHED=$(cfg_get 'yandex_cloud_folder_id')
+    fi
+    echo "$_YSA_FOLDER_ID_CACHED"
+}
+
+# Прогреть кеш folderId. Звать из тела скрипта, НЕ внутри $( ) и не в пайпе.
+ysa_warm_folder_id() {
+    ysa_folder_id >/dev/null
+}
+
+# Собрать тело запроса POST /v2/web/search.
+# Usage: build_search_body "query" "region" "groups_on_page" "page" "snippets_on"
+# snippets_on: 1 — просить smart snippets, иначе обычная выдача.
+# SEARCH_TYPE/FAMILY_MODE/FIX_TYPO берутся из окружения вызывающего скрипта;
+# дефолты продублированы здесь, чтобы забытая переменная не уехала в API
+# пустой строкой.
+build_search_body() {
+    _YSA_QUERY="$1" \
+    _YSA_REGION="$2" \
+    _YSA_GROUPS="$3" \
+    _YSA_PAGE="$4" \
+    _YSA_SNIPPETS_ON="$5" \
+    _YSA_SEARCH_TYPE="${SEARCH_TYPE:-SEARCH_TYPE_RU}" \
+    _YSA_FAMILY_MODE="${FAMILY_MODE:-FAMILY_MODE_MODERATE}" \
+    _YSA_FIX_TYPO="${FIX_TYPO:-FIX_TYPO_MODE_ON}" \
+    _YSA_FOLDER_ID="$(ysa_folder_id)" \
+    _YSA_FLAG_KEY="$SMART_SNIPPETS_FLAG_KEY" \
+    _YSA_FLAG_VALUE="$SMART_SNIPPETS_FLAG_VALUE" \
+    python3 -c '
 import json
+import os
+
+env = os.environ
+body = {
+    "query": {
+        "searchType": env["_YSA_SEARCH_TYPE"],
+        "queryText": env["_YSA_QUERY"],
+        "familyMode": env["_YSA_FAMILY_MODE"],
+        "fixTypoMode": env["_YSA_FIX_TYPO"],
+        "page": int(env["_YSA_PAGE"]),
+    },
+    "sortSpec": {},
+    "groupSpec": {
+        "groupMode": "GROUP_MODE_FLAT",
+        "groupsOnPage": int(env["_YSA_GROUPS"]),
+        "docsInGroup": 1,
+    },
+    "maxPassages": 3,
+    "region": env["_YSA_REGION"],
+    "l10n": "LOCALIZATION_RU",
+    "folderId": env["_YSA_FOLDER_ID"],
+}
+
+if env["_YSA_SNIPPETS_ON"] == "1":
+    body["metadata"] = {"fields": {env["_YSA_FLAG_KEY"]: env["_YSA_FLAG_VALUE"]}}
+
+print(json.dumps(body, ensure_ascii=False))
+'
+}
+
+# --- Response parsing ---
+
+# Разобрать ответ Search API в единый JSON-массив.
+# Usage: parse_search_response "decoded_rawData_file" > "output.json"
+#
+# Форматов два, и выбирает их сервер: обычная выдача приходит XML, а запрос с
+# инфоконтекстами — JSON {"docs": [...]}. Формат определяется по первому
+# непробельному символу, чтобы вызывающему коду не приходилось это знать.
+#
+# Каждый элемент результата: position, url, title, snippet, domain, extract.
+# extract — инфоконтекст; пустая строка, когда его в ответе нет.
+# Путь уезжает в python через окружение, чтобы кавычки в нём не ломали код.
+parse_search_response() {
+    _YSA_BODY_FILE="$1" python3 -c '
+import json
+import os
 import sys
+import xml.etree.ElementTree as ET
+from urllib.parse import urlsplit
 
-def clean_hl(elem):
-    parts = []
-    if elem.text:
-        parts.append(elem.text)
-    for child in elem:
-        if child.text:
-            parts.append(child.text)
-        if child.tail:
-            parts.append(child.tail)
-    return ''.join(parts).strip()
 
-try:
-    tree = ET.parse('$_xml_file')
-    root = tree.getroot()
+def text_of(elem):
+    """Собрать текст элемента: Яндекс оборачивает совпадения в <hlword>."""
+    if elem is None:
+        return ""
+    return "".join(elem.itertext()).strip()
 
+
+def parse_xml(path):
     results = []
-    pos = 0
+    position = 0
+    for grouping in ET.parse(path).getroot().iter("grouping"):
+        for group in grouping.iter("group"):
+            for doc in group.iter("doc"):
+                position += 1
 
-    for grouping in root.iter('grouping'):
-        for group in grouping.iter('group'):
-            for doc in group.iter('doc'):
-                pos += 1
-                url_elem = doc.find('url')
-                title_elem = doc.find('title')
-                snippet = ''
-                for passages in doc.iter('passages'):
-                    for passage in passages.iter('passage'):
-                        snippet = clean_hl(passage)
-                        if snippet:
-                            break
+                snippet = ""
+                for passage in doc.iter("passage"):
+                    snippet = text_of(passage)
                     if snippet:
                         break
 
-                domain_elem = doc.find('domain')
+                url = doc.find("url")
+                domain = doc.find("domain")
+                results.append({
+                    "position": position,
+                    "url": url.text if url is not None else "",
+                    "title": text_of(doc.find("title")),
+                    "snippet": snippet[:300],
+                    "domain": domain.text if domain is not None else "",
+                    "extract": "",
+                })
+    return results
 
-                entry = {
-                    'position': pos,
-                    'url': url_elem.text if url_elem is not None else '',
-                    'title': clean_hl(title_elem) if title_elem is not None else '',
-                    'snippet': snippet[:300] if snippet else '',
-                    'domain': domain_elem.text if domain_elem is not None else '',
-                }
-                results.append(entry)
 
-    json.dump(results, sys.stdout, ensure_ascii=False, indent=2)
-except ET.ParseError as e:
-    print(json.dumps({'error': f'XML parse error: {e}', 'raw_saved': True}), file=sys.stdout)
-    sys.exit(0)
-except Exception as e:
-    print(json.dumps({'error': str(e), 'raw_saved': True}), file=sys.stdout)
-    sys.exit(0)
-"
+def parse_infocontext(path):
+    """Ответ с инфоконтекстами: docs[] с Num/DocumentTitle/FullUrl/Description
+    и самим info_context.
+
+    Живой API кладёт метаданные во вложенный объект rich_data, а документация
+    показывает их на верхнем уровне документа. Встречаются обе формы, поэтому
+    каждое поле ищется сперва в rich_data, потом на верхнем уровне."""
+    with open(path, encoding="utf-8") as fh:
+        payload = json.load(fh)
+
+    def field(doc, name):
+        rich = doc.get("rich_data")
+        if isinstance(rich, dict) and rich.get(name) not in (None, ""):
+            return rich[name]
+        return doc.get(name)
+
+    results = []
+    for index, doc in enumerate(payload.get("docs") or [], start=1):
+        url = field(doc, "FullUrl") or ""
+        # Num приводим к числу: отрисовка печатает позицию через %d, и строка
+        # уронила бы её уже после оплаченного поиска.
+        try:
+            position = int(field(doc, "Num"))
+        except (TypeError, ValueError):
+            position = index
+        results.append({
+            "position": position,
+            "url": url,
+            "title": field(doc, "DocumentTitle") or "",
+            "snippet": (field(doc, "Description") or "")[:300],
+            "domain": urlsplit(url).netloc,
+            "extract": doc.get("info_context") or "",
+        })
+    return results
+
+
+body_file = os.environ["_YSA_BODY_FILE"]
+
+try:
+    with open(body_file, encoding="utf-8", errors="replace") as fh:
+        head = fh.read(64).lstrip()
+    parse = parse_infocontext if head.startswith(("{", "[")) else parse_xml
+    json.dump(parse(body_file), sys.stdout, ensure_ascii=False, indent=2)
+except ET.ParseError as exc:
+    print(json.dumps({"error": "XML parse error: %s" % exc, "raw_saved": True}))
+except ValueError as exc:
+    print(json.dumps({"error": "JSON parse error: %s" % exc, "raw_saved": True}))
+except Exception as exc:  # парсер не должен ронять уже оплаченный поиск
+    print(json.dumps({"error": str(exc), "raw_saved": True}))
+'
+}
+
+# --- Cache hygiene ---
+
+# Удалить пак, оставшийся от прошлого поиска той же фразы.
+# Usage: drop_stale_pack "<hash>"
+#
+# Хэш считается только от текста запроса, поэтому прогон без инфоконтекстов —
+# хоть синхронный с --no-snippets, хоть асинхронный, который их вовсе не умеет —
+# перезапишет .raw и .json, но оставит .md от прошлого раза. Агент знает путь
+# из SKILL.md и прочитает вчерашние выдержки как ответ на сегодняшний запрос.
+drop_stale_pack() {
+    rm -f "$CACHE_DIR/results/$1.md"
+}
+
+# --- Rendering ---
+
+# Собрать markdown-пак с выдержками: один файл, который агент читает вместо
+# повторного поиска. Печатает количество документов с непустой выдержкой.
+# Usage: render_snippet_pack "results.json" "pack.md" "query" "region"
+render_snippet_pack() {
+    _YSA_JSON_FILE="$1" \
+    _YSA_MD_FILE="$2" \
+    _YSA_QUERY="$3" \
+    _YSA_REGION="$4" \
+    python3 -c '
+import json
+import os
+
+with open(os.environ["_YSA_JSON_FILE"], encoding="utf-8") as fh:
+    results = json.load(fh)
+
+if not isinstance(results, list):
+    raise SystemExit("cannot render a pack from a parse error")
+
+query = os.environ["_YSA_QUERY"]
+region = os.environ["_YSA_REGION"]
+with_extract = sum(1 for r in results if r.get("extract"))
+
+lines = [
+    "# %s" % query,
+    "",
+    "Регион %s · документов: %d · с выдержками: %d" % (region, len(results), with_extract),
+    "",
+]
+
+if with_extract:
+    lines += [
+        "Источник: Yandex Search API, инфоконтексты — подготовленные фрагменты",
+        "найденных страниц с цитатами из документа, релевантные запросу.",
+    ]
+else:
+    # Обещать «фрагменты страниц» в паке, где их ноль, — обманывать читателя.
+    lines += [
+        "Инфоконтекстов в ответе не оказалось: ниже только короткие сниппеты",
+        "выдачи. Если ждали фрагменты страниц — см. references/SMART_SNIPPETS.md,",
+        "раздел «Когда инфоконтекстов нет».",
+    ]
+
+for r in results:
+    lines += [
+        "",
+        "---",
+        "",
+        "## %d. %s" % (r.get("position", 0), r.get("title") or "(без заголовка)"),
+        "",
+        r.get("url") or "",
+        "",
+    ]
+    if r.get("extract"):
+        lines.append(r["extract"])
+    elif r.get("snippet"):
+        lines += ["_Выдержка недоступна, ниже короткий сниппет выдачи._", "", r["snippet"]]
+    else:
+        lines.append("_Текста нет: ни выдержки, ни сниппета._")
+
+with open(os.environ["_YSA_MD_FILE"], "w", encoding="utf-8") as fh:
+    fh.write("\n".join(lines) + "\n")
+
+print(with_extract)
+'
+}
+
+# Компактный индекс результатов в stdout.
+# Usage: render_results_table "results.json" "pack.md_or_empty" "full|line" "label"
+#
+# Когда выдержки просили, печатается одна строка на документ, а тексты остаются
+# в паке: 20 выдержек по ~500 токенов не помещаются в буфер вывода песочницы и
+# превращаются в молчаливый отказ. В режиме "line" на весь запрос печатается
+# одна строка — иначе батч из десяти запросов упирается в тот же лимит.
+render_results_table() {
+    _YSA_JSON_FILE="$1" \
+    _YSA_PACK_FILE="${2:-}" \
+    _YSA_MODE="${3:-full}" \
+    _YSA_LABEL="${4:-}" \
+    _YSA_LIMIT="$YSA_PRINT_LIMIT" \
+    python3 -c '
+import json
+import os
+
+
+def cut(text, width):
+    text = " ".join((text or "").split())
+    return text if len(text) <= width else text[: width - 1] + "…"
+
+
+with open(os.environ["_YSA_JSON_FILE"], encoding="utf-8") as fh:
+    results = json.load(fh)
+
+mode = os.environ["_YSA_MODE"]
+label = os.environ.get("_YSA_LABEL") or ""
+pack = os.environ.get("_YSA_PACK_FILE") or ""
+
+if isinstance(results, dict) and "error" in results:
+    prefix = "  %-40s " % cut(label, 40) if mode == "line" else "  "
+    print("%sОшибка разбора ответа: %s" % (prefix, results["error"]))
+    raise SystemExit(0)
+
+with_extract = sum(1 for r in results if r.get("extract"))
+
+if mode == "line":
+    # Без пака (обычная выдача) в батче не остаётся ни одного пути к ответу,
+    # поэтому подставляем разобранный JSON.
+    print("  %-40s  %2d док., выдержек %2d  %s" % (
+        cut(label, 40), len(results), with_extract,
+        pack or os.environ["_YSA_JSON_FILE"]))
+    raise SystemExit(0)
+
+limit = int(os.environ["_YSA_LIMIT"])
+
+# Вид выбирается по тому, ЗАПРАШИВАЛИСЬ ли выдержки (пак собран), а не по тому,
+# сколько их пришло: когда флаг не сработал и with_extract == 0, развёрнутый
+# список из 20 документов по три строки выносит буфер stdout песочницы.
+if pack or with_extract:
+    shown = results[:limit]
+    print("    #  символов  домен                     заголовок")
+    for r in shown:
+        print("  %3d  %8d  %-24s  %s" % (
+            r.get("position", 0),
+            len(r.get("extract") or ""),
+            cut(r.get("domain"), 24),
+            cut(r.get("title"), 60),
+        ))
+else:
+    # Три строки на документ — вчетверо дороже таблицы, поэтому потолок ниже.
+    shown = results[: min(limit, 10)]
+    for r in shown:
+        print("  %d. %s" % (r.get("position", 0), cut(r.get("title"), 80)))
+        print("     %s" % (r.get("url") or ""))
+        if r.get("snippet"):
+            print("     %s" % cut(r.get("snippet"), 120))
+        print()
+
+print()
+if len(results) > len(shown):
+    print("  ... ещё %d результатов — см. файлы ниже" % (len(results) - len(shown)))
+print("  Всего: %d, с выдержками: %d" % (len(results), with_extract))
+if pack:
+    size = os.path.getsize(pack) if os.path.exists(pack) else 0
+    human = "%d KB" % (size // 1024) if size >= 1024 else "%d B" % size
+    # Звать читать пак вместо повторного поиска можно, только если в нём есть
+    # что читать: с нулём выдержек внутри одни сниппеты выдачи.
+    hint = "читай его вместо повторного поиска" if with_extract else "выдержек нет, внутри сниппеты выдачи"
+    print("  Пак:  %s (%s) — %s" % (pack, human, hint))
+'
 }
 
 # --- Hash helper ---
