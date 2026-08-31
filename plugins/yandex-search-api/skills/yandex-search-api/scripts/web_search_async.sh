@@ -148,6 +148,9 @@ print(resp.get('rawData', ''))
             # Decode and parse
             echo "$_raw_b64" | b64_decode > "$CACHE_DIR/results/${_result_hash}.raw"
             parse_search_response "$CACHE_DIR/results/${_result_hash}.raw" > "$CACHE_DIR/results/${_result_hash}.json"
+            # Асинхронный ответ инфоконтекстов не несёт, а пак от прошлого
+            # синхронного поиска той же фразы лежит под тем же хэшем.
+            drop_stale_pack "$_result_hash"
 
             # Update operation status
             python3 -c "

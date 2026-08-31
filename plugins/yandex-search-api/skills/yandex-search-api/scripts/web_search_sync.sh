@@ -142,16 +142,12 @@ print(d.get('rawData', ''))
     # Выдержки целиком не помещаются в буфер stdout песочницы — складываем их
     # в markdown-пак, а печатаем только индекс.
     _sq_pack=""
-    _sq_pack_file="$CACHE_DIR/results/${_sq_hash}.md"
     if [ "$SNIPPETS_ON" -eq 1 ]; then
-        _sq_pack="$_sq_pack_file"
+        _sq_pack="$CACHE_DIR/results/${_sq_hash}.md"
         render_snippet_pack "$_sq_json" "$_sq_pack" "$_sq_query" "$REGION_ID" >/dev/null || _sq_pack=""
     fi
-    # Хэш считается только от текста запроса, поэтому поиск той же фразы без
-    # выдержек перезапишет .json/.raw, но оставит пак от прошлого раза. Агент
-    # знает путь и прочитает его как свежий — убираем.
     if [ -z "$_sq_pack" ]; then
-        rm -f "$_sq_pack_file"
+        drop_stale_pack "$_sq_hash"
     fi
 
     if [ "$BATCH" -eq 1 ]; then
