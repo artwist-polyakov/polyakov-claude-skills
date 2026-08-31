@@ -110,6 +110,11 @@ search_single() {
 
     echo "--- Searching: $_sq_query (hash: $_sq_hash) ---" >&2
 
+    # Пак от прошлого поиска той же фразы устарел в тот момент, когда мы начали
+    # новый: снимаем его до запроса, иначе упавший вызов или ответ без rawData
+    # выйдут по return 1 и оставят агенту вчерашние выдержки под тем же путём.
+    drop_stale_pack "$_sq_hash"
+
     _body=$(build_search_body "$_sq_query" "$REGION_ID" "$RESULTS_PER_PAGE" "$PAGE" "$SNIPPETS_ON")
 
     # Make API call

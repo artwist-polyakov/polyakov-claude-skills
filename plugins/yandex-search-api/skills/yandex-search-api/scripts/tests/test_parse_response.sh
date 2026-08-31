@@ -65,6 +65,25 @@ check "$TMP_DIR/ic.json" 'data[1]["snippet"] == "Описание есть, ин
     "description lost for a document without an infocontext"
 check "$TMP_DIR/ic.json" 'data[2]["snippet"] == ""' "missing Description must be an empty string"
 
+# Форма Num взята из документации, а не из живого ответа: строка не должна
+# ронять отрисовку (она печатает позицию через %d) уже после оплаченного поиска.
+printf '{"docs": [{"Num": "7", "DocumentTitle": "T", "FullUrl": "https://e.ru/", "info_context": "x"}]}' \
+    > "$TMP_DIR/strnum.json.in"
+parse_search_response "$TMP_DIR/strnum.json.in" > "$TMP_DIR/strnum.json"
+check "$TMP_DIR/strnum.json" 'data[0]["position"] == 7 and isinstance(data[0]["position"], int)' \
+    "a stringified Num must be coerced to an int"
+
+# Num вовсе нет — позиция берётся из порядка документов.
+printf '{"docs": [{"DocumentTitle": "A"}, {"DocumentTitle": "B"}]}' > "$TMP_DIR/nonum.json.in"
+parse_search_response "$TMP_DIR/nonum.json.in" > "$TMP_DIR/nonum.json"
+check "$TMP_DIR/nonum.json" '[d["position"] for d in data] == [1, 2]' \
+    "a missing Num must fall back to the document order"
+
+# Мусор в Num тоже не должен ронять разбор.
+printf '{"docs": [{"Num": "abc", "DocumentTitle": "A"}]}' > "$TMP_DIR/badnum.json.in"
+parse_search_response "$TMP_DIR/badnum.json.in" > "$TMP_DIR/badnum.json"
+check "$TMP_DIR/badnum.json" 'data[0]["position"] == 1' "an unparsable Num must fall back to the order"
+
 # --- битый ответ не роняет уже оплаченный поиск ---
 parse_search_response "$TESTS_DIR/fixtures/broken_response.xml" > "$TMP_DIR/broken.json"
 check "$TMP_DIR/broken.json" 'isinstance(data, dict) and "error" in data' \

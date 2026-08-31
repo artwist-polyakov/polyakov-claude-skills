@@ -397,6 +397,9 @@ ysa_folder_id() {
 # дефолты продублированы здесь, чтобы забытая переменная не уехала в API
 # пустой строкой.
 build_search_body() {
+    # Наполняем кеш в текущем шелле: внутри подстановки $(...) ниже присваивание
+    # ушло бы в подоболочку и до родителя не добралось бы никогда.
+    ysa_folder_id >/dev/null
     _YSA_QUERY="$1" \
     _YSA_REGION="$2" \
     _YSA_GROUPS="$3" \
@@ -405,7 +408,7 @@ build_search_body() {
     _YSA_SEARCH_TYPE="${SEARCH_TYPE:-SEARCH_TYPE_RU}" \
     _YSA_FAMILY_MODE="${FAMILY_MODE:-FAMILY_MODE_MODERATE}" \
     _YSA_FIX_TYPO="${FIX_TYPO:-FIX_TYPO_MODE_ON}" \
-    _YSA_FOLDER_ID="$(ysa_folder_id)" \
+    _YSA_FOLDER_ID="$_YSA_FOLDER_ID_CACHED" \
     _YSA_FLAG_KEY="$SMART_SNIPPETS_FLAG_KEY" \
     _YSA_FLAG_VALUE="$SMART_SNIPPETS_FLAG_VALUE" \
     python3 -c '
@@ -504,8 +507,14 @@ def parse_infocontext(path):
     results = []
     for index, doc in enumerate(payload.get("docs") or [], start=1):
         url = doc.get("FullUrl") or ""
+        # Num приводим к числу: отрисовка печатает позицию через %d, и строка
+        # уронила бы её уже после оплаченного поиска.
+        try:
+            position = int(doc["Num"])
+        except (KeyError, TypeError, ValueError):
+            position = index
         results.append({
-            "position": doc.get("Num") or index,
+            "position": position,
             "url": url,
             "title": doc.get("DocumentTitle") or "",
             "snippet": (doc.get("Description") or "")[:300],

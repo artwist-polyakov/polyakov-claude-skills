@@ -56,4 +56,13 @@ grep -q 'drop_stale_pack' "$SKILL_DIR/scripts/web_search_sync.sh" \
 grep -q 'drop_stale_pack' "$SKILL_DIR/scripts/web_search_async.sh" \
     || fail "web_search_async.sh must drop a stale pack: async never returns infocontexts"
 
+# Уборка обязана стоять до запроса: у search_single два ранних `return 1`
+# (упавший вызов и ответ без rawData), и после них до поздней уборки дело
+# не дойдёт — пак от прошлого раза останется лежать как свежий.
+DROP_LINE=$(grep -n 'drop_stale_pack' "$SKILL_DIR/scripts/web_search_sync.sh" | head -1 | cut -d: -f1)
+CALL_LINE=$(grep -n 'auth_request' "$SKILL_DIR/scripts/web_search_sync.sh" | head -1 | cut -d: -f1)
+[ -n "$DROP_LINE" ] && [ -n "$CALL_LINE" ] || fail "could not locate the drop / request lines"
+[ "$DROP_LINE" -lt "$CALL_LINE" ] \
+    || fail "drop_stale_pack must run before the API call, not only after a successful parse"
+
 echo PASS
