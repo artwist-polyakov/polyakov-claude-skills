@@ -13,13 +13,6 @@ __pycache__/
 
 # Codex Review
 .codex-review/
-.codex-review/state.json
-.codex-review/config.env
-.codex-review/STATUS.md
-.codex-review/verdict.txt
-.codex-review/last_response.txt
-.codex-review/codex-*.log
-.codex-review/archive/
 
 # Local packaged plugin artifacts
 plugins/telegraph-publisher/skills/*.zip

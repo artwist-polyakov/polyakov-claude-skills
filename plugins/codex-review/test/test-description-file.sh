@@ -547,56 +547,13 @@ assert_eq_str "a one-line file names the task without its newline" \
 
 rm -rf "$REPO"
 
-echo "=== every artefact a run leaves is covered by the documented ignore list ==="
+echo "=== README ignores the whole local review directory ==="
 
-# The README tells a project which paths to ignore. A new artefact that no line
-# of that list covers ends up untracked in the user's worktree, which is how the
-# request files were missed.
-REPO="$(make_repo)"
-printf 'plan body\n' > "$REPO/plan.md"
-printf '%s\n' "$DESC_TEXT" > "$REPO/desc.md"
-STATE_DIR="$(cd "$REPO" && bash "$STATE_CMD" dir)"
-BRANCH_DIR_NAME="$(basename "$STATE_DIR")"
+IGNORE_LIST="$(sed -n '/^### \.gitignore$/,/^### AGENTS\.md$/p' "$PROD_SCRIPTS/../README.md" \
+    | awk '/^```$/ { if (inside) exit; inside = 1; next } inside { print }')"
 
-run_review "$REPO" init "One line task" >/dev/null
-run_review "$REPO" plan --plan-file "$REPO/plan.md" >/dev/null
-run_review "$REPO" code --description-file "$REPO/desc.md" >/dev/null
-
-IGNORE_LIST="$(sed -n '/^### .gitignore/,/^> /p' "$PROD_SCRIPTS/../README.md" \
-    | sed -n '/^```$/,/^```$/p' | grep '^\.codex-review/')"
-
-uncovered=""
-for f in "$STATE_DIR"/*; do
-    [ -f "$f" ] || continue
-    name="$(basename "$f")"
-    path=".codex-review/$BRANCH_DIR_NAME/$name"
-    covered=""
-    # Patterns are matched, not expanded: unquoted, a line like
-    # .codex-review/*/state.json would turn into whatever this repository
-    # happens to hold before it is ever compared.
-    set -f
-    for pattern in $IGNORE_LIST; do
-        # shellcheck disable=SC2254  # each line is a glob pattern, matched as one
-        case "$path" in
-            $pattern) covered=yes ;;
-        esac
-    done
-    set +f
-    [ -n "$covered" ] || uncovered="$uncovered $name"
-done
-
-if [ -n "$IGNORE_LIST" ]; then
-    pass "the README still carries an ignore list"
-else
-    fail "the README still carries an ignore list" "no .codex-review lines found"
-fi
-if [ -z "$uncovered" ]; then
-    pass "no artefact is left out of it"
-else
-    fail "no artefact is left out of it" "not covered:$uncovered"
-fi
-
-rm -rf "$REPO"
+assert_eq_str "the README ignores every current and future review artefact" \
+    "$IGNORE_LIST" ".codex-review/"
 
 echo "=== a new session archives saved requests with their logs ==="
 
