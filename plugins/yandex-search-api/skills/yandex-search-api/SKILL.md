@@ -135,7 +135,8 @@ bash scripts/web_search_sync.sh \
 \* Either `--query` or `--file` is required.
 
 Results saved to `cache/results/<hash>.md` (пак с выдержками),
-`cache/results/<hash>.json` (parsed) и `cache/results/<hash>.raw` (XML).
+`cache/results/<hash>.json` (parsed) и `cache/results/<hash>.raw` — исходное
+тело ответа: JSON с инфоконтекстами, XML без них.
 
 ### web_search_async.sh
 Asynchronous batch search — submit many queries, poll for results.
