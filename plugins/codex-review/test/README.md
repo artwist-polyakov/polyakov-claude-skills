@@ -77,9 +77,12 @@ Regression tests for state reads on the hot path. Covers:
 
 - `write_status` and the standalone readers reuse the `STATE_DIR` already
   resolved by the entry script;
+- state and config helpers can reuse one explicitly resolved review root;
 - `write_status` derives the branch from that same state directory;
 - string and numeric readers can parse one in-memory snapshot after the source
   file is no longer available;
+- archive summaries read their string fields through the same shared snapshot
+  parser;
 - missing values keep their existing empty-string / zero defaults.
 
 The test checks observable calls and output rather than a machine-dependent

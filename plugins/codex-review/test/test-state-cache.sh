@@ -99,5 +99,81 @@ assert_file_contains "STATUS.md keeps the phase" "$STATUS_FILE" "- Phase: code"
 assert_file_contains "STATUS.md keeps both iteration values" "$STATUS_FILE" "- Iteration: 3/5"
 assert_file_contains "STATUS.md keeps the verdict" "$STATUS_FILE" "- Last status: CHANGES_REQUESTED"
 
+printf '\nTest 2: path helpers reuse one resolved review root\n'
+REVIEW_ROOT="$TEST_ROOT/provided-review-root"
+mkdir -p "$REVIEW_ROOT"
+printf 'CODEX_MAX_ITERATIONS=9\n' > "$REVIEW_ROOT/config.env"
+
+root_values="$(bash -c '
+    set -euo pipefail
+    source "$1"
+
+    get_review_root() {
+        echo "get_review_root must not run when a root is provided" >&2
+        return 97
+    }
+    get_branch_slug() {
+        printf "%s\n" "cached-branch"
+    }
+
+    state_dir="$(get_state_dir "$2")"
+    load_config "$2"
+    printf "%s|%s" "$state_dir" "$CODEX_MAX_ITERATIONS"
+' _ "$COMMON" "$REVIEW_ROOT")" || {
+    fail "path helpers accept the already resolved review root" "$root_values"
+    root_values=""
+}
+
+assert_eq "state and config paths share one explicit root" \
+    "$REVIEW_ROOT/cached-branch|9" "$root_values"
+
+printf '\nTest 3: archive summary uses one shared state snapshot\n'
+ARCHIVE_STATE_DIR="$TEST_ROOT/archive-branch"
+ARCHIVE_DIR="$TEST_ROOT/archive-output"
+FIELD_LOG="$TEST_ROOT/archive-fields.log"
+mkdir -p "$ARCHIVE_STATE_DIR/notes" "$ARCHIVE_DIR"
+cp "$STATE_DIR/state.saved.json" "$ARCHIVE_STATE_DIR/state.json"
+touch "$ARCHIVE_STATE_DIR/notes/plan-review-1.md"
+touch "$ARCHIVE_STATE_DIR/notes/code-review-1.md"
+
+archive_fields="$(bash -c '
+    set -euo pipefail
+    source "$1"
+    expected_json="$(<"$2/state.json")"
+    archive_state_dir="$2"
+    field_log="$4"
+
+    read_state_field() {
+        if [[ $# -ne 2 || "$2" != "$expected_json" ]]; then
+            echo "archive reader must receive the same in-memory snapshot" >&2
+            return 98
+        fi
+        printf "%s\n" "$1" >> "$field_log"
+        rm -f "$archive_state_dir/state.json"
+        case "$1" in
+            task_description) echo "Archive task" ;;
+            session_id) echo "archive-session" ;;
+            last_review_status) echo "APPROVED" ;;
+            *) return 99 ;;
+        esac
+    }
+
+    generate_archive_summary "$2" "$3" "20260831T190000Z"
+    cat "$field_log"
+' _ "$COMMON" "$ARCHIVE_STATE_DIR" "$ARCHIVE_DIR" "$FIELD_LOG")" || {
+    fail "archive summary completes from one shared snapshot" "$archive_fields"
+    archive_fields=""
+}
+
+expected_archive_fields="$(printf 'task_description\nsession_id\nlast_review_status\n')"
+assert_eq "archive summary reads all strings through the shared parser" \
+    "$expected_archive_fields" "$archive_fields"
+assert_file_contains "archive summary keeps the task" \
+    "$ARCHIVE_DIR/summary.json" '"task_description": "Archive task'
+assert_file_contains "archive summary keeps the session" \
+    "$ARCHIVE_DIR/summary.json" '"session_id": "archive-session"'
+assert_file_contains "archive summary keeps the final status" \
+    "$ARCHIVE_DIR/summary.json" '"final_verdict": "APPROVED"'
+
 printf '\nPASS: %d  FAIL: %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

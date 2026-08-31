@@ -167,10 +167,12 @@ if [[ "$COMMAND" == "init" ]]; then
 fi
 
 # --- Load config & state ---
-load_config
+REVIEW_ROOT="$(get_review_root)"
+load_config "$REVIEW_ROOT"
 check_codex_installed
 
-STATE_DIR="$(get_state_dir)"
+STATE_DIR="$(get_state_dir "$REVIEW_ROOT")"
+unset REVIEW_ROOT
 
 MAX_ITERATIONS="${MAX_ITER:-$CODEX_MAX_ITERATIONS}"
 SESSION_ID="$(get_effective_session_id)"

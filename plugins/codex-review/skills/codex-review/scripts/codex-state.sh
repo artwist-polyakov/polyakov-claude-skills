@@ -8,7 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/common.sh"
 
-STATE_DIR="$(get_state_dir)"
+REVIEW_ROOT="$(get_review_root)"
+STATE_DIR="$(get_state_dir "$REVIEW_ROOT")"
 STATE_FILE="$STATE_DIR/state.json"
 
 cmd_show() {
@@ -91,7 +92,8 @@ cmd_set() {
 }
 
 # --- Load config for defaults ---
-load_config
+load_config "$REVIEW_ROOT"
+unset REVIEW_ROOT
 
 # --- Main ---
 case "${1:-}" in

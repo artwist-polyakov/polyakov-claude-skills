@@ -58,9 +58,14 @@ get_review_root() {
 }
 
 # --- State directory (per-branch isolation inside .codex-review/) ---
+# An optional root lets one command resolve .codex-review once for config + state.
+# Entry scripts pass that argument; standalone helpers intentionally omit it.
+# shellcheck disable=SC2120
 get_state_dir() {
-    local review_root
-    review_root="$(get_review_root)"
+    local review_root="${1:-}"
+    if [[ -z "$review_root" ]]; then
+        review_root="$(get_review_root)"
+    fi
     local branch
     branch="$(get_branch_slug)"
     local state_dir="$review_root/$branch"
@@ -79,9 +84,12 @@ ensure_state_dir() {
 }
 
 # --- Load config (shared config.env → env vars → defaults) ---
+# Accepts the same optional pre-resolved root as get_state_dir.
 load_config() {
-    local review_root
-    review_root="$(get_review_root)"
+    local review_root="${1:-}"
+    if [[ -z "$review_root" ]]; then
+        review_root="$(get_review_root)"
+    fi
     local config_file="$review_root/config.env"
 
     if [[ -f "$config_file" ]]; then
@@ -336,12 +344,11 @@ generate_archive_summary() {
 
     # Read from state.json (still in state_dir at this point)
     if [[ -f "$state_dir/state.json" ]]; then
-        task_desc="$(grep -o '"task_description"[[:space:]]*:[[:space:]]*"[^"]*"' "$state_dir/state.json" \
-            | head -1 | sed 's/.*:[[:space:]]*"//;s/"$//')"
-        session_id="$(grep -o '"session_id"[[:space:]]*:[[:space:]]*"[^"]*"' "$state_dir/state.json" \
-            | head -1 | sed 's/.*:[[:space:]]*"//;s/"$//')"
-        last_status="$(grep -o '"last_review_status"[[:space:]]*:[[:space:]]*"[^"]*"' "$state_dir/state.json" \
-            | head -1 | sed 's/.*:[[:space:]]*"//;s/"$//')"
+        local state_json
+        state_json="$(<"$state_dir/state.json")"
+        task_desc="$(read_state_field "task_description" "$state_json")"
+        session_id="$(read_state_field "session_id" "$state_json")"
+        last_status="$(read_state_field "last_review_status" "$state_json")"
     fi
 
     # Read final verdict via format-agnostic helper
