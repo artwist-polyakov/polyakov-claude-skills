@@ -177,25 +177,35 @@ unset REVIEW_ROOT
 MAX_ITERATIONS="${MAX_ITER:-$CODEX_MAX_ITERATIONS}"
 SESSION_ID="$(get_effective_session_id)"
 
-# --- Build codex exec flags (as arrays to avoid word splitting) ---
-# Every codex exec call in this script shares these, so a session cannot be
-# opened under one model or reasoning effort and then reviewed under another.
-YOLO_FLAG=()
-if [[ "$CODEX_YOLO" == "true" ]]; then
-    YOLO_FLAG=("--yolo")
-fi
-
-MODEL_FLAG=()
+# --- Build the flags shared by every codex exec call ---
+# Keeping one list prevents init and review calls from drifting apart. The
+# wrapper also avoids expanding an empty array under macOS Bash 3.2 + set -u.
+CODEX_EXEC_FLAGS=()
 if [[ -n "$CODEX_MODEL" ]]; then
-    MODEL_FLAG=("--model" "$CODEX_MODEL")
+    CODEX_EXEC_FLAGS+=("--model" "$CODEX_MODEL")
 fi
 
 # codex exec has no dedicated flag for this; the value reaches the CLI as a
 # config override and is parsed as TOML, hence the inner quotes.
-REASONING_FLAG=()
 if [[ -n "$CODEX_REASONING_EFFORT" ]]; then
-    REASONING_FLAG=("-c" "model_reasoning_effort=\"$CODEX_REASONING_EFFORT\"")
+    CODEX_EXEC_FLAGS+=("-c" "model_reasoning_effort=\"$CODEX_REASONING_EFFORT\"")
 fi
+
+if [[ "$CODEX_FAST_MODE" == "true" ]]; then
+    CODEX_EXEC_FLAGS+=("-c" 'service_tier="fast"')
+fi
+
+if [[ "$CODEX_YOLO" == "true" ]]; then
+    CODEX_EXEC_FLAGS+=("--yolo")
+fi
+
+run_codex_exec() {
+    if [[ ${#CODEX_EXEC_FLAGS[@]} -eq 0 ]]; then
+        CODEX_REVIEWER=1 codex exec "$@"
+    else
+        CODEX_REVIEWER=1 codex exec "${CODEX_EXEC_FLAGS[@]}" "$@"
+    fi
+}
 
 # --- Reviewer role prompt (reusable base) ---
 reviewer_role_prompt() {
@@ -627,10 +637,7 @@ cmd_init() {
     echo "Creating Codex session..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
 
-    CODEX_REVIEWER=1 codex exec \
-        "${MODEL_FLAG[@]}" \
-        "${REASONING_FLAG[@]}" \
-        "${YOLO_FLAG[@]}" \
+    run_codex_exec \
         -o "$output_file" \
         - < "$prompt_file" > "$log_file" 2>&1 || {
         echo "ERROR: Failed to create Codex session." >&2
@@ -748,10 +755,7 @@ cmd_review() {
     echo "Sending $phase for review (iteration ${next_iteration}/${MAX_ITERATIONS})..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
 
-    CODEX_REVIEWER=1 codex exec \
-        "${MODEL_FLAG[@]}" \
-        "${REASONING_FLAG[@]}" \
-        "${YOLO_FLAG[@]}" \
+    run_codex_exec \
         -o "$output_file" \
         resume "$SESSION_ID" \
         - < "$prompt_file" > "$log_file" 2>&1 || {

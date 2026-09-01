@@ -2,12 +2,11 @@
 # Tests for the flags every `codex exec` call carries.
 #
 # Covers:
-#   - the configured model and reasoning effort reach the call that opens the
-#     session, not only the calls that send reviews
+#   - the configured model, reasoning effort, and Fast service tier reach the
+#     call that opens the session, not only the calls that send reviews
 #   - both call sites open with the same flags, so a session cannot be created
 #     under one setting and reviewed under another
-#   - an unset model or reasoning effort is passed as nothing at all, rather
-#     than as an empty value
+#   - an unset model/effort and disabled Fast mode are passed as nothing at all
 #
 # Does NOT require the real `codex` binary: a stub on PATH records the argv of
 # every exec call, so the assertions read what the CLI would have received.
@@ -105,7 +104,8 @@ run_review() {
         # sees. Every setting `load_config` reads is cleared first, so a value
         # exported on the machine running the suite cannot answer an assertion
         # that was written about a repo which configures nothing.
-        unset CODEX_MODEL CODEX_REASONING_EFFORT CODEX_MAX_ITERATIONS \
+        unset CODEX_MODEL CODEX_REASONING_EFFORT CODEX_FAST_MODE \
+              CODEX_MAX_ITERATIONS \
               CODEX_YOLO CODEX_SESSION_ID AUTO_REVIEW CODEX_REVIEWER_PROMPT \
               CODEX_PLAN_GUIDE CODEX_CODE_GUIDE CODEX_SEVERITY_CALIBRATION
         cd "$_repo" && PATH="$_repo/bin:$PATH" CODEX_HOME="$_repo/codex-home" \
@@ -126,13 +126,14 @@ flags_block() {
     sed -n '1,/^-o$/p' "$1"
 }
 
-echo "=== The configured model and effort reach every call ==="
+echo "=== The configured model, effort, and Fast mode reach every call ==="
 
 REPO="$(make_repo)"
 mkdir -p "$REPO/.codex-review"
 cat > "$REPO/.codex-review/config.env" <<'CFG'
 CODEX_MODEL=stub-model
 CODEX_REASONING_EFFORT=xhigh
+CODEX_FAST_MODE=true
 CFG
 printf 'A task.\n' > "$REPO/task.md"
 printf 'What changed: nothing much.\n' > "$REPO/desc.md"
@@ -153,11 +154,15 @@ assert_argv_has "the session is opened with a config override" \
     "$INIT_ARGV" "-c"
 assert_argv_has "the configured effort reaches the call that opens the session" \
     "$INIT_ARGV" 'model_reasoning_effort="xhigh"'
+assert_argv_has "Fast mode reaches the call that opens the session" \
+    "$INIT_ARGV" 'service_tier="fast"'
 
 assert_argv_has "the review carries the configured model" \
     "$REVIEW_ARGV" "stub-model"
 assert_argv_has "the review carries the configured effort" \
     "$REVIEW_ARGV" 'model_reasoning_effort="xhigh"'
+assert_argv_has "the review carries Fast mode" \
+    "$REVIEW_ARGV" 'service_tier="fast"'
 
 if [ -f "$INIT_ARGV" ] && [ -f "$REVIEW_ARGV" ] &&
     [ "$(flags_block "$INIT_ARGV")" = "$(flags_block "$REVIEW_ARGV")" ]; then
@@ -169,9 +174,11 @@ fi
 
 rm -rf "$REPO"
 
-echo "=== An unset setting is passed as nothing ==="
+echo "=== Unset model/effort and disabled Fast mode are passed as nothing ==="
 
 REPO="$(make_repo)"
+mkdir -p "$REPO/.codex-review"
+printf 'CODEX_YOLO=false\n' > "$REPO/.codex-review/config.env"
 printf 'A task.\n' > "$REPO/task.md"
 printf 'What changed: nothing much.\n' > "$REPO/desc.md"
 
@@ -187,10 +194,16 @@ assert_argv_lacks "no empty model name is passed" \
     "$INIT_ARGV" ""
 assert_argv_lacks "no config override when no effort is configured" \
     "$INIT_ARGV" "-c"
+assert_argv_lacks "no yolo flag when it is disabled" \
+    "$INIT_ARGV" "--yolo"
+assert_argv_lacks "Fast mode is absent from the session-opening call by default" \
+    "$INIT_ARGV" 'service_tier="fast"'
 assert_argv_lacks "the review passes no model flag either" \
     "$REVIEW_ARGV" "--model"
 assert_argv_lacks "the review passes no config override either" \
     "$REVIEW_ARGV" "-c"
+assert_argv_lacks "the review does not enable Fast mode by default" \
+    "$REVIEW_ARGV" 'service_tier="fast"'
 
 rm -rf "$REPO"
 

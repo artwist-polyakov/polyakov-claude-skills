@@ -15,7 +15,7 @@ test/
 ├── test-state-cache.sh         # cached state path and batched STATUS.md reads
 ├── test-description-file.sh    # --description-file, per-attempt logs, saved request
 ├── test-severity-calibration.sh # severity scale, finding headings, verdict threshold
-├── test-exec-flags.sh          # model and reasoning effort on every codex exec call
+├── test-exec-flags.sh          # model, reasoning effort, and Fast mode on every call
 ├── test-e2e.sh                 # opt-in end-to-end with real codex / claude
 └── test-fixtures/              # plan markdown fixtures used by test-e2e.sh
     ├── approve_plan.md         # trivial plan → APPROVED
@@ -209,15 +209,17 @@ Covers the flags `codex-review.sh` puts on every `codex exec` call.
 
 Scenarios:
 
-1. `CODEX_MODEL` and `CODEX_REASONING_EFFORT` reach the call that opens the
-   session as `--model <name>` and `-c model_reasoning_effort="<effort>"`, and
-   the review that follows carries the same pair.
+1. `CODEX_MODEL`, `CODEX_REASONING_EFFORT`, and enabled `CODEX_FAST_MODE`
+   reach the call that opens the session as `--model <name>`,
+   `-c model_reasoning_effort="<effort>"`, and `-c service_tier="fast"`; the
+   review that follows carries the same settings.
 2. The two call sites open with an identical flag block — everything up to
    `-o`, where the per-call arguments begin. A flag added to one site and not
    the other fails here, which is what keeps a session from being created under
    one setting and reviewed under another.
-3. With neither setting configured, no `--model` and no `-c` are passed at all,
-   and no empty argument goes out in their place.
+3. With model and effort unset, Fast mode left at its disabled default, and
+   `CODEX_YOLO=false`, no shared flags are passed at all. This also checks the
+   empty-list path on macOS Bash 3.2.
 
 Does **not** require the `codex` binary — a stub on `PATH` records the argv of
 every exec call, one argument per line, as `argv-<N>.txt` beside the repo. The
@@ -227,7 +229,8 @@ the review.
 
 `run_review` clears every setting `load_config` reads before each run, so the
 assertions answer to the repo's own `config.env` and not to a `CODEX_MODEL` or
-`CODEX_REASONING_EFFORT` exported on the machine running the suite.
+`CODEX_REASONING_EFFORT` / `CODEX_FAST_MODE` exported on the machine running
+the suite.
 
 Run:
 

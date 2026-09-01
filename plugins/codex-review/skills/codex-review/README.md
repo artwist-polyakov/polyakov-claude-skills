@@ -97,8 +97,21 @@ git rm -r --cached --ignore-unmatch .codex-review/
 # Существующая сессия Codex (или используй init для создания новой)
 # CODEX_SESSION_ID=sess_your_session_id
 
-CODEX_MODEL=gpt-5.2
+# Базовый вариант. Без строки используется модель из настроек Codex
+# или его текущий вариант по умолчанию.
+CODEX_MODEL=gpt-5.5
+
+# Актуальное семейство GPT-5.6 — оставь один вариант вместо строки выше:
+# CODEX_MODEL=gpt-5.6-sol    # максимальное качество для сложных ревью
+# CODEX_MODEL=gpt-5.6-terra  # сбалансированный вариант на каждый день
+# CODEX_MODEL=gpt-5.6-luna   # быстрые и хорошо ограниченные задачи
+
+# Обычно: low, medium, high, xhigh; max поддерживают модели GPT-5.6.
 CODEX_REASONING_EFFORT=high
+
+# Ускоренный сервисный уровень. По умолчанию выключен.
+CODEX_FAST_MODE=false
+
 CODEX_MAX_ITERATIONS=5
 CODEX_YOLO=true
 
@@ -120,6 +133,8 @@ CODEX_YOLO=true
 # Severity calibration (default: true) — see «Severity и вердикт» below.
 # CODEX_SEVERITY_CALIBRATION=false
 ```
+
+`CODEX_FAST_MODE=true` передаёт `service_tier="fast"` при создании сессии и при каждом ревью. Режим сработает, если выбранная модель и учётная запись его поддерживают. При `false` или отсутствии настройки плагин не переопределяет сервисный уровень Codex.
 
 ### Severity и вердикт
 
