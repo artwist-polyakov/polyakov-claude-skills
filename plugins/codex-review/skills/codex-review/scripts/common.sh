@@ -58,9 +58,14 @@ get_review_root() {
 }
 
 # --- State directory (per-branch isolation inside .codex-review/) ---
+# An optional root lets one command resolve .codex-review once for config + state.
+# Entry scripts pass that argument; standalone helpers intentionally omit it.
+# shellcheck disable=SC2120
 get_state_dir() {
-    local review_root
-    review_root="$(get_review_root)"
+    local review_root="${1:-}"
+    if [[ -z "$review_root" ]]; then
+        review_root="$(get_review_root)"
+    fi
     local branch
     branch="$(get_branch_slug)"
     local state_dir="$review_root/$branch"
@@ -69,10 +74,22 @@ get_state_dir() {
     echo "$state_dir"
 }
 
+# --- State directory for the current command ---
+# Entry scripts resolve STATE_DIR once. Reuse it so helpers do not repeat git,
+# mkdir and touch calls; standalone callers still get the normal fallback.
+ensure_state_dir() {
+    if [[ -z "${STATE_DIR:-}" ]]; then
+        STATE_DIR="$(get_state_dir)"
+    fi
+}
+
 # --- Load config (shared config.env → env vars → defaults) ---
+# Accepts the same optional pre-resolved root as get_state_dir.
 load_config() {
-    local review_root
-    review_root="$(get_review_root)"
+    local review_root="${1:-}"
+    if [[ -z "$review_root" ]]; then
+        review_root="$(get_review_root)"
+    fi
     local config_file="$review_root/config.env"
 
     if [[ -f "$config_file" ]]; then
@@ -92,40 +109,55 @@ load_config() {
 }
 
 # --- Read a field from state.json (no jq dependency) ---
+# An optional second argument supplies an in-memory snapshot. This lets callers
+# that need several fields read the file once without maintaining a stale cache.
 read_state_field() {
     local field="$1"
-    local state_dir
-    state_dir="$(get_state_dir)"
-    local state_file="$state_dir/state.json"
+    local state_json
 
-    if [[ ! -f "$state_file" ]]; then
-        echo ""
-        return
+    if [[ $# -ge 2 ]]; then
+        state_json="$2"
+    else
+        ensure_state_dir
+        local state_file="$STATE_DIR/state.json"
+        if [[ ! -f "$state_file" ]]; then
+            echo ""
+            return
+        fi
+        state_json="$(<"$state_file")"
     fi
 
-    grep -o "\"$field\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$state_file" \
-        | head -1 \
-        | sed 's/.*:[[:space:]]*"//' \
-        | tr -d '"'
+    local pattern="\"${field}\"[[:space:]]*:[[:space:]]*\"([^\"]*)\""
+    if [[ "$state_json" =~ $pattern ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+    else
+        echo ""
+    fi
 }
 
 # --- Read numeric field from state.json ---
 read_state_number() {
     local field="$1"
-    local state_dir
-    state_dir="$(get_state_dir)"
-    local state_file="$state_dir/state.json"
+    local state_json
 
-    if [[ ! -f "$state_file" ]]; then
-        echo "0"
-        return
+    if [[ $# -ge 2 ]]; then
+        state_json="$2"
+    else
+        ensure_state_dir
+        local state_file="$STATE_DIR/state.json"
+        if [[ ! -f "$state_file" ]]; then
+            echo "0"
+            return
+        fi
+        state_json="$(<"$state_file")"
     fi
 
-    local val
-    val=$(grep -o "\"$field\"[[:space:]]*:[[:space:]]*[0-9]*" "$state_file" \
-        | head -1 \
-        | sed 's/.*:[[:space:]]*//')
-    echo "${val:-0}"
+    local pattern="\"${field}\"[[:space:]]*:[[:space:]]*([0-9]+)"
+    if [[ "$state_json" =~ $pattern ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+    else
+        echo "0"
+    fi
 }
 
 # --- Effective session_id: config.env → state.json ---
@@ -197,26 +229,30 @@ task_label_for_state() {
 # --- Write state.json ---
 write_state() {
     local json="$1"
-    local state_dir
-    state_dir="$(get_state_dir)"
-    echo "$json" > "$state_dir/state.json"
+    ensure_state_dir
+    echo "$json" > "$STATE_DIR/state.json"
 }
 
 # --- Write STATUS.md from current state.json ---
 write_status() {
-    local state_dir
-    state_dir="$(get_state_dir)"
+    ensure_state_dir
+    local state_dir="$STATE_DIR"
+    local state_file="$state_dir/state.json"
     local status_file="$state_dir/STATUS.md"
+    local state_json=""
+
+    if [[ -f "$state_file" ]]; then
+        state_json="$(<"$state_file")"
+    fi
 
     local task phase iteration max_iter review_status
-    task="$(read_state_field "task_description")"
-    phase="$(read_state_field "phase")"
-    iteration="$(read_state_number "iteration")"
-    max_iter="$(read_state_number "max_iterations")"
-    review_status="$(read_state_field "last_review_status")"
+    task="$(read_state_field "task_description" "$state_json")"
+    phase="$(read_state_field "phase" "$state_json")"
+    iteration="$(read_state_number "iteration" "$state_json")"
+    max_iter="$(read_state_number "max_iterations" "$state_json")"
+    review_status="$(read_state_field "last_review_status" "$state_json")"
 
-    local branch
-    branch="$(get_branch_slug)"
+    local branch="${state_dir##*/}"
 
     {
         echo "# Active Codex Review"
@@ -234,9 +270,8 @@ write_status() {
 
 # --- Remove STATUS.md (review complete or full reset) ---
 remove_status() {
-    local state_dir
-    state_dir="$(get_state_dir)"
-    rm -f "$state_dir/STATUS.md"
+    ensure_state_dir
+    rm -f "$STATE_DIR/STATUS.md"
 }
 
 # --- Parse verdict file ---
@@ -255,10 +290,9 @@ parse_verdict_file() {
 
 # --- Archive previous session artifacts ---
 archive_previous_session() {
-    local state_dir
-    state_dir="$(get_state_dir)"
-    local review_root
-    review_root="$(get_review_root)"
+    ensure_state_dir
+    local state_dir="$STATE_DIR"
+    local review_root="${state_dir%/*}"
     local has_artifacts=false
 
     # Check if there's anything to archive
@@ -310,12 +344,11 @@ generate_archive_summary() {
 
     # Read from state.json (still in state_dir at this point)
     if [[ -f "$state_dir/state.json" ]]; then
-        task_desc="$(grep -o '"task_description"[[:space:]]*:[[:space:]]*"[^"]*"' "$state_dir/state.json" \
-            | head -1 | sed 's/.*:[[:space:]]*"//;s/"$//')"
-        session_id="$(grep -o '"session_id"[[:space:]]*:[[:space:]]*"[^"]*"' "$state_dir/state.json" \
-            | head -1 | sed 's/.*:[[:space:]]*"//;s/"$//')"
-        last_status="$(grep -o '"last_review_status"[[:space:]]*:[[:space:]]*"[^"]*"' "$state_dir/state.json" \
-            | head -1 | sed 's/.*:[[:space:]]*"//;s/"$//')"
+        local state_json
+        state_json="$(<"$state_dir/state.json")"
+        task_desc="$(read_state_field "task_description" "$state_json")"
+        session_id="$(read_state_field "session_id" "$state_json")"
+        last_status="$(read_state_field "last_review_status" "$state_json")"
     fi
 
     # Read final verdict via format-agnostic helper
@@ -335,8 +368,7 @@ generate_archive_summary() {
     # Escape task_desc for JSON (replace " with \", newlines with \n)
     task_desc="$(echo "$task_desc" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')"
 
-    local branch
-    branch="$(get_branch_slug)"
+    local branch="${state_dir##*/}"
 
     cat > "$archive_dir/summary.json" <<SUMMARY_EOF
 {

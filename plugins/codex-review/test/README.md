@@ -12,6 +12,7 @@ Run everything from the repository root.
 test/
 ├── test-auto-approve-plan.sh   # unit tests for the auto-approve hook
 ├── test-integration.sh         # path-contract tests (hook ↔ state dir)
+├── test-state-cache.sh         # cached state path and batched STATUS.md reads
 ├── test-description-file.sh    # --description-file, per-attempt logs, saved request
 ├── test-severity-calibration.sh # severity scale, finding headings, verdict threshold
 ├── test-exec-flags.sh          # model and reasoning effort on every codex exec call
@@ -68,6 +69,29 @@ Run:
 
 ```sh
 sh plugins/codex-review/test/test-integration.sh
+```
+
+## test-state-cache.sh
+
+Regression tests for state reads on the hot path. Covers:
+
+- `write_status` and the standalone readers reuse the `STATE_DIR` already
+  resolved by the entry script;
+- state and config helpers can reuse one explicitly resolved review root;
+- `write_status` derives the branch from that same state directory;
+- string and numeric readers can parse one in-memory snapshot after the source
+  file is no longer available;
+- archive summaries read their string fields through the same shared snapshot
+  parser;
+- missing values keep their existing empty-string / zero defaults.
+
+The test checks observable calls and output rather than a machine-dependent
+timing threshold.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-state-cache.sh
 ```
 
 ## test-description-file.sh
