@@ -120,6 +120,8 @@ fi
 
 check_prerequisites
 
+# Telegraph accepts path as a parameter or an endpoint suffix. Form encoding
+# keeps the user-provided public page path out of the request URL.
 set -- --data-urlencode "path=$PAGE_PATH"
 [ -z "$YEAR" ] || set -- "$@" --data-urlencode "year=$YEAR"
 [ -z "$MONTH" ] || set -- "$@" --data-urlencode "month=$MONTH"
