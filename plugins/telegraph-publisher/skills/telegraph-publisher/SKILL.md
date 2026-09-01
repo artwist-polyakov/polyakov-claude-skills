@@ -1,6 +1,6 @@
 ---
 name: telegraph-publisher
-description: "Publish pages to Telegraph with images, YouTube embeds, and diagrams. Supports auto-split for long articles. ALWAYS read SKILL.md before first use."
+description: "Publish and manage Telegraph pages with media, page-view statistics, and auto-split for long articles. ALWAYS read SKILL.md before first use."
 ---
 
 # telegraph-publisher
@@ -13,7 +13,7 @@ Best for: articles, research reports, documentation, illustrated content.
 - **DO NOT** pass raw markdown — convert to HTML fragment first (Telegraph API accepts Node JSON, the converter accepts HTML)
 - **DO NOT** pass content larger than 64KB without using auto-split — the script handles this automatically
 - **DO NOT** hardcode access tokens — use `config/.env`
-- **DO NOT** skip account setup — run `create_account.sh` first if no token exists
+- **DO NOT** skip account setup before publishing, editing, listing pages, or reading account details — page-view lookup is public
 
 ## Quick Start
 
@@ -23,6 +23,7 @@ Have token?   → Save to config/.env
 Publish page? → sh scripts/create_page.sh --title "Title" --html "<p>Content</p>"
 Edit page?    → sh scripts/edit_page.sh --path "Path-03-09" --title "Title" --html "<p>New</p>"
 List pages?   → sh scripts/list_pages.sh
+Page views?   → sh scripts/page_views.sh --path "Page-Title-03-09"
 Account info? → sh scripts/account_info.sh
 Permanent media? → sh scripts/github_upload.sh --file hero.webp --page-path page-path
 ```
@@ -46,7 +47,9 @@ Python scripts use stdlib only (`html.parser`, `json`, `sys`).
 
 ## Config
 
-Requires `TELEGRAPH_ACCESS_TOKEN` in `config/.env` or environment.
+`create_page.sh`, `edit_page.sh`, `list_pages.sh`, and `account_info.sh` require
+`TELEGRAPH_ACCESS_TOKEN` in `config/.env` or environment. Creating an account and
+reading public page-view statistics do not require an existing Telegraph token.
 
 For permanent media hosting, prefer a separate public GitHub repo + jsDelivr CDN.
 Reason: Telegraph's unofficial upload endpoint is unstable and should not be the default publishing path.
@@ -155,6 +158,24 @@ sh scripts/edit_page.sh --path "Page-Title-03-09" --title "Updated Title" --html
 sh scripts/list_pages.sh
 sh scripts/list_pages.sh --offset 0 --limit 20
 ```
+
+### page_views.sh
+Get total views or one calendar-period total for any public Telegraph page. No access token is required.
+```bash
+# All-time views
+sh scripts/page_views.sh --path "Page-Title-03-09"
+
+# Views for a year, month, day, or hour
+sh scripts/page_views.sh --path "Page-Title-03-09" --year 2026
+sh scripts/page_views.sh --path "Page-Title-03-09" --year 2026 --month 3
+sh scripts/page_views.sh --path "Page-Title-03-09" --year 2026 --month 3 --day 9
+sh scripts/page_views.sh --path "Page-Title-03-09" --year 2026 --month 3 --day 9 --hour 12
+```
+
+Period filters are hierarchical: month requires year, day requires month, and hour requires day.
+The command returns one view count for the selected period, not a time series.
+Telegraph does not document the timezone used for day and hour filters.
+Use hours 0-23; the live API rejects 24 despite listing it in the API documentation.
 
 ### github_upload.sh
 Upload local media to the GitHub assets repo and update page manifest:
