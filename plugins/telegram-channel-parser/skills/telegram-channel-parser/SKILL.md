@@ -70,6 +70,8 @@ TG_CHANNELS_CRYPTO=channel1,channel2
 3. **Rate limit** — между запросами к t.me пауза 1.5с. Не жадничаем.
 4. **Чистый POSIX sh** — никаких зависимостей кроме curl, sed, awk, grep.
 
+В JSON-дайджесте и сравнении каналов последняя страница используется и для постов, и для сведений о канале, без повторной загрузки. При каждом запуске она загружается заново; страницы истории также запрашиваются заново по мере необходимости.
+
 ## Workflow
 
 ### Парсинг одного канала
@@ -160,7 +162,7 @@ bash scripts/<script>.sh --channel <username> [--limit N] [--before <post_id>] [
 | `export_csv.sh` | Экспорт в CSV | `--csv path` |
 | `digest.sh` | Дайджест нескольких каналов | `--channels "a,b,c"`, `--period today\|yesterday\|week\|N` |
 | `digest_json.sh` | Дайджест → JSON файл (для React-артифакта) | `--channels "a,b,c"`, `--period today\|yesterday\|week\|N` |
-| `compare_channels.sh` | Сравнительная таблица | `--channels "a,b,c"` |
+| `compare_channels.sh` | Сравнительная таблица | `--channels "a,b,c"`, `--limit N` (положительное целое) |
 
 ## Общие параметры
 
