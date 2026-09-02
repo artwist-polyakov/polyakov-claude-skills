@@ -51,6 +51,18 @@ Python scripts use stdlib only (`html.parser`, `json`, `sys`).
 `TELEGRAPH_ACCESS_TOKEN` in `config/.env` or environment. Creating an account and
 reading public page-view statistics do not require an existing Telegraph token.
 
+Optional `TELEGRAPH_AUTHOR_NAME` and `TELEGRAPH_AUTHOR_URL` in `config/.env` or the
+environment provide author defaults. Explicit flags override each field,
+including empty strings, in `create_page.sh` and `edit_page.sh`. With neither
+a setting nor a flag, these scripts omit the field.
+These defaults also apply to edits: do not replace a page's different author
+unintentionally; pass the intended author explicitly. See
+[config/README.md](config/README.md#author-defaults) for precedence and account naming.
+
+If the user supplies an author as `[Channel Name](https://t.me/channel)`, pass
+`Channel Name` and `https://t.me/channel` as separate name and URL values.
+Scripts accept plain values, not Markdown author links.
+
 For permanent media hosting, prefer a separate public GitHub repo + jsDelivr CDN.
 Reason: Telegraph's unofficial upload endpoint is unstable and should not be the default publishing path.
 
@@ -108,6 +120,9 @@ sh scripts/create_account.sh --name "Author Name" [--author-url "https://..."]
 sh scripts/create_account.sh --revoke  # rotate token
 ```
 
+With a nonempty `TELEGRAPH_AUTHOR_NAME` configured, `--name` is optional. The public author
+name is kept in full; the private account label uses its first 32 Unicode characters.
+
 ### account_info.sh
 ```bash
 sh scripts/account_info.sh
@@ -135,8 +150,8 @@ sh scripts/create_page.sh --title "Article" --html-file a.html --author-name "Na
 | `--html` | one of three | Inline HTML string |
 | `--html-file` | one of three | Path to HTML file |
 | `--content-file` | one of three | Path to Node JSON file |
-| `--author-name` | no | Author name (0-128 chars) |
-| `--author-url` | no | Author profile URL |
+| `--author-name` | no | Author name (0-128 chars); overrides configured default |
+| `--author-url` | no | Author profile URL; overrides configured default |
 
 **Auto-split**: If content exceeds 60KB, automatically splits into multiple pages with an index page linking to parts.
 
@@ -150,8 +165,8 @@ sh scripts/edit_page.sh --path "Page-Title-03-09" --title "Updated Title" --html
 | `--path` | yes | Page path (from URL or create output) |
 | `--title` | yes | Page title |
 | `--html` / `--html-file` / `--content-file` | yes | New content |
-| `--author-name` | no | Author name |
-| `--author-url` | no | Author URL |
+| `--author-name` | no | Author name; overrides configured default |
+| `--author-url` | no | Author URL; overrides configured default |
 
 ### list_pages.sh
 ```bash
