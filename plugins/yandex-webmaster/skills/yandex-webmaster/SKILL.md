@@ -129,7 +129,10 @@ bash scripts/<script>.sh --host <domain> [--action <action>] [params...]
 | `alice.sh` | Эффективность в Алисе: SoV timeline, конкуренты, запросы где сайт есть/нет | `--action summary\|sov\|competitors\|with-site\|without-site\|fetch`, `--no-cache` |
 
 > ⚠ Нет публичного API — данные парсятся из `window._initData` HTML-страницы.
-> Требует `SESSION_ID` cookie в `config/.env`. См. [references/ALICE_EFFICIENCY.md](references/ALICE_EFFICIENCY.md).
+> Для загрузки нужен `SESSION_ID` cookie в `config/.env`. Корректный кеш используется
+> 24 часа без загрузки страницы; `--no-cache` и `--action fetch` обновляют его принудительно.
+> Если обновление не удалось, команда завершается с ошибкой, сохраняя прежний JSON.
+> Диагностика и повторы: [references/ALICE_EFFICIENCY.md](references/ALICE_EFFICIENCY.md).
 
 ### Фиды и PRO
 
@@ -161,7 +164,8 @@ bash scripts/<script>.sh --host <domain> [--action <action>] [params...]
 - `host_*/indexing/*.tsv` — данные индексации (session)
 - `host_*/insearch/*.tsv` — данные о поиске (session)
 - `host_*/links/*.tsv` — данные о ссылках (session)
-- `host_*/alice/init.json` — распарсенный alice объект, переиспользуется всеми action'ами `alice.sh` (refresh: `--no-cache` или `--action fetch`)
+- `host_*/alice/init.json` — проверенный объект Alice, общий для всех действий `alice.sh`, срок кеша — 24 часа
+- `host_*/alice/raw.html` — последний полностью полученный HTML для диагностики, без истории версий
 - Диагностика, квоты, статусы переобхода — **не кешируются** (always live)
 
 ## Расширенные сценарии
