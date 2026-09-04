@@ -528,6 +528,31 @@ class QualityGateTests(unittest.TestCase):
                 finally:
                     path.write_text(original, encoding="utf-8")
 
+    def test_composite_segment_fragments_must_use_canonical_index_anchor(self):
+        for target in (
+            "other.md#ref/seg-001",
+            "other.md#ref%2Fseg-001",
+            "source-index.md#ref/seg-001",
+            "source-index.md#ref%2Fseg-001",
+            "%00#seg-001",
+        ):
+            with self.subTest(target=target):
+                self.concepts.write_text(
+                    self.concept_text + f"\n[docs]({target})\n", encoding="utf-8"
+                )
+                self.assert_rejected_without_index_write("segment link")
+
+    def test_encoded_path_separators_are_not_directory_separators(self):
+        nested = self.references / "topics" / "details.md"
+        nested.parent.mkdir()
+        for separator in ("%2F", "%2f", "%5C", "%5c"):
+            with self.subTest(separator=separator):
+                nested.write_text(
+                    f"# Details\n\n[seg-001](..{separator}source-index.md#seg-001)\n",
+                    encoding="utf-8",
+                )
+                self.assert_rejected_without_index_write("segment link")
+
     def test_plain_segments_and_valid_segment_links_are_allowed(self):
         for link in (
             "seg-001",

@@ -219,21 +219,23 @@ def check_source_map(source_map: object, skill_dir: Path, source_text: str, erro
         for segment_id in sorted(references - segments.keys()):
             errors.append(f"unknown segment {segment_id}: {path.relative_to(skill_dir)}")
         for target, label in links:
-            shown = set(SEGMENT_RE.findall(label))
+            link_segments = set(SEGMENT_RE.findall(label))
             try:
                 url = urlsplit(target)
                 segment_id = unquote(url.fragment)
-                if not shown and not SEGMENT_RE.fullmatch(segment_id):
+                link_segments.update(SEGMENT_RE.findall(segment_id))
+                if not link_segments:
                     continue  # Unrelated links are outside the source-map contract.
                 relative = Path(unquote(url.path))
                 valid = (
                     not url.scheme and not url.netloc and not url.query
+                    and not re.search(r"%(?:2f|5c)", url.path, re.IGNORECASE)
                     and not relative.is_absolute()
                     and (path.parent / relative).resolve() == root / SOURCE_INDEX
-                    and segment_id in segments and (not shown or shown == {segment_id})
+                    and segment_id in segments and link_segments == {segment_id}
                 )
             except (ValueError, OSError):
-                if not shown:
+                if not link_segments:
                     continue
                 valid = False
             if not valid:
