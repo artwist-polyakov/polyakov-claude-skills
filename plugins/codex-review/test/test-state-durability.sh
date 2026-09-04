@@ -3,7 +3,8 @@
 #
 # Covers four ways the plugin used to lose or invent something it had on disk:
 # a truncating write, a reader chosen by its own answer, a note name reused
-# after a reset, and an archive directory named after a second.
+# after a reset, and an archive directory named after a second. The last
+# scenario holds the archiver to reporting a directory it cannot make.
 #
 # Does NOT require the `codex` binary — a stub on PATH plays the reviewer.
 
@@ -106,6 +107,40 @@ state_cmd() {
 
 orphan_count() {
     find "$STATE_DIR" -maxdepth 1 -name '.state.json.*' | wc -l
+}
+
+rc_of() { printf '%s' "${1%%|*}"; }
+msg_of() { printf '%s' "${1#*|}"; }
+
+# Prints "<exit code>|<output on one line>"; `timeout` bounds a run that would
+# otherwise never end. $1, when given, is the state directory to archive.
+archive_run() {
+    _dir="${1:-$STATE_DIR}"
+    _out="$(
+        timeout 10 bash -c '
+            set -uo pipefail
+            PATH="$3:$PATH"
+            source "$1"
+            STATE_DIR="$2"
+            CODEX_MAX_ITERATIONS=5
+            archive_previous_session
+        ' _ "$COMMON" "$_dir" "$REPO/bin" 2>&1
+    )" && _rc=0 || _rc=$?
+    printf '%s|%s\n' "$_rc" "$(printf '%s' "$_out" | tr '\n' ' ')"
+}
+
+# Archives $1 once the gate file appears, so two of these claim their directory
+# at the same moment rather than one after the other.
+archive_at_gate() {
+    timeout 10 bash -c '
+        set -uo pipefail
+        PATH="$3:$PATH"
+        source "$1"
+        STATE_DIR="$2"
+        CODEX_MAX_ITERATIONS=5
+        while [ ! -e "$4" ]; do :; done
+        archive_previous_session
+    ' _ "$COMMON" "$1" "$REPO/bin" "$GATE" >/dev/null 2>&1
 }
 
 # ============================
@@ -212,6 +247,101 @@ else
     fail "the new cycle's note takes the next free name" \
         "$(find "$STATE_DIR/notes" -name 'code-review-*' | tr '\n' ' ')"
 fi
+
+# ============================
+# Test 5: two archive runs at once get a directory each
+# ============================
+printf 'Test 5: archives claimed at the same moment do not share a directory\n'
+
+ARCHIVE="$REPO/.codex-review/archive"
+rm -rf "$ARCHIVE"
+
+# The directory is named after the second the archive was made in, so the case
+# under test is two runs inside one second. Waiting for that to happen by itself
+# would make the outcome depend on how fast the machine is; a `date` stub on
+# PATH puts both runs in the same second every time.
+cat > "$REPO/bin/date" <<'DATESTUB'
+#!/bin/sh
+case "$*" in
+    *%Y%m%dT*) printf '20260904T120000Z\n' ;;
+    *) printf '2026-09-04T12:00:00Z\n' ;;
+esac
+DATESTUB
+chmod +x "$REPO/bin/date"
+
+# Two state directories under one review root: they compete for the archive
+# name and nothing else, so neither run depends on what the other moves.
+OTHER_DIR="$REPO/.codex-review/other-branch"
+mkdir -p "$OTHER_DIR/notes"
+printf 'first session\n' > "$STATE_DIR/last_response.txt"
+printf 'second session\n' > "$OTHER_DIR/last_response.txt"
+
+# Both runs park on the gate file, so they reach the claim together; a check
+# followed by a create would hand them the same directory.
+GATE="$REPO/gate"
+rm -f "$GATE"
+archive_at_gate "$STATE_DIR" &
+FIRST_PID=$!
+archive_at_gate "$OTHER_DIR" &
+SECOND_PID=$!
+sleep 1
+: > "$GATE"
+wait "$FIRST_PID" && FIRST_RC=0 || FIRST_RC=$?
+wait "$SECOND_PID" && SECOND_RC=0 || SECOND_RC=$?
+
+assert_eq "the first run succeeded" "0" "$FIRST_RC"
+assert_eq "the second run succeeded" "0" "$SECOND_RC"
+
+DIRS="$(find "$ARCHIVE" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+assert_eq "each archive run got its own directory" "2" "$DIRS"
+
+MIXED=0
+CONTENTS=""
+for d in "$ARCHIVE"/*/; do
+    if [ -f "$d/last_response.txt" ]; then
+        CONTENTS="$CONTENTS $(cat "$d/last_response.txt")"
+    else
+        MIXED=1
+    fi
+done
+assert_eq "each directory holds the session it archived" "0" "$MIXED"
+assert_contains "one directory holds the first session" "first session" "$CONTENTS"
+assert_contains "the other holds the second" "second session" "$CONTENTS"
+
+# ============================
+# Test 6: an archive that cannot be created stops instead of trying forever
+# ============================
+printf 'Test 6: an archive directory that cannot be created ends the run\n'
+
+# The archiver only runs when there is something to archive.
+printf 'third session\n' > "$STATE_DIR/last_response.txt"
+
+# A read-only archive root: the timestamped directory cannot be created and
+# does not exist afterwards either, which is the case a loop looking only at
+# `mkdir` failing would take for a name collision and retry forever.
+chmod 555 "$ARCHIVE"
+r="$(archive_run)"
+chmod 755 "$ARCHIVE"
+
+assert_eq "the run ends with an error" "1" "$(rc_of "$r")"
+assert_contains "the error names the directory" "archive" "$(msg_of "$r")"
+assert_contains "the error says nothing was archived" "Nothing was archived" \
+    "$(msg_of "$r")"
+if [ -f "$STATE_DIR/last_response.txt" ]; then
+    pass "the artefacts are left where they were"
+else
+    fail "the artefacts are left where they were" "last_response.txt is gone"
+fi
+
+# A file sitting where the archive root belongs: the root itself cannot be made.
+rm -rf "$ARCHIVE"
+printf 'not a directory\n' > "$ARCHIVE"
+r="$(archive_run)"
+rm -f "$ARCHIVE"
+
+assert_eq "a blocked archive root also ends the run" "1" "$(rc_of "$r")"
+assert_contains "that error says nothing was archived too" "Nothing was archived" \
+    "$(msg_of "$r")"
 
 printf '\nPASS: %d  FAIL: %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

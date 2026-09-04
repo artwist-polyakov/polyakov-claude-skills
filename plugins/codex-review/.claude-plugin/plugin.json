@@ -1,7 +1,7 @@
 {
   "name": "codex-review",
   "description": "Cross-agent review workflow: Claude implements, Codex reviews",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "author": {
     "name": "Polyakov"
   },

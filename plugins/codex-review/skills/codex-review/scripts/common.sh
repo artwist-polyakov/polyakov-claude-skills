@@ -484,8 +484,31 @@ archive_previous_session() {
 
     local timestamp
     timestamp="$(date -u +"%Y%m%dT%H%M%SZ")"
-    local archive_dir="$review_root/archive/${timestamp}"
-    mkdir -p "$archive_dir/notes"
+    # Two sessions archived inside the same second would otherwise share a
+    # directory and mix their artefacts. `mkdir` without -p fails when the
+    # directory is already there, and that failure is the claim: whoever
+    # created it owns that name, and the next one moves on to a suffix.
+    # Only an existing directory sends the loop on; every other failure --
+    # a read-only or full filesystem, a denied permission -- ends the archiver.
+    if ! mkdir -p "$review_root/archive"; then
+        echo "ERROR: Failed to create $review_root/archive. Nothing was archived." >&2
+        return 1
+    fi
+    local archive_base="$review_root/archive/${timestamp}"
+    local archive_dir="$archive_base"
+    local suffix=2
+    while ! mkdir "$archive_dir" 2>/dev/null; do
+        if [[ ! -d "$archive_dir" ]]; then
+            echo "ERROR: Failed to create archive directory $archive_dir. Nothing was archived." >&2
+            return 1
+        fi
+        archive_dir="${archive_base}-${suffix}"
+        suffix=$((suffix + 1))
+    done
+    if ! mkdir -p "$archive_dir/notes"; then
+        echo "ERROR: Failed to create $archive_dir/notes. Nothing was archived." >&2
+        return 1
+    fi
 
     # Generate summary.json before moving artifacts (non-critical, must not block archiving)
     generate_archive_summary "$state_dir" "$archive_dir" "$timestamp" || \
