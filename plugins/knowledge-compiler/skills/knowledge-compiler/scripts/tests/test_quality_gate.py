@@ -575,6 +575,56 @@ class QualityGateTests(unittest.TestCase):
         )
         self.assert_rejected_without_index_write("claim heading")
 
+    def test_explicit_html_anchors_conflict_with_claim_heading(self):
+        for markup in (
+            '<h1 id="diagnosis-before-action">Другая тема</h1>',
+            '<div id="diagnosis-before-action">Пример</div>',
+            '<pre id="diagnosis-before-action">Пример</pre>',
+            '<a name="diagnosis-before-action"></a>',
+            '<div id="diagnosis&#45;before-action"></div>',
+        ):
+            for position in ("before", "after"):
+                with self.subTest(markup=markup, position=position):
+                    text = (markup + "\n\n" + self.concept_text if position == "before"
+                            else self.concept_text + "\n" + markup + "\n")
+                    self.concepts.write_text(text, encoding="utf-8")
+                    self.assert_rejected_without_index_write("claim heading")
+
+    def test_distinct_html_ids_and_non_anchor_names_are_allowed(self):
+        for markup in (
+            '<div id="other-anchor"></div>',
+            '<a name="other-anchor"></a>',
+            '<div id="Diagnosis-Before-Action"></div>',
+            '<div name="diagnosis-before-action"></div>',
+        ):
+            with self.subTest(markup=markup):
+                self.concepts.write_text(markup + "\n\n" + self.concept_text, encoding="utf-8")
+                self.run_gate("--write-source-index")
+                self.run_gate()
+
+    def test_html_anchor_examples_inside_code_and_comments_are_ignored(self):
+        markup = (
+            '<h1 id="diagnosis-before-action">Тема</h1>'
+            '<div id="diagnosis-before-action"></div>'
+            '<pre id="diagnosis-before-action">Пример</pre>'
+            '<a name="diagnosis-before-action"></a>'
+        )
+        for example in (f"```html\n{markup}\n```", f"    {markup}", f"`{markup}`", f"<!-- {markup} -->"):
+            with self.subTest(example=example):
+                self.concepts.write_text(example + "\n\n" + self.concept_text, encoding="utf-8")
+                self.run_gate("--write-source-index")
+                self.run_gate()
+
+    def test_explicit_html_anchor_does_not_number_automatic_headings(self):
+        self.source_map["claims"][0]["claim_id"] = "other-1"
+        self.write_map(self.source_map)
+        self.concepts.write_text(
+            '<div id="other"></div>\n\n# Other\n\n'
+            + self.concept_text.replace("diagnosis-before-action", "other-1"), encoding="utf-8"
+        )
+        self.run_gate("--write-source-index")
+        self.run_gate()
+
     def test_html_text_boundaries_preserve_segment_references(self):
         for example in (
             "seg-001<br>seg-999",

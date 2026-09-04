@@ -92,10 +92,15 @@ class MarkdownContent(HTMLParser):
         self.source_links = []
         self.link = None
         self.headings = []
+        self.explicit_anchors = set()
         self.heading = None
         self.pre_depth = 0
 
     def handle_starttag(self, tag, attrs):
+        self.explicit_anchors.update(
+            value for key, value in attrs
+            if value and (key == "id" or (tag == "a" and key == "name"))
+        )
         if tag in self.TEXT_BREAKS:
             self.text.append("\n")
         if tag == "pre":
@@ -162,6 +167,8 @@ def markdown_content(text: str):
             anchor = f"{base}-{suffix}"
         occupied.add(anchor)
         anchors.append((base, anchor))
+    # Explicit HTML targets can collide with a claim but do not number headings.
+    anchors.extend((target, target) for target in content.explicit_anchors)
     segments = set(SEGMENT_RE.findall("".join(content.text)))
     for attribute, target in content.links:
         if attribute != "alt":
