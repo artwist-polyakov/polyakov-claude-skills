@@ -594,7 +594,7 @@ cmd_init() {
     archive_previous_session
 
     # Clear verdict to prevent stale auto-approve (AUTO_REVIEW hook)
-    rm -f "$STATE_DIR/verdict.txt"
+    rm -f "$STATE_DIR/verdict.txt" "$STATE_DIR/verdict.phase"
 
     # Warn if config.env already has a session
     if [[ -n "${CODEX_SESSION_ID:-}" ]]; then
@@ -734,7 +734,7 @@ cmd_review() {
     # whatever is found afterwards was written by this run. A reply left by the
     # previous round would otherwise be filed as this round's note.
     local output_file="$STATE_DIR/last_response.txt"
-    rm -f "$STATE_DIR/verdict.txt" "$output_file"
+    rm -f "$STATE_DIR/verdict.txt" "$STATE_DIR/verdict.phase" "$output_file"
 
     # Call codex with resume
     local log_file
@@ -793,6 +793,11 @@ cmd_review() {
         echo "Iteration not consumed: still ${current_iteration}/${MAX_ITERATIONS}." >&2
         exit 1
     fi
+
+    # The phase that asked travels with the verdict. The ExitPlanMode hook of
+    # AUTO_REVIEW mode reads verdict.txt on its own, and an APPROVED left by a
+    # code review would otherwise let the next task's plan through unreviewed.
+    printf '%s\n' "$phase" > "$STATE_DIR/verdict.phase"
 
     if [[ $exit_code -ne 0 ]]; then
         echo "WARNING: codex exec exited $exit_code after writing its verdict; the round counts." >&2

@@ -33,11 +33,15 @@ hook_stdin() {
     printf '{"session_id":"%s","hook_event_name":"PermissionRequest","tool_name":"ExitPlanMode"}\n' "$1"
 }
 
-# Write a verdict file (single-word content)
+# Write a verdict file (single-word content) together with the phase that left
+# it. The hook honours an approval only from a plan review, so the marker
+# defaults to that; pass a third argument to write a different one.
 write_verdict() {
     _wv_path="$1"
     _wv_val="$2"
+    _wv_phase="${3:-plan}"
     printf '%s' "$_wv_val" > "$_wv_path"
+    printf '%s\n' "$_wv_phase" > "${_wv_path%/*}/verdict.phase"
 }
 
 # Claim the branch's current_session.txt for a given session id
@@ -207,6 +211,7 @@ fi
 printf "Test 6: verdict with trailing whitespace\n"
 printf '%s\n' "$SID_A" > ".codex-review/$BRANCH_SLUG/current_session.txt"
 printf '  APPROVED \n' > ".codex-review/$BRANCH_SLUG/verdict.txt"
+printf 'plan\n' > ".codex-review/$BRANCH_SLUG/verdict.phase"
 output="$(hook_stdin "$SID_A" | sh "$HOOK" 2>/dev/null)" || true
 case "$output" in
     *'"behavior":"allow"'*) assert_output "allow despite whitespace" "yes" "yes" ;;

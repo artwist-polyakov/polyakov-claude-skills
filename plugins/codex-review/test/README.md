@@ -17,6 +17,7 @@ test/
 ├── test-failure-iteration.sh   # what a failed codex call costs
 ├── test-verdict-source.sh      # the verdict file decides, the reply never does
 ├── test-state-durability.sh    # what survives a write, a reset and a second archiver
+├── test-stale-cycle.sh         # a cycle that outlives the task it opened for
 ├── test-description-file.sh    # --description-file, per-attempt logs, saved request
 ├── test-severity-calibration.sh # severity scale, finding headings, verdict threshold
 ├── test-exec-flags.sh          # model, reasoning effort, and Fast mode on every call
@@ -381,6 +382,30 @@ Run:
 sh plugins/codex-review/test/test-state-durability.sh
 ```
 
+## test-stale-cycle.sh
+
+Regression tests for a cycle that outlives the task it was opened for. The
+review state of a branch is outside git, so a task abandoned or finished
+mid-branch leaves its cycle behind and the next task walks into it.
+
+Scenarios:
+
+1. A finished round writes `verdict.phase` beside `verdict.txt`, naming the
+   phase that produced the verdict.
+2. The `ExitPlanMode` gate takes an approval only from a plan review. One left
+   by a code review, or one with no marker at all, is deleted and refused; the
+   marker is cleared together with the verdict it was used for.
+
+Does **not** require the `codex` binary — a stub on `PATH` plays the reviewer
+and writes whatever `verdict-next` holds, a request for changes by default, so
+a cycle stays open unless a scenario closes it on purpose.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-stale-cycle.sh
+```
+
 ## test-e2e.sh
 
 Opt-in end-to-end tests that exercise real `codex` / `claude` CLIs.
@@ -459,5 +484,5 @@ scenario — as an `init` task and as a code description, not as plans:
 
 ## Exit codes
 
-All eleven scripts exit `0` on success and `1` if any assertion failed.
+All twelve scripts exit `0` on success and `1` if any assertion failed.
 `test-e2e.sh` additionally exits `0` (skip) when `CODEX_E2E` is not set.

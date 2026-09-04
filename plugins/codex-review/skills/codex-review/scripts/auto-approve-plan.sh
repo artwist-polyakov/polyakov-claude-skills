@@ -41,6 +41,7 @@ branch_slug="$(echo "$branch" | tr '/' '-')"
 state_dir="$repo_root/.codex-review/$branch_slug"
 mkdir -p "$state_dir"
 verdict_file="$state_dir/verdict.txt"
+phase_file="$state_dir/verdict.phase"
 session_file="$state_dir/current_session.txt"
 
 # --- Read hook stdin ---
@@ -82,7 +83,7 @@ fi
 # --- Check current session binding ---
 if [ ! -f "$session_file" ]; then
     # 5A: missing claim → untrusted, purge any orphan verdict and claim session
-    rm -f "$verdict_file"
+    rm -f "$verdict_file" "$phase_file"
     claim_session
     emit_deny "Codex plan review not claimed for this Claude session. Load skill 'codex-review' and run plan review first: init + plan --plan-file <path>."
     exit 0
@@ -91,7 +92,7 @@ fi
 current_session="$(tr -d '[:space:]' < "$session_file" 2>/dev/null || echo "")"
 if [ "$current_session" != "$stdin_session" ]; then
     # 5B: session mismatch → another Claude session owned this state, stale
-    rm -f "$verdict_file"
+    rm -f "$verdict_file" "$phase_file"
     claim_session
     emit_deny "Claude session changed. The previous Codex plan verdict belongs to a different session. Load skill 'codex-review' and re-run plan review for this session: init + plan --plan-file <path>."
     exit 0
@@ -108,9 +109,27 @@ fi
 # so the value is safe to interpolate into the JSON deny message below.
 verdict="$(tr -d '[:space:]' < "$verdict_file" | tr -cd '[:alpha:]_')"
 
+# Which review left that word. A cycle ends with an APPROVED written by the code
+# phase, and STATUS.md is removed with it, so nothing on disk says a review is
+# running — the next task's plan would ride through on it. Restricted to letters
+# for the same reason as the verdict above.
+verdict_phase=""
+if [ -f "$phase_file" ]; then
+    verdict_phase="$(tr -d '[:space:]' < "$phase_file" | tr -cd '[:alpha:]_')"
+fi
+
 case "$verdict" in
     APPROVED)
-        rm -f "$verdict_file"
+        if [ "$verdict_phase" != "plan" ]; then
+            rm -f "$verdict_file" "$phase_file"
+            if [ -n "$verdict_phase" ]; then
+                emit_deny "The Codex verdict on file was left by a $verdict_phase review, not by a plan review. Load skill 'codex-review' and run plan review before ExitPlanMode: init + plan --plan-file <path>."
+            else
+                emit_deny "The Codex verdict on file does not record which review left it, so it cannot stand for this plan. Load skill 'codex-review' and run plan review before ExitPlanMode: init + plan --plan-file <path>."
+            fi
+            exit 0
+        fi
+        rm -f "$verdict_file" "$phase_file"
         emit_allow
         ;;
     CHANGES_REQUESTED)
