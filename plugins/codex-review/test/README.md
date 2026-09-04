@@ -335,7 +335,7 @@ sh plugins/codex-review/test/test-verdict-source.sh
 ## test-state-durability.sh
 
 Regression tests for four ways the plugin used to lose or invent something it
-had on disk, and for the archiver refusing a directory it cannot make.
+had on disk, and for the archiver reporting what it could not do.
 
 Scenarios:
 
@@ -358,6 +358,9 @@ Scenarios:
    leaves the artefacts where they are. A read-only archive root covers the
    case a loop watching only `mkdir` would mistake for a name collision;
    `timeout` bounds a run that would otherwise never end.
+7. An artifact that cannot be moved into the archive stops the archiver and is
+   named in the error. A read-only state directory makes every move fail while
+   leaving the files readable.
 
 Does **not** require the `codex` binary — a stub on `PATH` plays the reviewer.
 `common.sh` is a bash script, so the calls into it run under `bash` even though

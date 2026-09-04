@@ -343,5 +343,29 @@ assert_eq "a blocked archive root also ends the run" "1" "$(rc_of "$r")"
 assert_contains "that error says nothing was archived too" "Nothing was archived" \
     "$(msg_of "$r")"
 
+# ============================
+# Test 7: an artifact that cannot be moved is reported, not passed over
+# ============================
+printf 'Test 7: a move into the archive that fails stops the archiver\n'
+
+rm -rf "$ARCHIVE"
+printf 'fourth session\n' > "$STATE_DIR/last_response.txt"
+
+# Moving a file out of a directory needs write permission on that directory,
+# so a read-only state directory makes every move fail while leaving the
+# artifacts readable.
+chmod 555 "$STATE_DIR"
+r="$(archive_run)"
+chmod 755 "$STATE_DIR"
+
+assert_eq "the archiver reports the failure" "1" "$(rc_of "$r")"
+assert_contains "the message names the file that stayed" "last_response.txt" \
+    "$(msg_of "$r")"
+if [ -f "$STATE_DIR/last_response.txt" ]; then
+    pass "the artifact is still where it was"
+else
+    fail "the artifact is still where it was" "last_response.txt is gone"
+fi
+
 printf '\nPASS: %d  FAIL: %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

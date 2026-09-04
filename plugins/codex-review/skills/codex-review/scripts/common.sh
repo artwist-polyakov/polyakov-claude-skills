@@ -461,6 +461,23 @@ parse_verdict_file() {
     esac
 }
 
+# --- Move artifacts into an archive directory ---
+# A pattern that matches nothing is normal: not every session leaves notes or
+# replies. A move that fails is not — the file stays behind under a name the
+# next session reuses — so that failure travels back to the caller.
+archive_move() {
+    local dest="$1"
+    shift
+    local f
+    for f in "$@"; do
+        [[ -e "$f" ]] || continue
+        if ! mv "$f" "$dest/"; then
+            echo "ERROR: Failed to move $f into $dest." >&2
+            return 1
+        fi
+    done
+}
+
 # --- Archive previous session artifacts ---
 archive_previous_session() {
     ensure_state_dir
@@ -514,21 +531,22 @@ archive_previous_session() {
     generate_archive_summary "$state_dir" "$archive_dir" "$timestamp" || \
         echo "WARNING: Failed to generate summary.json for archive." >&2
 
-    # Move artifacts
-    for f in state.json verdict.txt last_response.txt STATUS.md; do
-        [[ -f "$state_dir/$f" ]] && mv "$state_dir/$f" "$archive_dir/"
-    done
-    mv "$state_dir"/codex-*.log "$archive_dir/" 2>/dev/null || true
+    # Move artifacts. A failure here leaves an artifact under a name the next
+    # session reuses, so it stops the archiver instead of passing for success.
+    archive_move "$archive_dir" \
+        "$state_dir/state.json" "$state_dir/verdict.txt" \
+        "$state_dir/last_response.txt" "$state_dir/STATUS.md" || return 1
+    archive_move "$archive_dir" "$state_dir"/codex-*.log || return 1
     # Requests travel with the logs of the attempts that sent them: left behind,
     # they would be overwritten once a new session reuses the attempt numbers.
-    mv "$state_dir"/codex-*.request.md "$archive_dir/" 2>/dev/null || true
+    archive_move "$archive_dir" "$state_dir"/codex-*.request.md || return 1
     # The prompts travel with them: codex-init.prompt.md carries a fixed name, so
     # a new session would overwrite it where it stands.
-    mv "$state_dir"/codex-*.prompt.md "$archive_dir/" 2>/dev/null || true
+    archive_move "$archive_dir" "$state_dir"/codex-*.prompt.md || return 1
     # So do the replies of rounds that came back without a verdict — they are
     # named after the attempt, and a new session reuses those numbers.
-    mv "$state_dir"/codex-*.reply.md "$archive_dir/" 2>/dev/null || true
-    mv "$state_dir"/notes/*.md "$archive_dir/notes/" 2>/dev/null || true
+    archive_move "$archive_dir" "$state_dir"/codex-*.reply.md || return 1
+    archive_move "$archive_dir/notes" "$state_dir"/notes/*.md || return 1
 
     echo "Previous session archived to: $archive_dir" >&2
 }
