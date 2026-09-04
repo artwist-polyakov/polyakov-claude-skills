@@ -37,7 +37,8 @@ Covers:
 
 - `AUTO_REVIEW` unset / `false` / `true` / quoted / `export` / leading whitespace
 - cold-start deny (no `verdict.txt`)
-- `APPROVED` → allow + `verdict.txt` deletion
+- `APPROVED` left by a plan review → allow + deletion of `verdict.txt` and
+  `verdict.phase`
 - `CHANGES_REQUESTED` → deny with resubmit instruction
 - stale-verdict guard (second call after allow must deny)
 - verdict sanitization (quotes, backslashes, all-garbage, empty) → valid JSON

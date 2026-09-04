@@ -9,9 +9,15 @@
 #   - current_session.txt mismatches    → overwrite + deny (session changed)
 #   - session matches:
 #       * no verdict                     → deny "run plan review"
-#       * APPROVED                       → allow + remove verdict
+#       * APPROVED, verdict.phase=plan   → allow + remove verdict and marker
+#       * APPROVED, any other marker     → remove both + deny "run plan review"
 #       * CHANGES_REQUESTED               → deny "resubmit"
 #       * unknown value                   → deny "unknown verdict"
+#
+# verdict.phase names the review that produced the verdict. A code review
+# leaves the same APPROVED, and the round that wrote it removed STATUS.md, so
+# without the marker the next task's plan passes on the previous task's
+# approval.
 #
 # When AUTO_REVIEW!=true: exit silently (normal UI dialog).
 

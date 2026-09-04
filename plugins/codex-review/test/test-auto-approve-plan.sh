@@ -197,6 +197,13 @@ if [ -f ".codex-review/$BRANCH_SLUG/verdict.txt" ]; then
 else
     assert_output "verdict.txt deleted after allow" "yes" "yes"
 fi
+# verdict.phase goes with it — a marker without its verdict says nothing, and
+# the next verdict brings its own
+if [ -f ".codex-review/$BRANCH_SLUG/verdict.phase" ]; then
+    assert_output "verdict.phase deleted after allow" "deleted" "still exists"
+else
+    assert_output "verdict.phase deleted after allow" "yes" "yes"
+fi
 # current_session.txt must survive (so next ExitPlanMode in the same session
 # does not waste a claim cycle)
 if [ -f ".codex-review/$BRANCH_SLUG/current_session.txt" ]; then
