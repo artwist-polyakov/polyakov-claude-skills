@@ -422,6 +422,66 @@ class QualityGateTests(unittest.TestCase):
                 self.write_map(data)
                 self.assert_rejected_without_index_write("artifact")
 
+    def test_artifact_links_to_source_index_are_rejected(self):
+        for kind in ("symlink", "hardlink"):
+            with self.subTest(kind=kind):
+                self.index.write_text(self.concept_text, encoding="utf-8")
+                alias = self.references / "alias.md"
+                if kind == "symlink":
+                    alias.symlink_to(self.index.name)
+                else:
+                    os.link(self.index, alias)
+                data = copy.deepcopy(self.source_map)
+                data["claims"][0]["artifact"] = "references/alias.md"
+                self.write_map(data)
+                before = self.snapshot()
+                try:
+                    self.run_gate("--write-source-index", success=False, diagnostic="invalid artifact")
+                    self.assertEqual(self.snapshot(), before)
+                finally:
+                    alias.unlink()
+
+    def test_source_index_case_alias_artifact_is_rejected(self):
+        alias = self.references / "source-index.MD"
+        alias.write_text(self.concept_text, encoding="utf-8")
+        if not self.index.exists() or not alias.samefile(self.index):
+            self.skipTest("Файловая система различает регистр имён")
+        self.source_map["claims"][0]["artifact"] = "references/source-index.MD"
+        self.write_map(self.source_map)
+        before = self.snapshot()
+        self.run_gate("--write-source-index", success=False, diagnostic="invalid artifact")
+        self.assertEqual(self.snapshot(), before)
+
+    def test_source_index_hardlink_to_unclaimed_file_is_rejected(self):
+        os.link(self.references / "glossary.md", self.index)
+        before = self.snapshot()
+        self.run_gate(
+            "--write-source-index", success=False,
+            diagnostic="source-index.md must not share hard links",
+        )
+        self.assertEqual(self.snapshot(), before)
+
+    def test_artifact_links_to_other_files_and_similar_names_are_allowed(self):
+        for kind in ("symlink", "hardlink", "separate"):
+            with self.subTest(kind=kind):
+                artifact = self.references / "source-index-notes.md"
+                if kind == "symlink":
+                    artifact.symlink_to(self.concepts.name)
+                elif kind == "hardlink":
+                    os.link(self.concepts, artifact)
+                else:
+                    artifact.write_text(self.concept_text, encoding="utf-8")
+                data = copy.deepcopy(self.source_map)
+                data["claims"][0]["artifact"] = f"references/{artifact.name}"
+                self.write_map(data)
+                before = (artifact.read_bytes(), artifact.stat().st_mtime_ns)
+                try:
+                    self.run_gate("--write-source-index")
+                    self.run_gate()
+                    self.assertEqual((artifact.read_bytes(), artifact.stat().st_mtime_ns), before)
+                finally:
+                    artifact.unlink()
+
     def test_malformed_artifact_paths_fail_without_traceback_or_index_write(self):
         for artifact in ("references/\x00.md", "references/" + "x" * 300 + ".md"):
             with self.subTest(artifact=artifact):

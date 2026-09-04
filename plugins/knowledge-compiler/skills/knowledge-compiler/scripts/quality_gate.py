@@ -232,6 +232,7 @@ def check_source_map(source_map: object, skill_dir: Path, source_text: str, erro
 
     # Reuse the same Markdown scan for source references and claim headings.
     root = skill_dir.resolve()
+    index_path = root / SOURCE_INDEX
     headings = {}
     for path in sorted(skill_dir.rglob("*")):
         if path.suffix.lower() != ".md" or path == skill_dir / SOURCE_INDEX or not path.is_file():
@@ -312,12 +313,15 @@ def check_source_map(source_map: object, skill_dir: Path, source_text: str, erro
             relative = Path(artifact)
             path = (skill_dir / relative).resolve()
             artifact_is_file = path.is_file()
+            artifact_is_index = path == index_path or (
+                artifact_is_file and index_path.is_file() and path.samefile(index_path)
+            )
         except (ValueError, OSError):
             errors.append(f"invalid artifact {artifact!r}: claim {claim_id}")
             continue
         if (relative.is_absolute() or ".." in relative.parts
                 or not relative.parts or relative.parts[0] != "references"
-                or relative.suffix.lower() != ".md" or relative.as_posix() == SOURCE_INDEX
+                or relative.suffix.lower() != ".md" or artifact_is_index
                 or not path.is_relative_to(root / "references")):
             errors.append(f"invalid artifact {artifact!r}: expected a Markdown file inside references")
             continue
@@ -435,6 +439,11 @@ def main() -> int:
             else:
                 if current_index != index_text:
                     errors.append("stale source-index.md: run with --write-source-index")
+    try:
+        if index_path.is_file() and index_path.stat().st_nlink > 1:
+            errors.append("source-index.md must not share hard links with other files")
+    except OSError as exc:
+        errors.append(f"cannot inspect source-index.md: {exc}")
 
     result_text = None
     if skill_dir.is_dir() and not errors:
