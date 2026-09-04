@@ -183,7 +183,7 @@ SSH подключение к удалённым серверам по ключ�
 
 ### [yandex-wordstat](plugins/yandex-wordstat/skills/yandex-wordstat)
 
-Анализ поискового спроса через Yandex Wordstat API.
+Анализ поискового спроса через Wordstat API в Yandex Cloud Search API. [Настройка доступа](plugins/yandex-wordstat/skills/yandex-wordstat/config/README.md) — через ключ сервисного аккаунта.
 
 - Топ поисковых запросов по фразе
 - Динамика спроса по месяцам

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Get totalCount from Yandex Wordstat for an OR-query.
-# Backend-aware: routes through common.sh wordstat_request.
+# Routes through common.sh wordstat_request.
 #
 # Usage:
 #   sh scripts/query_total.sh --phrase "(купить|заказать) телефон ретро" [--regions "213"]
@@ -37,7 +37,7 @@ fi
 
 load_config
 
-# Build legacy-shape JSON params (same shape as top_requests.sh).
+# Build JSON params (same shape as top_requests.sh).
 PHRASE_ESCAPED=$(json_escape "$PHRASE")
 PARAMS="{\"phrase\":\"$PHRASE_ESCAPED\""
 if [ -n "$REGIONS" ]; then
@@ -49,11 +49,10 @@ TMPFILE="${TMPDIR:-/tmp}/ws_query_total_$$.json"
 cleanup() { rm -f "$TMPFILE"; }
 trap cleanup EXIT
 
-# Backend-aware request — common.sh writes legacy-shape JSON to stdout
+# common.sh writes normalized JSON to stdout.
 wordstat_request "topRequests" "$PARAMS" > "$TMPFILE"
 
 # Delegate totalCount extraction + JSON formatting to Python helper.
-# Python is transport-agnostic; future legacy removal touches zero Python code.
 uv run --script "$SCRIPT_DIR/missed_demand.py" query-total \
     --json-file "$TMPFILE" \
     --phrase "$PHRASE"
