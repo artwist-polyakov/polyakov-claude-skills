@@ -371,10 +371,39 @@ write_state_fields() {
 }
 
 # --- Write state.json ---
+# The file is replaced, never truncated in place: a write that dies part way
+# through — a full disk above all — would otherwise leave the session with an
+# empty or half-written state.json and nothing to fall back on. The temporary
+# file sits in the same directory, so the rename that publishes it is atomic.
 write_state() {
     local json="$1"
     ensure_state_dir
-    echo "$json" > "$STATE_DIR/state.json"
+    local state_file="$STATE_DIR/state.json"
+    local tmp_file="$STATE_DIR/.state.json.$$"
+
+    # A write killed by a signal leaves its temporary file behind — the cleanup
+    # below never runs for it. The name carries the pid that made it, so an
+    # orphan can be told from the file of a run that is still going; a pid that
+    # answers is left alone, which also covers a pid reused by something else.
+    local orphan orphan_pid
+    for orphan in "$STATE_DIR"/.state.json.*; do
+        [[ -e "$orphan" ]] || continue
+        orphan_pid="${orphan##*.}"
+        [[ "$orphan_pid" =~ ^[0-9]+$ ]] || continue
+        kill -0 "$orphan_pid" 2>/dev/null && continue
+        rm -f "$orphan"
+    done
+
+    if ! printf '%s\n' "$json" > "$tmp_file"; then
+        rm -f "$tmp_file"
+        echo "ERROR: Failed to write $tmp_file." >&2
+        return 1
+    fi
+    if ! mv "$tmp_file" "$state_file"; then
+        rm -f "$tmp_file"
+        echo "ERROR: Failed to replace $state_file." >&2
+        return 1
+    fi
 }
 
 # --- Write STATUS.md from current state.json ---
