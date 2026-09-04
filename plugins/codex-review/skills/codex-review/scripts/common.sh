@@ -371,10 +371,39 @@ write_state_fields() {
 }
 
 # --- Write state.json ---
+# The file is replaced, never truncated in place: a write that dies part way
+# through — a full disk above all — would otherwise leave the session with an
+# empty or half-written state.json and nothing to fall back on. The temporary
+# file sits in the same directory, so the rename that publishes it is atomic.
 write_state() {
     local json="$1"
     ensure_state_dir
-    echo "$json" > "$STATE_DIR/state.json"
+    local state_file="$STATE_DIR/state.json"
+    local tmp_file="$STATE_DIR/.state.json.$$"
+
+    # A write killed by a signal leaves its temporary file behind — the cleanup
+    # below never runs for it. The name carries the pid that made it, so an
+    # orphan can be told from the file of a run that is still going; a pid that
+    # answers is left alone, which also covers a pid reused by something else.
+    local orphan orphan_pid
+    for orphan in "$STATE_DIR"/.state.json.*; do
+        [[ -e "$orphan" ]] || continue
+        orphan_pid="${orphan##*.}"
+        [[ "$orphan_pid" =~ ^[0-9]+$ ]] || continue
+        kill -0 "$orphan_pid" 2>/dev/null && continue
+        rm -f "$orphan"
+    done
+
+    if ! printf '%s\n' "$json" > "$tmp_file"; then
+        rm -f "$tmp_file"
+        echo "ERROR: Failed to write $tmp_file." >&2
+        return 1
+    fi
+    if ! mv "$tmp_file" "$state_file"; then
+        rm -f "$tmp_file"
+        echo "ERROR: Failed to replace $state_file." >&2
+        return 1
+    fi
 }
 
 # --- Write STATUS.md from current state.json ---
@@ -432,6 +461,23 @@ parse_verdict_file() {
     esac
 }
 
+# --- Move artifacts into an archive directory ---
+# A pattern that matches nothing is normal: not every session leaves notes or
+# replies. A move that fails is not — the file stays behind under a name the
+# next session reuses — so that failure travels back to the caller.
+archive_move() {
+    local dest="$1"
+    shift
+    local f
+    for f in "$@"; do
+        [[ -e "$f" ]] || continue
+        if ! mv "$f" "$dest/"; then
+            echo "ERROR: Failed to move $f into $dest." >&2
+            return 1
+        fi
+    done
+}
+
 # --- Archive previous session artifacts ---
 archive_previous_session() {
     ensure_state_dir
@@ -455,28 +501,52 @@ archive_previous_session() {
 
     local timestamp
     timestamp="$(date -u +"%Y%m%dT%H%M%SZ")"
-    local archive_dir="$review_root/archive/${timestamp}"
-    mkdir -p "$archive_dir/notes"
+    # Two sessions archived inside the same second would otherwise share a
+    # directory and mix their artefacts. `mkdir` without -p fails when the
+    # directory is already there, and that failure is the claim: whoever
+    # created it owns that name, and the next one moves on to a suffix.
+    # Only an existing directory sends the loop on; every other failure --
+    # a read-only or full filesystem, a denied permission -- ends the archiver.
+    if ! mkdir -p "$review_root/archive"; then
+        echo "ERROR: Failed to create $review_root/archive. Nothing was archived." >&2
+        return 1
+    fi
+    local archive_base="$review_root/archive/${timestamp}"
+    local archive_dir="$archive_base"
+    local suffix=2
+    while ! mkdir "$archive_dir" 2>/dev/null; do
+        if [[ ! -d "$archive_dir" ]]; then
+            echo "ERROR: Failed to create archive directory $archive_dir. Nothing was archived." >&2
+            return 1
+        fi
+        archive_dir="${archive_base}-${suffix}"
+        suffix=$((suffix + 1))
+    done
+    if ! mkdir -p "$archive_dir/notes"; then
+        echo "ERROR: Failed to create $archive_dir/notes. Nothing was archived." >&2
+        return 1
+    fi
 
     # Generate summary.json before moving artifacts (non-critical, must not block archiving)
     generate_archive_summary "$state_dir" "$archive_dir" "$timestamp" || \
         echo "WARNING: Failed to generate summary.json for archive." >&2
 
-    # Move artifacts
-    for f in state.json verdict.txt last_response.txt STATUS.md; do
-        [[ -f "$state_dir/$f" ]] && mv "$state_dir/$f" "$archive_dir/"
-    done
-    mv "$state_dir"/codex-*.log "$archive_dir/" 2>/dev/null || true
+    # Move artifacts. A failure here leaves an artifact under a name the next
+    # session reuses, so it stops the archiver instead of passing for success.
+    archive_move "$archive_dir" \
+        "$state_dir/state.json" "$state_dir/verdict.txt" \
+        "$state_dir/last_response.txt" "$state_dir/STATUS.md" || return 1
+    archive_move "$archive_dir" "$state_dir"/codex-*.log || return 1
     # Requests travel with the logs of the attempts that sent them: left behind,
     # they would be overwritten once a new session reuses the attempt numbers.
-    mv "$state_dir"/codex-*.request.md "$archive_dir/" 2>/dev/null || true
+    archive_move "$archive_dir" "$state_dir"/codex-*.request.md || return 1
     # The prompts travel with them: codex-init.prompt.md carries a fixed name, so
     # a new session would overwrite it where it stands.
-    mv "$state_dir"/codex-*.prompt.md "$archive_dir/" 2>/dev/null || true
+    archive_move "$archive_dir" "$state_dir"/codex-*.prompt.md || return 1
     # So do the replies of rounds that came back without a verdict — they are
     # named after the attempt, and a new session reuses those numbers.
-    mv "$state_dir"/codex-*.reply.md "$archive_dir/" 2>/dev/null || true
-    mv "$state_dir"/notes/*.md "$archive_dir/notes/" 2>/dev/null || true
+    archive_move "$archive_dir" "$state_dir"/codex-*.reply.md || return 1
+    archive_move "$archive_dir/notes" "$state_dir"/notes/*.md || return 1
 
     echo "Previous session archived to: $archive_dir" >&2
 }

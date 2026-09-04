@@ -303,7 +303,17 @@ save_note() {
     local phase="$1"
     local iteration="$2"
     local content="$3"
-    local note_file="$STATE_DIR/notes/${phase}-review-${iteration}.md"
+    # The iteration number is not unique over the life of a branch:
+    # `codex-state.sh reset` starts the count over while the notes of the
+    # previous cycle stay on disk. A taken name is stepped over the way
+    # next_attempt_log steps over a taken log.
+    local note_base="$STATE_DIR/notes/${phase}-review-${iteration}"
+    local note_file="${note_base}.md"
+    local attempt=2
+    while [[ -e "$note_file" ]]; do
+        note_file="${note_base}.${attempt}.md"
+        attempt=$((attempt + 1))
+    done
     {
         echo "# $(echo "$phase" | awk '{print toupper(substr($0,1,1)) substr($0,2)}') Review #${iteration}"
         echo "Date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"

@@ -66,12 +66,21 @@ cmd_get() {
         parse_verdict_file "$STATE_DIR/verdict.txt"
         return
     fi
-    local val
-    val="$(read_state_field "$field")"
-    if [[ -z "$val" ]]; then
-        val="$(read_state_number "$field")"
-    fi
-    echo "$val"
+    # The reader is chosen by the field, not by what the first one returned:
+    # asking a string reader for an empty value and then retrying with the
+    # numeric one answered 0 for a field that holds an empty string, and for a
+    # field that does not exist at all.
+    case " $STATE_STRING_FIELDS " in
+        *" $field "*) read_state_field "$field"; return ;;
+    esac
+    case " $STATE_NUMBER_FIELDS " in
+        *" $field "*) read_state_number "$field"; return ;;
+    esac
+
+    echo "ERROR: Unsupported state field: $field" >&2
+    echo "Known fields: $STATE_STRING_FIELDS $STATE_NUMBER_FIELDS" >&2
+    echo "Also readable: session_id (config.env wins), verdict (from verdict.txt)" >&2
+    exit 1
 }
 
 cmd_set() {

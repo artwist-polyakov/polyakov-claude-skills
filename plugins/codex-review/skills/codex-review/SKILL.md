@@ -139,6 +139,11 @@ bash scripts/codex-state.sh set phase implementing  # Обновить фазу
 bash scripts/codex-state.sh set iteration 2       # Откатить счётчик кругов
 ```
 
+`get` возвращает значение поля как оно записано: пустое строковое поле — пустой
+строкой, счётчик — числом. Незнакомое имя поля — ошибка с кодом возврата 1.
+Особые имена: `session_id` (приоритет у `config.env`) и `verdict` (из
+`verdict.txt`).
+
 `set` принимает поля `session_id`, `phase`, `iteration`, `max_iterations`,
 `reviews_completed`, `last_review_status`, `last_review_timestamp`,
 `task_description`. Неизвестное имя поля, нецелое значение счётчика и значение

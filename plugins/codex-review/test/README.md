@@ -16,6 +16,7 @@ test/
 ├── test-state-set.sh           # `codex-state.sh set`, one state.json writer
 ├── test-failure-iteration.sh   # what a failed codex call costs
 ├── test-verdict-source.sh      # the verdict file decides, the reply never does
+├── test-state-durability.sh    # what survives a write, a reset and a second archiver
 ├── test-description-file.sh    # --description-file, per-attempt logs, saved request
 ├── test-severity-calibration.sh # severity scale, finding headings, verdict threshold
 ├── test-exec-flags.sh          # model and reasoning effort on every codex exec call
@@ -331,6 +332,52 @@ Run:
 sh plugins/codex-review/test/test-verdict-source.sh
 ```
 
+## test-state-durability.sh
+
+Regression tests for four ways the plugin used to lose or invent something it
+had on disk, and for the archiver reporting what it could not do.
+
+Scenarios:
+
+1. A write that dies part way through leaves the previous `state.json` intact.
+   `ulimit -f 0` lets the file be created but not filled, which is the shape of
+   a full disk; a control write without that limit proves the call under test
+   does reach the file.
+2. A temporary file left behind by such a killed write is removed by the next
+   write, while one belonging to a process that is still running is left alone.
+3. `get` answers with what the field holds: an empty string field reads as
+   empty rather than as `0`, a counter reads as a number, and an unknown field
+   exits `1` naming what can be read.
+4. Notes of an earlier cycle survive `codex-state.sh reset` — the next cycle's
+   first round takes the next free name instead of overwriting them.
+5. Two archive runs that claim their directory at the same moment get one
+   each. Both are pinned to the same second by a `date` stub on `PATH` and
+   released together by a gate file, and they archive two state directories
+   under one review root, so they compete for the name and nothing else.
+6. An archive directory that cannot be created ends the run with an error and
+   leaves the artefacts where they are. This covers the case a loop watching
+   only `mkdir` would mistake for a name collision, and the archive root that
+   cannot be made at all.
+7. An artifact that cannot be moved into the archive stops the archiver and is
+   named in the error.
+
+Scenarios 6 and 7 get their failures from `mkdir` and `mv` stubs that refuse the
+target named in an environment variable, so the outcome does not depend on who
+runs the suite — a file permission means nothing to a superuser, which is who
+runs a container by default.
+
+Does **not** require the `codex` binary — a stub on `PATH` plays the reviewer.
+`common.sh` is a bash script, so the calls into it run under `bash` even though
+the suite itself is POSIX `sh`. Runs that would otherwise never end are bounded
+by `timeout`, or by `gtimeout` where GNU coreutils arrives under that name; the
+suite stops with an explanation when neither is on `PATH`.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-state-durability.sh
+```
+
 ## test-e2e.sh
 
 Opt-in end-to-end tests that exercise real `codex` / `claude` CLIs.
@@ -409,5 +456,5 @@ scenario — as an `init` task and as a code description, not as plans:
 
 ## Exit codes
 
-All ten scripts exit `0` on success and `1` if any assertion failed.
+All eleven scripts exit `0` on success and `1` if any assertion failed.
 `test-e2e.sh` additionally exits `0` (skip) when `CODEX_E2E` is not set.
