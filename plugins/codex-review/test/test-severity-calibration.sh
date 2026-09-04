@@ -91,7 +91,15 @@ while [ $# -gt 0 ]; do
         *) shift ;;
     esac
 done
-[ -n "$from_stdin" ] && cat >/dev/null
+_verdict_file=""
+if [ -n "$from_stdin" ]; then
+    _prompt="$(mktemp)"
+    cat > "$_prompt"
+    # The prompt names the file a reviewer writes its verdict to, and a review
+    # only counts when that file holds one.
+    _verdict_file="$(sed -n 's|^After your review, write your verdict to \(.*\)$|\1|p' "$_prompt" | head -1)"
+    rm -f "$_prompt"
+fi
 # A marker file makes one review call fail the way a lost connection or an
 # exhausted quota does: a non-zero exit with no verdict written. Only a real
 # review is failed — `common.sh` probes `codex --version` before every run, and
@@ -101,6 +109,7 @@ if [ -n "$from_stdin" ] && [ -f "$(dirname "$0")/../fail-next" ]; then
     printf 'stream error: connection reset\n' >&2
     exit 1
 fi
+[ -n "$_verdict_file" ] && printf 'APPROVED\n' > "$_verdict_file"
 [ -n "$out" ] && printf 'APPROVED\n' > "$out"
 printf 'session sess_teststub01 ready\n'
 exit 0

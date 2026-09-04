@@ -70,17 +70,26 @@ while [ $# -gt 0 ]; do
         *) shift ;;
     esac
 done
-[ -n "$from_stdin" ] && cat >/dev/null
+_verdict_file=""
+if [ -n "$from_stdin" ]; then
+    _prompt="$(mktemp)"
+    cat > "$_prompt"
+    # The prompt names the file a reviewer writes its verdict to, and a review
+    # only counts when that file holds one.
+    _verdict_file="$(sed -n 's|^After your review, write your verdict to \(.*\)$|\1|p' "$_prompt" | head -1)"
+    rm -f "$_prompt"
+fi
 REPO_DIR="$(dirname "$(dirname "$0")")"
 if [ -n "$from_stdin" ] && [ -f "$REPO_DIR/fail-next" ]; then
     rm -f "$REPO_DIR/fail-next"
-    if [ -f "$REPO_DIR/verdict-next" ]; then
-        cat "$REPO_DIR/verdict-next" > "$REPO_DIR/.codex-review/main/verdict.txt"
+    if [ -f "$REPO_DIR/verdict-next" ] && [ -n "$_verdict_file" ]; then
+        cat "$REPO_DIR/verdict-next" > "$_verdict_file"
         rm -f "$REPO_DIR/verdict-next"
     fi
     printf 'stream error: connection reset\n' >&2
     exit 1
 fi
+[ -n "$_verdict_file" ] && printf 'APPROVED\n' > "$_verdict_file"
 [ -n "$out" ] && printf 'APPROVED\n' > "$out"
 printf 'session sess_teststub01 ready\n'
 exit 0
