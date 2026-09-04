@@ -165,6 +165,14 @@ class QualityGateTests(unittest.TestCase):
         self.assertIn("Изменённая глава", self.index.read_text(encoding="utf-8"))
         self.run_gate()
 
+    def test_unencodable_segment_title_fails_without_index_write(self):
+        data = copy.deepcopy(self.source_map)
+        data["segments"][0]["title"] = "bad\ud800"
+        (self.references / "source-map.json").write_text(
+            json.dumps(data), encoding="utf-8"
+        )
+        self.assert_rejected_without_index_write("title must be valid UTF-8 text")
+
     def test_claim_provenance_backlinks_follow_map_not_inline_mentions(self):
         for sources, text in (
             (["seg-001", "seg-002"], "Сначала проверь ситуацию."),
@@ -1136,6 +1144,40 @@ class QualityGateTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 self.assert_rejected_without_index_write("segment link")
+
+    def test_index_link_path_cannot_descend_through_index_file(self):
+        for target in (
+            "source-index.md/#seg-001",
+            "source-index.md/.#seg-001",
+            "source-index.md/%2E#seg-001",
+            "source-index.md//#seg-001",
+            "source-index.md//.#seg-001",
+            "source-index.md//%2E#seg-001",
+            "source-index.md/child/..#seg-001",
+            "source-index.md/child/%2E%2E#seg-001",
+            "source-index.md/child/.%2e#seg-001",
+            "topics//../source-index.md#seg-001",
+            ".//source-index.md#seg-001",
+        ):
+            with self.subTest(target=target):
+                self.concepts.write_text(
+                    self.concept_text + f"\n[seg-001]({target})\n", encoding="utf-8"
+                )
+                self.assert_rejected_without_index_write("segment link")
+        for target in (
+            "./source-index.md#seg-001",
+            "topics/../source-index.md#seg-001",
+            "topics/%2E%2E/source-index.md#seg-001",
+            "topics/.././source-index.md#seg-001",
+        ):
+            with self.subTest(target=target):
+                self.concepts.write_text(
+                    self.concept_text + f"\n[seg-001]({target})\n", encoding="utf-8"
+                )
+                self.run_gate("--write-source-index")
+                before = self.snapshot()
+                self.run_gate()
+                self.assertEqual(self.snapshot(), before)
 
     def test_plain_segments_and_valid_segment_links_are_allowed(self):
         for link in (

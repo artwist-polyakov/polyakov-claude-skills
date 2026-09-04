@@ -283,8 +283,14 @@ def check_source_map(source_map: object, manifest: object, skill_dir: Path,
         if segment_id in segments:
             errors.append(f"duplicate segment_id: {segment_id}")
         segments[segment_id] = segment
-        if not isinstance(segment.get("title"), str) or not segment["title"].strip():
+        title = segment.get("title")
+        if not isinstance(title, str) or not title.strip():
             errors.append(f"source-map {segment_id}: title must be non-empty text")
+        else:
+            try:
+                title.encode("utf-8")
+            except UnicodeEncodeError:
+                errors.append(f"source-map {segment_id}: title must be valid UTF-8 text")
         ranges_valid = True
         for prefix, minimum in (("char", 0), ("line", 1)):
             start, end = segment.get(f"{prefix}_start"), segment.get(f"{prefix}_end")
@@ -329,10 +335,13 @@ def check_source_map(source_map: object, manifest: object, skill_dir: Path,
                 link_segments.update(SEGMENT_RE.findall(segment_id))
                 if not link_segments:
                     continue  # Unrelated links are outside the source-map contract.
-                relative = Path(unquote(url.path))
+                decoded_path = unquote(url.path)
+                relative = Path(decoded_path)
+                path_parts = decoded_path.split("/")
                 valid = (
                     not url.scheme and not url.netloc and not url.query
                     and not re.search(r"%(?:2f|5c)", url.path, re.IGNORECASE)
+                    and "" not in path_parts and path_parts[-1] not in {".", ".."}
                     and not relative.is_absolute()
                     and (path.parent / relative).resolve() == root / SOURCE_INDEX
                     and segment_id in segments and link_segments == {segment_id}
