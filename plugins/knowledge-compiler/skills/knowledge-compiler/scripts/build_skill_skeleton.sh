@@ -74,7 +74,7 @@ description: |
 2. Для выбора действия читай \`references/decision-rules.md\`.
 3. Для пошагового применения читай \`references/playbooks.md\`.
 4. Для рисков и ошибок читай \`references/anti-patterns.md\`.
-5. Для проверки происхождения тезисов используй \`references/source-map.json\`.
+5. Для проверки происхождения тезисов читай \`references/source-index.md\`; связи в машинном формате находятся в \`references/source-map.json\`.
 
 ## Правило ответа
 
@@ -88,7 +88,7 @@ EOF
 cat > "$DEST/references/concepts.md" <<'EOF'
 # Concepts
 
-Заполни карточками ключевых понятий в формате:
+Заполни карточками ключевых понятий в формате ниже. Для каждого тезиса добавь запись в `claims` файла `source-map.json`: уникальный `claim_id` из строчных латинских букв и цифр с одиночными дефисами, `artifact` с путём к файлу и `source_segments` с существующими сегментами. Заголовок `## <claim_id>` должен встречаться в указанном файле ровно один раз. Это соглашение действует и для остальных файлов с тезисами.
 
 ## concept-id
 
@@ -96,7 +96,7 @@ cat > "$DEST/references/concepts.md" <<'EOF'
 **Когда применять:** ситуация.
 **Как распознать:** признаки.
 **Связано:** другие concept-id.
-**Источник:** segment_id.
+**Источник:** [seg-001](source-index.md#seg-001).
 EOF
 
 cat > "$DEST/references/decision-rules.md" <<'EOF'
@@ -120,7 +120,7 @@ EOF
 cat > "$DEST/references/glossary.md" <<'EOF'
 # Glossary
 
-Заполни важными терминами и короткими определениями со ссылкой на segment_id.
+Заполни важными терминами и короткими определениями со ссылками вида [seg-001](source-index.md#seg-001).
 EOF
 
 "$UV_BIN" run python - "$DEST" "$JOB_DIR" "$TITLE" "$AUTHOR" <<'PY'
@@ -174,3 +174,4 @@ source_map = {
 PY
 
 echo "Skill skeleton: $DEST"
+echo "После заполнения тезисов запустите quality_gate.py с --write-source-index для создания references/source-index.md."
