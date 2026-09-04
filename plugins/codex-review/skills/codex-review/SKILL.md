@@ -136,7 +136,14 @@ bash scripts/codex-state.sh reset --full      # Полный сброс
 bash scripts/codex-state.sh get session_id    # Получить поле
 bash scripts/codex-state.sh set session_id <val>  # Установить вручную
 bash scripts/codex-state.sh set phase implementing  # Обновить фазу
+bash scripts/codex-state.sh set iteration 2       # Откатить счётчик кругов
 ```
+
+`set` принимает поля `session_id`, `phase`, `iteration`, `max_iterations`,
+`reviews_completed`, `last_review_status`, `last_review_timestamp`,
+`task_description`. Неизвестное имя поля, нецелое значение счётчика и значение
+с кавычкой, обратным слэшем, переводом строки или табуляцией — ошибка с кодом
+возврата 1, состояние не меняется.
 
 Для чтения файлов ревью (notes, STATUS.md и пр.) используй `codex-state.sh dir` — он вернёт абсолютный путь к каталогу текущей ветки.
 

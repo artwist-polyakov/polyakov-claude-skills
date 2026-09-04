@@ -169,15 +169,77 @@ get_effective_session_id() {
     echo "$sid"
 }
 
-# --- Task label for state.json ---
+# --- A value state.json can store and give back unchanged ---
 # Values in state.json are written into string literals and read back with a
-# quote-delimited grep that does not decode JSON escapes. So the label has to be
-# a string that survives that round trip unchanged: one line, no double quote
-# (readers cut the value there), no backslash and no control character (a
-# JSON-escaped one would be read back as the escape itself, e.g. C:\tmp coming
-# out as C:\\tmp). Anything else is refused rather than rewritten — a mangled
-# label in front of every reader is worse than an error, and only the caller
-# knows how to name its own task in one line.
+# quote-delimited match that does not decode JSON escapes. So a stored value has
+# to survive that round trip unchanged: one line, no double quote (readers cut
+# the value there), no backslash and no control character (a JSON-escaped one
+# would be read back as the escape itself, e.g. C:\tmp coming out as C:\\tmp).
+# Anything else is refused rather than rewritten — a mangled value in front of
+# every reader is worse than an error, and only the caller knows what it meant
+# to store.
+#
+# `what` names the value in the message; `hint` says how to fix it. Prints the
+# value exactly as it came in; on rejection prints the reason to stderr and
+# returns 1 (the caller must pass that on — a bare exit inside $(...) would only
+# leave the subshell).
+state_string_value() {
+    local value="$1"
+    local what="$2"
+    local hint="$3"
+
+    if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+        echo "ERROR: $what must be a single line. $hint" >&2
+        return 1
+    fi
+    if [[ "$value" == *[$'\001'-$'\037']* ]]; then
+        echo "ERROR: $what contains control characters. $hint" >&2
+        return 1
+    fi
+    if [[ "$value" == *'"'* ]]; then
+        echo "ERROR: $what must not contain a double quote — every reader of state.json cuts the value there. $hint" >&2
+        return 1
+    fi
+    if [[ "$value" == *'\'* ]]; then
+        echo "ERROR: $what must not contain a backslash — readers of state.json do not decode JSON escapes, so it would come back doubled. $hint" >&2
+        return 1
+    fi
+
+    printf '%s' "$value"
+}
+
+# --- A counter state.json can store and this script can add to ---
+# The counters are written as JSON numbers, so only a canonical decimal is
+# storable: a leading zero produces a file no parser accepts. The digit limit
+# keeps the stored value inside the range shell arithmetic adds to — a counter
+# at the edge of that range wraps to a negative on the next +1, and the limit
+# check that guards a review cycle would never fire again.
+#
+# `what` names the value in the message; `hint` says how to fix it. Prints the
+# value as it came in; on rejection prints the reason to stderr and returns 1.
+STATE_COUNTER_MAX_DIGITS=9
+
+state_counter_value() {
+    local value="$1"
+    local what="$2"
+    local hint="$3"
+
+    if [[ ! "$value" =~ ^(0|[1-9][0-9]*)$ ]]; then
+        echo "ERROR: $what expects a whole number without a leading zero, got: $value. $hint" >&2
+        return 1
+    fi
+    if [[ ${#value} -gt $STATE_COUNTER_MAX_DIGITS ]]; then
+        echo "ERROR: $what is ${#value} digits, the limit is $STATE_COUNTER_MAX_DIGITS. $hint" >&2
+        return 1
+    fi
+
+    printf '%s' "$value"
+}
+
+# --- Task label for state.json ---
+# The label is a stored value, so it is checked as one first, and then against
+# what a name has to be on top of that: present, one line the caller can read
+# back in STATUS.md, and short enough to sit on that line.
 #
 # Prints the label exactly as it came in; on rejection prints the reason to stderr and
 # returns 1 (the caller must pass that on — a bare exit inside $(...) would only
@@ -191,22 +253,7 @@ task_label_for_state() {
     # Everything is checked on the value as it arrived. Nothing here rewrites
     # the label — not even trimming it, which would put a name in state.json
     # that the caller never wrote.
-    if [[ "$label" == *$'\n'* || "$label" == *$'\r'* ]]; then
-        echo "ERROR: task label must be a single line. $hint" >&2
-        return 1
-    fi
-    if [[ "$label" == *[$'\001'-$'\037']* ]]; then
-        echo "ERROR: task label contains control characters. $hint" >&2
-        return 1
-    fi
-    if [[ "$label" == *'"'* ]]; then
-        echo "ERROR: task label must not contain a double quote — every reader of state.json cuts the value there. $hint" >&2
-        return 1
-    fi
-    if [[ "$label" == *'\'* ]]; then
-        echo "ERROR: task label must not contain a backslash — readers of state.json do not decode JSON escapes, so it would come back doubled. $hint" >&2
-        return 1
-    fi
+    state_string_value "$label" "task label" "$hint" > /dev/null || return 1
 
     if [[ -z "$label" ]]; then
         echo "ERROR: task label is empty. $hint" >&2
@@ -224,6 +271,103 @@ task_label_for_state() {
     # No escaping: everything that would need it has been refused above, so the
     # label reaches every reader exactly as the caller wrote it.
     printf '%s' "$label"
+}
+
+# --- Fields of state.json, in the order they are written ---
+# Every writer used to carry its own copy of the file's literal, and a field
+# added to one copy reached the file only through that one writer. These two
+# lists and render_state_fields are the single description of the file's shape.
+STATE_STRING_FIELDS="session_id phase last_review_status last_review_timestamp task_description"
+STATE_NUMBER_FIELDS="iteration max_iterations reviews_completed"
+
+# --- Is a field present in a state.json snapshot? ---
+# read_state_field answers "" and read_state_number answers 0 for a field that
+# is absent — the same answer they give for an empty string and for a zero. A
+# caller that has to tell an absent field from a written one asks here.
+state_has_field() {
+    local field="$1"
+    local state_json="$2"
+    local pattern="\"${field}\"[[:space:]]*:"
+    [[ "$state_json" =~ $pattern ]]
+}
+
+# --- Render state.json from named fields ---
+# Called as: render_state_fields session_id=... phase=... — every field of the
+# file, by name. Names rather than positions: three of the fields are counters
+# that read alike, and a writer that swapped two of them would produce a
+# plausible file. An unknown name, a name given twice, a name left out, a
+# counter this file cannot hold and a string that state.json cannot give back
+# unchanged are all errors — every path that writes the file passes through
+# here, so a value that would break it never reaches the disk.
+render_state_fields() {
+    local session_id phase last_review_status last_review_timestamp task_description
+    local iteration max_iterations reviews_completed
+    local seen=" "
+    local arg key value field
+
+    for arg in "$@"; do
+        if [[ "$arg" != *=* ]]; then
+            echo "ERROR: state field must be given as name=value, got: $arg" >&2
+            return 1
+        fi
+        key="${arg%%=*}"
+        value="${arg#*=}"
+
+        case " $STATE_STRING_FIELDS $STATE_NUMBER_FIELDS " in
+            *" $key "*) ;;
+            *)
+                echo "ERROR: Unsupported state field: $key" >&2
+                echo "Known fields: $STATE_STRING_FIELDS $STATE_NUMBER_FIELDS" >&2
+                return 1
+                ;;
+        esac
+        if [[ "$seen" == *" $key "* ]]; then
+            echo "ERROR: State field given twice: $key" >&2
+            return 1
+        fi
+        case " $STATE_NUMBER_FIELDS " in
+            *" $key "*)
+                state_counter_value "$value" "$key" \
+                    "Pass a counter state.json can store." > /dev/null || return 1
+                ;;
+        esac
+        case " $STATE_STRING_FIELDS " in
+            *" $key "*)
+                state_string_value "$value" "$key" \
+                    "Pass a value state.json can store as written." > /dev/null || return 1
+                ;;
+        esac
+
+        printf -v "$key" '%s' "$value"
+        seen="$seen$key "
+    done
+
+    for field in $STATE_STRING_FIELDS $STATE_NUMBER_FIELDS; do
+        if [[ "$seen" != *" $field "* ]]; then
+            echo "ERROR: State field not given: $field" >&2
+            return 1
+        fi
+    done
+
+    cat <<STATE
+{
+  "session_id": "$session_id",
+  "phase": "$phase",
+  "iteration": $iteration,
+  "max_iterations": $max_iterations,
+  "last_review_status": "$last_review_status",
+  "last_review_timestamp": "$last_review_timestamp",
+  "reviews_completed": $reviews_completed,
+  "task_description": "$task_description"
+}
+STATE
+}
+
+# --- Write state.json from named fields ---
+write_state_fields() {
+    local json
+    json="$(render_state_fields "$@")" || return 1
+    write_state "$json"
 }
 
 # --- Write state.json ---
