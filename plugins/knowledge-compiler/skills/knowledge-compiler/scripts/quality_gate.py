@@ -239,7 +239,12 @@ def check_source_map(source_map: object, skill_dir: Path, source_text: str, erro
         if not path.resolve().is_relative_to(root):
             errors.append(f"Markdown file outside skill: {path.relative_to(skill_dir)}")
             continue
-        canonical, anchors, references, links = markdown_content(path.read_text(encoding="utf-8"))
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            errors.append(f"cannot read Markdown {path.relative_to(skill_dir)}: {exc}")
+            continue
+        canonical, anchors, references, links = markdown_content(text)
         for segment_id in sorted(references - segments.keys()):
             errors.append(f"unknown segment {segment_id}: {path.relative_to(skill_dir)}")
         for target, label in links:
@@ -392,9 +397,14 @@ def main() -> int:
 
     skill_md = skill_dir / "SKILL.md"
     if skill_md.is_file():
-        count = len(words(skill_md.read_text(encoding="utf-8", errors="replace")))
-        if count > args.max_skill_words:
-            errors.append(f"SKILL.md too long: {count} words > {args.max_skill_words}")
+        try:
+            skill_text = skill_md.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            errors.append(f"cannot read SKILL.md: {exc}")
+        else:
+            count = len(words(skill_text))
+            if count > args.max_skill_words:
+                errors.append(f"SKILL.md too long: {count} words > {args.max_skill_words}")
 
     source_map = None
     for rel in ["references/source-map.json", "references/knowledge-manifest.json"]:
@@ -417,11 +427,22 @@ def main() -> int:
     elif not args.write_source_index:
         if not index_path.is_file():
             errors.append("missing source-index.md: run with --write-source-index")
-        elif index_text is not None and index_path.read_text(encoding="utf-8") != index_text:
-            errors.append("stale source-index.md: run with --write-source-index")
+        elif index_text is not None:
+            try:
+                current_index = index_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                errors.append(f"cannot read source-index.md: {exc}")
+            else:
+                if current_index != index_text:
+                    errors.append("stale source-index.md: run with --write-source-index")
 
-    if skill_dir.is_dir():
-        result_text = markdown_and_json_text(skill_dir)
+    result_text = None
+    if skill_dir.is_dir() and not errors:
+        try:
+            result_text = markdown_and_json_text(skill_dir)
+        except OSError as exc:
+            errors.append(f"cannot read generated skill: {exc}")
+    if result_text is not None:
         if index_text is not None:
             result_text += "\n\n" + index_text
         if PLACEHOLDER_RE.search(result_text):

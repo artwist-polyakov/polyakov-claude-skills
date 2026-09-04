@@ -163,6 +163,65 @@ class QualityGateTests(unittest.TestCase):
         self.assertIn("Изменённая глава", self.index.read_text(encoding="utf-8"))
         self.run_gate()
 
+    def test_invalid_utf8_markdown_fails_without_index_write(self):
+        for path, diagnostic in (
+            (self.concepts, "cannot read Markdown"),
+            (self.skill / "SKILL.md", "cannot read Markdown SKILL.md"),
+        ):
+            with self.subTest(path=path.name):
+                original = path.read_bytes()
+                try:
+                    path.write_bytes(b"\xff\n")
+                    self.assert_rejected_without_index_write(diagnostic)
+                finally:
+                    path.write_bytes(original)
+
+    def test_unreadable_generated_files_fail_without_index_write(self):
+        extra = self.references / "extra.json"
+        extra.write_text("{}\n", encoding="utf-8")
+        self.run_gate("--write-source-index")
+        for path, diagnostic in (
+            (self.concepts, "cannot read Markdown"),
+            (self.skill / "SKILL.md", "cannot read SKILL.md"),
+            (extra, "cannot read generated skill"),
+        ):
+            with self.subTest(path=path.name):
+                before = self.snapshot()
+                mode = path.stat().st_mode & 0o777
+                try:
+                    path.chmod(0)
+                    try:
+                        path.read_bytes()
+                    except PermissionError:
+                        self.run_gate("--write-source-index", success=False, diagnostic=diagnostic)
+                    else:
+                        self.skipTest("File read permissions are not enforced for this user")
+                finally:
+                    path.chmod(mode)
+                    self.assertEqual(self.snapshot(), before)
+
+    def test_unreadable_existing_index_fails_read_only_and_preserves_file(self):
+        self.run_gate("--write-source-index")
+        original = self.index.read_bytes()
+        for failure in ("invalid_utf8", "permission"):
+            with self.subTest(failure=failure):
+                self.index.write_bytes(b"\xff\n" if failure == "invalid_utf8" else original)
+                before = self.snapshot()
+                mode = self.index.stat().st_mode & 0o777
+                try:
+                    if failure == "permission":
+                        self.index.chmod(0)
+                        try:
+                            self.index.read_bytes()
+                        except PermissionError:
+                            pass
+                        else:
+                            self.skipTest("File read permissions are not enforced for this user")
+                    self.run_gate(success=False, diagnostic="cannot read source-index.md")
+                finally:
+                    self.index.chmod(mode)
+                    self.assertEqual(self.snapshot(), before)
+
     def test_invalid_source_map(self):
         mutations = (
             ("empty segments", lambda data: data.update(segments=[])),
