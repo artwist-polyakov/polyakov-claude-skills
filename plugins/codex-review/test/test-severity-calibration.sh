@@ -128,7 +128,8 @@ run_review() {
         # sees. Every setting `load_config` reads is cleared first, so a value
         # exported on the machine running the suite cannot answer an assertion
         # that was written about a repo which configures nothing.
-        unset CODEX_MODEL CODEX_REASONING_EFFORT CODEX_MAX_ITERATIONS \
+        unset CODEX_MODEL CODEX_REASONING_EFFORT CODEX_FAST_MODE \
+              CODEX_MAX_ITERATIONS \
               CODEX_YOLO CODEX_SESSION_ID AUTO_REVIEW CODEX_REVIEWER_PROMPT \
               CODEX_PLAN_GUIDE CODEX_CODE_GUIDE CODEX_SEVERITY_CALIBRATION
         cd "$_repo" && PATH="$_repo/bin:$PATH" CODEX_HOME="$_repo/codex-home" \
