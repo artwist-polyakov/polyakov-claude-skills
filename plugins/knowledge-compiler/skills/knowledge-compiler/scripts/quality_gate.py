@@ -80,6 +80,7 @@ def check_json(path: Path, errors: list[str]) -> object:
 class MarkdownContent(HTMLParser):
     """Read rendered text and link targets without executing HTML."""
 
+    SVG_HTML_INTEGRATION_POINTS = {"foreignobject", "desc", "title"}
     TEXT_BREAKS = set(
         "address article aside blockquote br dd details dialog div dl dt fieldset figcaption "
         "figure footer form h1 h2 h3 h4 h5 h6 header hr li main nav ol p pre section summary "
@@ -97,8 +98,43 @@ class MarkdownContent(HTMLParser):
         self.heading = None
         self.pre_depth = 0
         self.hidden_text_tag = None
+        self.namespace_boundaries = []
+        self.last_starttag_namespace = "html"
+
+    def set_cdata_mode(self, elem, *args, **kwargs):
+        # Newer HTMLParser versions treat every <title> as HTML RCDATA. SVG
+        # <title> is an integration point, so its child tags must stay visible.
+        if elem == "title" and self.last_starttag_namespace == "svg":
+            return
+        super().set_cdata_mode(elem, *args, **kwargs)
+
+    def enter_namespace(self, tag):
+        """Return the element namespace and track SVG/HTML context changes."""
+        parent_namespace = self.namespace_boundaries[-1][1] if self.namespace_boundaries else "html"
+        namespace = "svg" if tag == "svg" else parent_namespace
+        child_namespace = (
+            "html" if namespace == "svg" and tag in self.SVG_HTML_INTEGRATION_POINTS
+            else namespace
+        )
+        # Same-named integration points need distinct markers so their closing
+        # tags cannot end an outer SVG/HTML boundary prematurely.
+        if tag == "svg" or tag in self.SVG_HTML_INTEGRATION_POINTS:
+            self.namespace_boundaries.append((tag, child_namespace))
+        return namespace
+
+    def leave_namespace(self, tag):
+        for index in range(len(self.namespace_boundaries) - 1, -1, -1):
+            if self.namespace_boundaries[index][0] == tag:
+                del self.namespace_boundaries[index:]
+                return
 
     def handle_starttag(self, tag, attrs):
+        namespace = (
+            self.enter_namespace(tag)
+            if not self.pre_depth
+            else self.namespace_boundaries[-1][1] if self.namespace_boundaries else "html"
+        )
+        self.last_starttag_namespace = namespace
         attributes = {}
         for key, value in attrs:
             attributes.setdefault(key, value)  # HTML keeps the first duplicate attribute.
@@ -118,8 +154,13 @@ class MarkdownContent(HTMLParser):
             self.heading = []
         if tag == "a":
             self.finish_link()
-            if "href" in attributes:
-                self.link = (attributes["href"] or "", len(self.text))
+            link_attribute = (
+                "href" if "href" in attributes
+                else "xlink:href" if namespace == "svg" and "xlink:href" in attributes
+                else None
+            )
+            if link_attribute is not None:
+                self.link = (attributes[link_attribute] or "", len(self.text))
         if tag == "area" and "href" in attributes:
             self.source_links.append((attributes["href"] or "", attributes.get("alt") or ""))
         if tag == "img":
@@ -140,6 +181,8 @@ class MarkdownContent(HTMLParser):
                 self.heading = None
         if not self.pre_depth and tag == "a":
             self.finish_link()
+        if not self.pre_depth:
+            self.leave_namespace(tag)
 
     def finish_link(self):
         if self.link is not None:

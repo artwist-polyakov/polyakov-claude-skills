@@ -1221,6 +1221,61 @@ class QualityGateTests(unittest.TestCase):
                 self.run_gate()
                 self.assertEqual(self.snapshot(), before)
 
+    def test_svg_xlink_segment_links_reject_invalid_destinations(self):
+        for markup in (
+            '<svg><a xlink:href="other.md#seg-001">seg-001</a></svg>',
+            '<svg><a href="other.md#seg-001" xlink:href="source-index.md#seg-001">seg-001</a></svg>',
+            '<svg><a href="" xlink:href="source-index.md#seg-001">seg-001</a></svg>',
+            '<svg><foreignObject><svg><a xlink:href="other.md#seg-001">seg-001</a></svg>'
+            '</foreignObject></svg>',
+            '<svg><title><svg><a xlink:href="other.md#seg-001">seg-001</a></svg></title></svg>',
+        ):
+            with self.subTest(markup=markup):
+                self.concepts.write_text(self.concept_text + "\n" + markup + "\n", encoding="utf-8")
+                self.assert_rejected_without_index_write("segment link")
+
+    def test_valid_and_non_svg_xlink_segment_references_are_allowed(self):
+        for markup in (
+            '<svg><a xlink:href="source-index.md#seg-001">seg-001</a></svg>',
+            '<svg><a href="source-index.md#seg-001" xlink:href="other.md#seg-999">seg-001</a></svg>',
+            '<a xlink:href="other.md#seg-001">seg-001</a>',
+            '<svg><foreignObject><a xlink:href="other.md#seg-001">seg-001</a>'
+            '</foreignObject></svg>',
+            '<svg><foreignObject><svg><a xlink:href="source-index.md#seg-001">seg-001</a></svg>'
+            '</foreignObject></svg>',
+            '<svg><desc><a xlink:href="other.md#seg-001">seg-001</a></desc></svg>',
+            '<svg><title><a xlink:href="other.md#seg-001">seg-001</a></title></svg>',
+            '<svg><desc><svg><a xlink:href="source-index.md#seg-001">seg-001</a></svg></desc></svg>',
+            '<svg><title><svg><a xlink:href="source-index.md#seg-001">seg-001</a></svg></title></svg>',
+        ):
+            with self.subTest(markup=markup):
+                self.concepts.write_text(self.concept_text + "\n" + markup + "\n", encoding="utf-8")
+                self.run_gate("--write-source-index")
+                before = self.snapshot()
+                self.run_gate()
+                self.assertEqual(self.snapshot(), before)
+
+    def test_same_named_svg_integration_points_keep_context_balanced(self):
+        for point in ("foreignObject", "desc", "title"):
+            with self.subTest(point=point, position="nested"):
+                markup = (
+                    f'<svg><{point}><{point}></{point}>'
+                    f'<a xlink:href="other.md#seg-001">seg-001</a></{point}></svg>'
+                )
+                self.concepts.write_text(self.concept_text + "\n" + markup + "\n", encoding="utf-8")
+                self.run_gate("--write-source-index")
+                before = self.snapshot()
+                self.run_gate()
+                self.assertEqual(self.snapshot(), before)
+        for point in ("foreignObject", "desc", "title"):
+            with self.subTest(point=point, position="after"):
+                markup = (
+                    f'<svg><{point}></{point}>'
+                    '<a xlink:href="other.md#seg-001">seg-001</a></svg>'
+                )
+                self.concepts.write_text(self.concept_text + "\n" + markup + "\n", encoding="utf-8")
+                self.assert_rejected_without_index_write("segment link")
+
     def test_image_alt_is_excluded_from_heading_anchor(self):
         self.concepts.write_text(
             "# ![Diagnosis Before Action](icon.png)\n\n" + self.concept_text, encoding="utf-8"
