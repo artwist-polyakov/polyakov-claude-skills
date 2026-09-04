@@ -1,20 +1,17 @@
 #!/bin/sh
-# Common functions for Yandex Wordstat skill — dual backend (legacy + cloud)
+# Common functions for Yandex Wordstat through Yandex Cloud Search API.
 #
 # Public API (sourced by other scripts):
-#   load_config            — picks backend, exports WORDSTAT_BACKEND, _DETECTED_VIA, _CLOUD_*
-#   wordstat_request M P   — request to Wordstat API, always returns LEGACY-shaped JSON
-#   print_backend_info     — backend-aware diagnostic block (used by quota.sh)
+#   load_config            — validates config, sets WORDSTAT_BACKEND and WORDSTAT_CLOUD_*
+#   wordstat_request M P   — request to Wordstat API, returns the scripts' JSON format
+#   print_backend_info     — connection details (used by quota.sh)
 #   die_with_help MSG      — structured error pointing user at config README
-#   json_escape, format_number, json_value, json_string  — legacy helpers (unchanged)
+#   json_escape, format_number, json_value, json_string  — output helpers
 #
-# Backend dispatch:
-#   - WORDSTAT_BACKEND=legacy → POST api.wordstat.yandex.net/v1/{method} (Bearer OAuth)
-#   - WORDSTAT_BACKEND=cloud  → POST searchapi.api.cloud.yandex.net/v2/wordstat/{method}
-#                              with IAM Bearer + folderId, response normalized back to legacy
-#                              shape so existing parsers in callers don't change.
+# Requests use IAM Bearer + folderId. Responses are normalized to the existing
+# format so callers keep their current parsers.
 #
-# Selection in load_config is STRUCTURAL ONLY — no network, no IAM preflight.
+# Validation in load_config is STRUCTURAL ONLY — no network, no IAM preflight.
 # IAM/network errors surface on the first wordstat_request call.
 
 # Resolve directories. Use $0 because we're sourced from many shells (sh + bash).
@@ -30,14 +27,12 @@ fi
 WORDSTAT_CONFIG_DIR="${WORDSTAT_CONFIG_DIR:-$WORDSTAT_SKILL_DIR/config}"
 WORDSTAT_CACHE_DIR="${WORDSTAT_CACHE_DIR:-$WORDSTAT_SKILL_DIR/cache}"
 
-WORDSTAT_LEGACY_API="https://api.wordstat.yandex.net/v1"
 WORDSTAT_CLOUD_API="https://searchapi.api.cloud.yandex.net/v2/wordstat"
 WORDSTAT_IAM_API="https://iam.api.cloud.yandex.net/iam/v1/tokens"
 WORDSTAT_README_URL="https://github.com/artwist-polyakov/polyakov-claude-skills/blob/main/plugins/yandex-wordstat/skills/yandex-wordstat/config/README.md"
 
 # Exported by load_config so callers and die_with_help can read them
 WORDSTAT_BACKEND=""
-WORDSTAT_BACKEND_DETECTED_VIA=""
 WORDSTAT_CLOUD_FOLDER_ID=""
 WORDSTAT_CLOUD_SA_KEY_PATH=""
 WORDSTAT_CLOUD_OPENSSL_BIN=""
@@ -53,10 +48,7 @@ die_with_help() {
     {
         printf '[wordstat] %s\n' "$_msg"
         if [ -n "$WORDSTAT_BACKEND" ]; then
-            printf 'Backend: %s' "$WORDSTAT_BACKEND"
-            [ -n "$WORDSTAT_BACKEND_DETECTED_VIA" ] && \
-                printf ' (%s)' "$WORDSTAT_BACKEND_DETECTED_VIA"
-            printf '\n'
+            printf 'Backend: %s\n' "$WORDSTAT_BACKEND"
         fi
         [ -n "$_extra" ] && printf '%s\n' "$_extra"
         printf '\n'
@@ -71,14 +63,12 @@ die_with_help() {
             printf '                 SA key file from auth.service_account_key_file — present and readable?\n'
         fi
         printf "                 SA has role 'search-api.webSearch.user'?\n"
-        printf '  - legacy mode: YANDEX_WORDSTAT_TOKEN still valid? (tokens expire after 1 year)\n'
-        printf '  - to switch:   set YANDEX_WORDSTAT_BACKEND=legacy|cloud in config/.env\n'
     } >&2
     exit 1
 }
 
 # ---------------------------------------------------------------------
-# Legacy helpers (kept for compatibility with bash callers)
+# Output helpers
 # ---------------------------------------------------------------------
 
 json_escape() {
@@ -102,10 +92,10 @@ json_string() {
 }
 
 # ---------------------------------------------------------------------
-# Backend selection — load_config
+# Configuration — load_config
 # ---------------------------------------------------------------------
 
-# Read .env if present (legacy creds + override). Sourced into current shell.
+# Read old settings only to report migration errors for existing installations.
 _load_env_file() {
     _env_file="$WORDSTAT_CONFIG_DIR/.env"
     if [ -f "$_env_file" ]; then
@@ -147,99 +137,44 @@ _resolve_path() {
     esac
 }
 
-# Detect cloud structural config. Sets WORDSTAT_CLOUD_* variables on success.
-# Returns 0 if cloud is structurally configured, 1 if not, 2 if config.json is
-# present but malformed (caller should die loudly).
-_detect_cloud_config() {
+# Validate cloud configuration without contacting the API.
+load_config() {
+    _load_env_file
+
+    _migration_help="Старый Wordstat API (api.wordstat.yandex.net) не работает. OAuth-токен YANDEX_WORDSTAT_TOKEN больше не подходит. Удалите YANDEX_WORDSTAT_TOKEN и YANDEX_WORDSTAT_BACKEND из config/.env и окружения; настройте Yandex Cloud по инструкции ниже."
+    case "${YANDEX_WORDSTAT_BACKEND:-cloud}" in
+        cloud) ;;
+        legacy) die_with_help "$_migration_help" ;;
+        *) die_with_help "Поддерживается только Yandex Cloud. Удалите YANDEX_WORDSTAT_BACKEND из config/.env и окружения." ;;
+    esac
+
     _cfg_file="$WORDSTAT_CONFIG_DIR/config.json"
-    [ -f "$_cfg_file" ] || return 1
+    if [ ! -f "$_cfg_file" ]; then
+        if [ -n "${YANDEX_WORDSTAT_TOKEN:-}" ]; then
+            die_with_help "$_migration_help"
+        fi
+        die_with_help "Не найден config/config.json. Настройте Yandex Cloud по инструкции ниже."
+    fi
 
     _folder=$(_cfg_get yandex_cloud_folder_id)
     _sa_rel=$(_cfg_get auth.service_account_key_file)
     _ossl=$(_cfg_get auth.openssl_bin)
 
     if [ -z "$_folder" ]; then
-        WORDSTAT_BACKEND_DETECTED_VIA="cloud (config.json present but yandex_cloud_folder_id missing)"
-        return 2
+        die_with_help "В config/config.json отсутствует yandex_cloud_folder_id или файл содержит некорректный JSON."
     fi
     if [ -z "$_sa_rel" ]; then
-        WORDSTAT_BACKEND_DETECTED_VIA="cloud (config.json present but auth.service_account_key_file missing)"
-        return 2
+        die_with_help "В config/config.json отсутствует auth.service_account_key_file."
     fi
 
-    _sa_resolved=$(_resolve_path "$_sa_rel")
-    if [ ! -r "$_sa_resolved" ]; then
-        WORDSTAT_CLOUD_SA_KEY_PATH="$_sa_resolved"
-        WORDSTAT_BACKEND_DETECTED_VIA="cloud (SA key file not found at resolved path)"
-        return 2
+    WORDSTAT_CLOUD_SA_KEY_PATH=$(_resolve_path "$_sa_rel")
+    if [ ! -r "$WORDSTAT_CLOUD_SA_KEY_PATH" ]; then
+        die_with_help "Файл ключа сервисного аккаунта не найден или недоступен для чтения: $WORDSTAT_CLOUD_SA_KEY_PATH"
     fi
 
     WORDSTAT_CLOUD_FOLDER_ID="$_folder"
-    WORDSTAT_CLOUD_SA_KEY_PATH="$_sa_resolved"
     WORDSTAT_CLOUD_OPENSSL_BIN="${_ossl:-openssl}"
-    return 0
-}
-
-load_config() {
-    _load_env_file
-
-    # 1. Explicit override
-    if [ -n "${YANDEX_WORDSTAT_BACKEND:-}" ]; then
-        case "$YANDEX_WORDSTAT_BACKEND" in
-            cloud)
-                _rc=0
-                _detect_cloud_config || _rc=$?
-                if [ "$_rc" = "2" ]; then
-                    WORDSTAT_BACKEND="cloud"
-                    die_with_help "YANDEX_WORDSTAT_BACKEND=cloud but config is incomplete: $WORDSTAT_BACKEND_DETECTED_VIA"
-                fi
-                if [ "$_rc" = "1" ]; then
-                    WORDSTAT_BACKEND="cloud"
-                    die_with_help "YANDEX_WORDSTAT_BACKEND=cloud but config/config.json is missing"
-                fi
-                WORDSTAT_BACKEND="cloud"
-                WORDSTAT_BACKEND_DETECTED_VIA="explicit override"
-                return 0
-                ;;
-            legacy)
-                if [ -z "${YANDEX_WORDSTAT_TOKEN:-}" ]; then
-                    WORDSTAT_BACKEND="legacy"
-                    WORDSTAT_BACKEND_DETECTED_VIA="explicit override"
-                    die_with_help "YANDEX_WORDSTAT_BACKEND=legacy but YANDEX_WORDSTAT_TOKEN is not set"
-                fi
-                WORDSTAT_BACKEND="legacy"
-                WORDSTAT_BACKEND_DETECTED_VIA="explicit override"
-                return 0
-                ;;
-            *)
-                die_with_help "Invalid YANDEX_WORDSTAT_BACKEND='$YANDEX_WORDSTAT_BACKEND' (expected 'legacy' or 'cloud')"
-                ;;
-        esac
-    fi
-
-    # 2. Cloud structurally configured → cloud (cloud wins on tie)
-    _rc=0
-    _detect_cloud_config || _rc=$?
-    if [ "$_rc" = "0" ]; then
-        WORDSTAT_BACKEND="cloud"
-        WORDSTAT_BACKEND_DETECTED_VIA="auto: config.json present"
-        return 0
-    fi
-    if [ "$_rc" = "2" ]; then
-        # Malformed cloud config → fail loudly, do NOT silently fall back
-        WORDSTAT_BACKEND="cloud"
-        die_with_help "config/config.json present but invalid: $WORDSTAT_BACKEND_DETECTED_VIA"
-    fi
-
-    # 3. Legacy creds present → legacy
-    if [ -n "${YANDEX_WORDSTAT_TOKEN:-}" ]; then
-        WORDSTAT_BACKEND="legacy"
-        WORDSTAT_BACKEND_DETECTED_VIA="auto: YANDEX_WORDSTAT_TOKEN set"
-        return 0
-    fi
-
-    # 4. Nothing
-    die_with_help "No Wordstat credentials found"
+    WORDSTAT_BACKEND="cloud"
 }
 
 # ---------------------------------------------------------------------
@@ -247,39 +182,21 @@ load_config() {
 # ---------------------------------------------------------------------
 
 print_backend_info() {
-    case "$WORDSTAT_BACKEND" in
-        legacy)
-            echo "Backend: legacy ($WORDSTAT_BACKEND_DETECTED_VIA)"
-            echo ""
-            echo "=== Endpoints ==="
-            echo "  POST $WORDSTAT_LEGACY_API/topRequests"
-            echo "  POST $WORDSTAT_LEGACY_API/dynamics"
-            echo "  POST $WORDSTAT_LEGACY_API/regions"
-            echo ""
-            echo "=== API Limits ==="
-            echo "  - Rate limit: 10 requests/second"
-            echo "  - Daily quota: 1000 requests"
-            echo ""
-            echo "Note: This API is deprecated for new users. Existing tokens still work."
-            ;;
-        cloud)
-            echo "Backend: cloud ($WORDSTAT_BACKEND_DETECTED_VIA)"
-            echo "  folder_id: $WORDSTAT_CLOUD_FOLDER_ID"
-            echo "  SA key:    $WORDSTAT_CLOUD_SA_KEY_PATH"
-            echo ""
-            echo "=== Endpoints ==="
-            echo "  POST $WORDSTAT_CLOUD_API/topRequests"
-            echo "  POST $WORDSTAT_CLOUD_API/dynamics"
-            echo "  POST $WORDSTAT_CLOUD_API/regions"
-            echo ""
-            echo "=== API Limits ==="
-            echo "  Wordstat in Search API is currently in Preview."
-            echo "  See https://yandex.cloud/ru/docs/search-api/pricing for current limits and billing."
-            ;;
-        *)
-            echo "Backend: (not configured)"
-            ;;
-    esac
+    if [ -z "$WORDSTAT_BACKEND" ]; then
+        echo "Backend: (not configured)"
+        return 0
+    fi
+    echo "Backend: cloud"
+    echo "  folder_id: $WORDSTAT_CLOUD_FOLDER_ID"
+    echo "  SA key:    $WORDSTAT_CLOUD_SA_KEY_PATH"
+    echo ""
+    echo "=== Endpoints ==="
+    echo "  POST $WORDSTAT_CLOUD_API/topRequests"
+    echo "  POST $WORDSTAT_CLOUD_API/dynamics"
+    echo "  POST $WORDSTAT_CLOUD_API/regions"
+    echo ""
+    echo "=== API Limits ==="
+    echo "  See https://yandex.cloud/ru/docs/search-api/pricing for current limits and billing."
 }
 
 # ---------------------------------------------------------------------
@@ -491,11 +408,11 @@ _iam_token_get() {
 }
 
 # ---------------------------------------------------------------------
-# Request translation + response normalization (cloud ↔ legacy)
+# Request translation + response normalization for the scripts' JSON format
 # ---------------------------------------------------------------------
 
-# Translate legacy-shape params JSON → cloud request body JSON.
-# Args: $1 = method (topRequests|dynamics|regions), $2 = legacy params JSON
+# Translate script parameters to a cloud request body.
+# Args: $1 = method (topRequests|dynamics|regions), $2 = parameters as JSON
 # Output: cloud-shape JSON on stdout.
 # Exits 1 with die_with_help on dynamics preflight failure.
 _xlate_request() {
@@ -606,9 +523,9 @@ print(json.dumps(body, ensure_ascii=False))
 PYEOF
 }
 
-# Normalize cloud response JSON → legacy shape JSON.
+# Normalize cloud responses to the scripts' existing JSON format.
 # Args: $1 = method, $2 = path to cloud response file (optional; if missing, spool stdin)
-# Output: legacy-shape JSON on stdout
+# Output: normalized JSON on stdout
 #
 # Implementation note: cloud responses for topRequests --limit 2000 can be
 # multi-MB. Passing through env var is unsafe (ARG_MAX / E2BIG). We use a file
@@ -634,7 +551,7 @@ except Exception as e:
     print(json.dumps({"error": f"Cloud response parse error: {e}"}))
     sys.exit(0)
 
-# Translate cloud error JSON to legacy {"error": ...}
+# Translate cloud error JSON to the scripts' {"error": ...} format
 if "code" in d and "message" in d and "results" not in d and "topRequests" not in d:
     print(json.dumps({"error": d.get("message", "cloud error"), "code": d.get("code")}))
     sys.exit(0)
@@ -687,7 +604,7 @@ elif method == "regions":
 else:
     out = d
 
-# Compact separators — no spaces. Matches the legacy API JSON shape that
+# Compact separators — no spaces. Matches the JSON format that
 # existing grep/sed parsers in top_requests.sh, dynamics.sh, regions_stats.sh expect.
 # E.g. "topRequests":[{"phrase":"...","count":123}] not "topRequests": [{"phrase": "...", "count": 123}]
 print(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
@@ -697,19 +614,8 @@ PYEOF
 }
 
 # ---------------------------------------------------------------------
-# wordstat_request — public dispatcher
+# Wordstat requests
 # ---------------------------------------------------------------------
-
-# Legacy backend: direct curl to api.wordstat.yandex.net/v1
-_legacy_request() {
-    _method="$1"
-    _params="$2"
-    curl -s -X POST "$WORDSTAT_LEGACY_API/$_method" \
-        -H "Authorization: Bearer $YANDEX_WORDSTAT_TOKEN" \
-        -H "Content-Type: application/json; charset=utf-8" \
-        -H "Accept-Language: ru" \
-        -d "$_params"
-}
 
 # Cloud backend: translate, sign, POST, normalize
 _cloud_request() {
@@ -810,9 +716,5 @@ wordstat_request() {
         die_with_help "wordstat_request called before load_config"
     fi
 
-    case "$WORDSTAT_BACKEND" in
-        legacy) _legacy_request "$_method" "$_params" ;;
-        cloud)  _cloud_request "$_method" "$_params" ;;
-        *)      die_with_help "Unknown backend: $WORDSTAT_BACKEND" ;;
-    esac
+    _cloud_request "$_method" "$_params"
 }

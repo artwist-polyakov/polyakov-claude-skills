@@ -13,8 +13,8 @@ Subcommands:
 
 NOTE: query-total is transport-agnostic. It does NOT make HTTP calls.
 The caller (query_total.sh) routes the request through common.sh:wordstat_request,
-which handles backend selection (legacy vs cloud) and writes the legacy-shape
-JSON response to a file. This file is what query-total reads.
+which calls Yandex Cloud and writes the normalized JSON response to a file.
+This file is what query-total reads.
 """
 import argparse
 import json
@@ -580,8 +580,8 @@ def cmd_query_total(args):
     """Extract totalCount from a pre-fetched Wordstat response file.
 
     Transport-agnostic: caller (query_total.sh) is responsible for the HTTP call
-    via common.sh:wordstat_request, which handles legacy vs cloud backend
-    selection. This function only parses the resulting legacy-shape JSON.
+    via common.sh:wordstat_request. This function only parses the resulting
+    normalized JSON.
     """
     try:
         with open(args.json_file, "r", encoding="utf-8") as f:
@@ -665,7 +665,7 @@ def main():
     p_query.add_argument(
         "--json-file",
         required=True,
-        help="Path to JSON file containing legacy-shape Wordstat response (written by common.sh:wordstat_request)",
+        help="Path to JSON file containing normalized Wordstat response (written by common.sh:wordstat_request)",
     )
     p_query.add_argument("--phrase", required=True, help="Original search phrase (for output formatting)")
 
