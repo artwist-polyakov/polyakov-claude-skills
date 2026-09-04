@@ -36,6 +36,7 @@ PLACEHOLDER_RE = re.compile(r"\b(TODO|TBD|PLACEHOLDER)\b|ЗАПОЛНИ|ЗАМЕ
 WORD_RE = re.compile(r"[\wА-Яа-яЁё]+", re.UNICODE)
 SEGMENT_RE = re.compile(r"(?<![\w-])seg-[0-9]+(?![\w-])")
 CLAIM_ID_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+SOURCE_ID_RE = re.compile(r"sha256:[0-9a-f]{64}")
 SOURCE_INDEX = "references/source-index.md"
 
 
@@ -205,10 +206,18 @@ def check_confidence(item: dict, identifier: str, errors: list[str]) -> None:
         errors.append(f"source-map {identifier}: confidence must be between 0 and 1")
 
 
-def check_source_map(source_map: object, skill_dir: Path, source_text: str, errors: list[str]) -> None:
+def check_source_map(source_map: object, manifest: object, skill_dir: Path,
+                     source_text: str, errors: list[str]) -> None:
     if not isinstance(source_map, dict):
         errors.append("source-map must be a JSON object")
         return
+    source_id = source_map.get("source_id")
+    if not isinstance(source_id, str) or not SOURCE_ID_RE.fullmatch(source_id):
+        errors.append("source-map.source_id must be sha256:<64 lowercase hex digits>")
+    if not isinstance(manifest, dict):
+        errors.append("knowledge-manifest must be a JSON object")
+    elif source_id != manifest.get("source_sha256"):
+        errors.append("source-map.source_id must match knowledge-manifest.source_sha256")
     for key in ("segments", "claims"):
         if not isinstance(source_map.get(key), list) or not source_map[key]:
             errors.append(f"source-map.{key} must be a non-empty list")
@@ -429,18 +438,20 @@ def main() -> int:
             if count > args.max_skill_words:
                 errors.append(f"SKILL.md too long: {count} words > {args.max_skill_words}")
 
-    source_map = None
+    source_map = manifest = None
     for rel in ["references/source-map.json", "references/knowledge-manifest.json"]:
         path = skill_dir / rel
         if path.is_file():
             value = check_json(path, errors)
             if rel == "references/source-map.json":
                 source_map = value
+            else:
+                manifest = value
 
     index_path = skill_dir / SOURCE_INDEX
     index_text = None
     if not errors:
-        check_source_map(source_map, skill_dir, source_text, errors)
+        check_source_map(source_map, manifest, skill_dir, source_text, errors)
         if not errors:
             index_text = render_source_index(source_map)
     try:

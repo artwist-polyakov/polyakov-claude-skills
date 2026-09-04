@@ -5,6 +5,7 @@
 """Exercise source-map validation and source-index generation through the CLI."""
 
 import copy
+import hashlib
 import json
 import os
 import subprocess
@@ -52,12 +53,13 @@ class QualityGateTests(unittest.TestCase):
             (self.references / f"{name}.md").write_text(
                 f"# {name}\n\nПрикладные заметки по материалу.\n", encoding="utf-8"
             )
+        source_id = "sha256:" + "a" * 64
         (self.references / "knowledge-manifest.json").write_text(
-            json.dumps({"title": "Sample", "source_sha256": "sha256:test"}),
+            json.dumps({"title": "Sample", "source_sha256": source_id}),
             encoding="utf-8",
         )
         self.source_map = {
-            "source_id": "sha256:test",
+            "source_id": source_id,
             "segments": [
                 {
                     "segment_id": f"seg-{number:03d}",
@@ -236,6 +238,63 @@ class QualityGateTests(unittest.TestCase):
             self.references.unlink(missing_ok=True)
             backup.rename(self.references)
             self.assertEqual(self.snapshot(), before)
+
+    def test_source_identity_fields_are_required(self):
+        for filename, field in (
+            ("source-map.json", "source_id"),
+            ("knowledge-manifest.json", "source_sha256"),
+        ):
+            with self.subTest(field=field):
+                path = self.references / filename
+                original = path.read_text(encoding="utf-8")
+                data = json.loads(original)
+                del data[field]
+                path.write_text(json.dumps(data), encoding="utf-8")
+                try:
+                    self.assert_rejected_without_index_write(field)
+                finally:
+                    path.write_text(original, encoding="utf-8")
+
+    def test_source_id_requires_lowercase_sha256_format(self):
+        for value in (
+            None, True, 1, [], {}, "", "sha256:test", "a" * 64,
+            "sha256:" + "a" * 63, "sha256:" + "a" * 65,
+            "sha256:" + "A" * 64, "sha256:" + "g" * 64, "sha256:" + "a" * 64 + "\n",
+        ):
+            with self.subTest(value=value):
+                data = copy.deepcopy(self.source_map)
+                data["source_id"] = value
+                self.write_map(data)
+                (self.references / "knowledge-manifest.json").write_text(
+                    json.dumps({"source_sha256": value}), encoding="utf-8"
+                )
+                self.assert_rejected_without_index_write("source_id")
+
+    def test_manifest_identity_must_be_an_object_matching_source_id(self):
+        for manifest in (
+            None, False, 1, "manifest", [],
+            *({"source_sha256": value} for value in (None, True, 1, [], {}, "sha256:" + "b" * 64)),
+        ):
+            with self.subTest(manifest=manifest):
+                (self.references / "knowledge-manifest.json").write_text(
+                    json.dumps(manifest), encoding="utf-8"
+                )
+                self.assert_rejected_without_index_write("knowledge-manifest")
+
+    def test_matching_original_source_identity_is_not_rehashed(self):
+        extracted_id = "sha256:" + hashlib.sha256(self.source.read_bytes()).hexdigest()
+        for source_id in ("sha256:" + "1" * 64, "sha256:" + "abcdef0123456789" * 4):
+            with self.subTest(source_id=source_id):
+                self.assertNotEqual(source_id, extracted_id)
+                self.source_map["source_id"] = source_id
+                self.write_map(self.source_map)
+                (self.references / "knowledge-manifest.json").write_text(
+                    json.dumps({"title": "Sample", "source_sha256": source_id}), encoding="utf-8"
+                )
+                self.run_gate("--write-source-index")
+                before = self.snapshot()
+                self.run_gate()
+                self.assertEqual(self.snapshot(), before)
 
     def test_invalid_source_map(self):
         mutations = (
