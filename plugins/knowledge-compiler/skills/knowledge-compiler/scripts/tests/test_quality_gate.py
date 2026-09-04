@@ -165,6 +165,30 @@ class QualityGateTests(unittest.TestCase):
         self.assertIn("Изменённая глава", self.index.read_text(encoding="utf-8"))
         self.run_gate()
 
+    def test_claim_provenance_backlinks_follow_map_not_inline_mentions(self):
+        for sources, text in (
+            (["seg-001", "seg-002"], "Сначала проверь ситуацию."),
+            (["seg-001", "seg-002"], "Сначала проверь ситуацию. Источник: seg-001."),
+            (["seg-001"], "Источник: [seg-001](source-index.md#seg-001).\n\n"
+             "Для сравнения см. [seg-002](source-index.md#seg-002)."),
+        ):
+            with self.subTest(sources=sources, text=text):
+                self.source_map["claims"][0]["source_segments"] = sources
+                self.write_map(self.source_map)
+                self.concepts.write_text(
+                    "# Concepts\n\n## diagnosis-before-action\n\n" + text + "\n", encoding="utf-8"
+                )
+                self.run_gate("--write-source-index")
+                index = self.index.read_text(encoding="utf-8")
+                first, second = index.split("## seg-001", 1)[1].split("## seg-002", 1)
+                for segment_id, section in (("seg-001", first), ("seg-002", second)):
+                    self.assertEqual(
+                        section.count("(concepts.md#diagnosis-before-action)"), int(segment_id in sources)
+                    )
+                before = self.snapshot()
+                self.run_gate()
+                self.assertEqual(self.snapshot(), before)
+
     def test_invalid_utf8_markdown_fails_without_index_write(self):
         for path, diagnostic in (
             (self.concepts, "cannot read Markdown"),
