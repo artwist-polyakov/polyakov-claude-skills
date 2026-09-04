@@ -170,15 +170,77 @@ get_effective_session_id() {
     echo "$sid"
 }
 
-# --- Task label for state.json ---
+# --- A value state.json can store and give back unchanged ---
 # Values in state.json are written into string literals and read back with a
-# quote-delimited grep that does not decode JSON escapes. So the label has to be
-# a string that survives that round trip unchanged: one line, no double quote
-# (readers cut the value there), no backslash and no control character (a
-# JSON-escaped one would be read back as the escape itself, e.g. C:\tmp coming
-# out as C:\\tmp). Anything else is refused rather than rewritten — a mangled
-# label in front of every reader is worse than an error, and only the caller
-# knows how to name its own task in one line.
+# quote-delimited match that does not decode JSON escapes. So a stored value has
+# to survive that round trip unchanged: one line, no double quote (readers cut
+# the value there), no backslash and no control character (a JSON-escaped one
+# would be read back as the escape itself, e.g. C:\tmp coming out as C:\\tmp).
+# Anything else is refused rather than rewritten — a mangled value in front of
+# every reader is worse than an error, and only the caller knows what it meant
+# to store.
+#
+# `what` names the value in the message; `hint` says how to fix it. Prints the
+# value exactly as it came in; on rejection prints the reason to stderr and
+# returns 1 (the caller must pass that on — a bare exit inside $(...) would only
+# leave the subshell).
+state_string_value() {
+    local value="$1"
+    local what="$2"
+    local hint="$3"
+
+    if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+        echo "ERROR: $what must be a single line. $hint" >&2
+        return 1
+    fi
+    if [[ "$value" == *[$'\001'-$'\037']* ]]; then
+        echo "ERROR: $what contains control characters. $hint" >&2
+        return 1
+    fi
+    if [[ "$value" == *'"'* ]]; then
+        echo "ERROR: $what must not contain a double quote — every reader of state.json cuts the value there. $hint" >&2
+        return 1
+    fi
+    if [[ "$value" == *'\'* ]]; then
+        echo "ERROR: $what must not contain a backslash — readers of state.json do not decode JSON escapes, so it would come back doubled. $hint" >&2
+        return 1
+    fi
+
+    printf '%s' "$value"
+}
+
+# --- A counter state.json can store and this script can add to ---
+# The counters are written as JSON numbers, so only a canonical decimal is
+# storable: a leading zero produces a file no parser accepts. The digit limit
+# keeps the stored value inside the range shell arithmetic adds to — a counter
+# at the edge of that range wraps to a negative on the next +1, and the limit
+# check that guards a review cycle would never fire again.
+#
+# `what` names the value in the message; `hint` says how to fix it. Prints the
+# value as it came in; on rejection prints the reason to stderr and returns 1.
+STATE_COUNTER_MAX_DIGITS=9
+
+state_counter_value() {
+    local value="$1"
+    local what="$2"
+    local hint="$3"
+
+    if [[ ! "$value" =~ ^(0|[1-9][0-9]*)$ ]]; then
+        echo "ERROR: $what expects a whole number without a leading zero, got: $value. $hint" >&2
+        return 1
+    fi
+    if [[ ${#value} -gt $STATE_COUNTER_MAX_DIGITS ]]; then
+        echo "ERROR: $what is ${#value} digits, the limit is $STATE_COUNTER_MAX_DIGITS. $hint" >&2
+        return 1
+    fi
+
+    printf '%s' "$value"
+}
+
+# --- Task label for state.json ---
+# The label is a stored value, so it is checked as one first, and then against
+# what a name has to be on top of that: present, one line the caller can read
+# back in STATUS.md, and short enough to sit on that line.
 #
 # Prints the label exactly as it came in; on rejection prints the reason to stderr and
 # returns 1 (the caller must pass that on — a bare exit inside $(...) would only
@@ -192,22 +254,7 @@ task_label_for_state() {
     # Everything is checked on the value as it arrived. Nothing here rewrites
     # the label — not even trimming it, which would put a name in state.json
     # that the caller never wrote.
-    if [[ "$label" == *$'\n'* || "$label" == *$'\r'* ]]; then
-        echo "ERROR: task label must be a single line. $hint" >&2
-        return 1
-    fi
-    if [[ "$label" == *[$'\001'-$'\037']* ]]; then
-        echo "ERROR: task label contains control characters. $hint" >&2
-        return 1
-    fi
-    if [[ "$label" == *'"'* ]]; then
-        echo "ERROR: task label must not contain a double quote — every reader of state.json cuts the value there. $hint" >&2
-        return 1
-    fi
-    if [[ "$label" == *'\'* ]]; then
-        echo "ERROR: task label must not contain a backslash — readers of state.json do not decode JSON escapes, so it would come back doubled. $hint" >&2
-        return 1
-    fi
+    state_string_value "$label" "task label" "$hint" > /dev/null || return 1
 
     if [[ -z "$label" ]]; then
         echo "ERROR: task label is empty. $hint" >&2
@@ -227,11 +274,137 @@ task_label_for_state() {
     printf '%s' "$label"
 }
 
+# --- Fields of state.json, in the order they are written ---
+# Every writer used to carry its own copy of the file's literal, and a field
+# added to one copy reached the file only through that one writer. These two
+# lists and render_state_fields are the single description of the file's shape.
+STATE_STRING_FIELDS="session_id phase last_review_status last_review_timestamp task_description"
+STATE_NUMBER_FIELDS="iteration max_iterations reviews_completed"
+
+# --- Is a field present in a state.json snapshot? ---
+# read_state_field answers "" and read_state_number answers 0 for a field that
+# is absent — the same answer they give for an empty string and for a zero. A
+# caller that has to tell an absent field from a written one asks here.
+state_has_field() {
+    local field="$1"
+    local state_json="$2"
+    local pattern="\"${field}\"[[:space:]]*:"
+    [[ "$state_json" =~ $pattern ]]
+}
+
+# --- Render state.json from named fields ---
+# Called as: render_state_fields session_id=... phase=... — every field of the
+# file, by name. Names rather than positions: three of the fields are counters
+# that read alike, and a writer that swapped two of them would produce a
+# plausible file. An unknown name, a name given twice, a name left out, a
+# counter this file cannot hold and a string that state.json cannot give back
+# unchanged are all errors — every path that writes the file passes through
+# here, so a value that would break it never reaches the disk.
+render_state_fields() {
+    local session_id phase last_review_status last_review_timestamp task_description
+    local iteration max_iterations reviews_completed
+    local seen=" "
+    local arg key value field
+
+    for arg in "$@"; do
+        if [[ "$arg" != *=* ]]; then
+            echo "ERROR: state field must be given as name=value, got: $arg" >&2
+            return 1
+        fi
+        key="${arg%%=*}"
+        value="${arg#*=}"
+
+        case " $STATE_STRING_FIELDS $STATE_NUMBER_FIELDS " in
+            *" $key "*) ;;
+            *)
+                echo "ERROR: Unsupported state field: $key" >&2
+                echo "Known fields: $STATE_STRING_FIELDS $STATE_NUMBER_FIELDS" >&2
+                return 1
+                ;;
+        esac
+        if [[ "$seen" == *" $key "* ]]; then
+            echo "ERROR: State field given twice: $key" >&2
+            return 1
+        fi
+        case " $STATE_NUMBER_FIELDS " in
+            *" $key "*)
+                state_counter_value "$value" "$key" \
+                    "Pass a counter state.json can store." > /dev/null || return 1
+                ;;
+        esac
+        case " $STATE_STRING_FIELDS " in
+            *" $key "*)
+                state_string_value "$value" "$key" \
+                    "Pass a value state.json can store as written." > /dev/null || return 1
+                ;;
+        esac
+
+        printf -v "$key" '%s' "$value"
+        seen="$seen$key "
+    done
+
+    for field in $STATE_STRING_FIELDS $STATE_NUMBER_FIELDS; do
+        if [[ "$seen" != *" $field "* ]]; then
+            echo "ERROR: State field not given: $field" >&2
+            return 1
+        fi
+    done
+
+    cat <<STATE
+{
+  "session_id": "$session_id",
+  "phase": "$phase",
+  "iteration": $iteration,
+  "max_iterations": $max_iterations,
+  "last_review_status": "$last_review_status",
+  "last_review_timestamp": "$last_review_timestamp",
+  "reviews_completed": $reviews_completed,
+  "task_description": "$task_description"
+}
+STATE
+}
+
+# --- Write state.json from named fields ---
+write_state_fields() {
+    local json
+    json="$(render_state_fields "$@")" || return 1
+    write_state "$json"
+}
+
 # --- Write state.json ---
+# The file is replaced, never truncated in place: a write that dies part way
+# through — a full disk above all — would otherwise leave the session with an
+# empty or half-written state.json and nothing to fall back on. The temporary
+# file sits in the same directory, so the rename that publishes it is atomic.
 write_state() {
     local json="$1"
     ensure_state_dir
-    echo "$json" > "$STATE_DIR/state.json"
+    local state_file="$STATE_DIR/state.json"
+    local tmp_file="$STATE_DIR/.state.json.$$"
+
+    # A write killed by a signal leaves its temporary file behind — the cleanup
+    # below never runs for it. The name carries the pid that made it, so an
+    # orphan can be told from the file of a run that is still going; a pid that
+    # answers is left alone, which also covers a pid reused by something else.
+    local orphan orphan_pid
+    for orphan in "$STATE_DIR"/.state.json.*; do
+        [[ -e "$orphan" ]] || continue
+        orphan_pid="${orphan##*.}"
+        [[ "$orphan_pid" =~ ^[0-9]+$ ]] || continue
+        kill -0 "$orphan_pid" 2>/dev/null && continue
+        rm -f "$orphan"
+    done
+
+    if ! printf '%s\n' "$json" > "$tmp_file"; then
+        rm -f "$tmp_file"
+        echo "ERROR: Failed to write $tmp_file." >&2
+        return 1
+    fi
+    if ! mv "$tmp_file" "$state_file"; then
+        rm -f "$tmp_file"
+        echo "ERROR: Failed to replace $state_file." >&2
+        return 1
+    fi
 }
 
 # --- Write STATUS.md from current state.json ---
@@ -289,6 +462,23 @@ parse_verdict_file() {
     esac
 }
 
+# --- Move artifacts into an archive directory ---
+# A pattern that matches nothing is normal: not every session leaves notes or
+# replies. A move that fails is not — the file stays behind under a name the
+# next session reuses — so that failure travels back to the caller.
+archive_move() {
+    local dest="$1"
+    shift
+    local f
+    for f in "$@"; do
+        [[ -e "$f" ]] || continue
+        if ! mv "$f" "$dest/"; then
+            echo "ERROR: Failed to move $f into $dest." >&2
+            return 1
+        fi
+    done
+}
+
 # --- Archive previous session artifacts ---
 archive_previous_session() {
     ensure_state_dir
@@ -304,6 +494,7 @@ archive_previous_session() {
     if ls "$state_dir"/codex-*.log &>/dev/null; then has_artifacts=true; fi
     if ls "$state_dir"/codex-*.request.md &>/dev/null; then has_artifacts=true; fi
     if ls "$state_dir"/codex-*.prompt.md &>/dev/null; then has_artifacts=true; fi
+    if ls "$state_dir"/codex-*.reply.md &>/dev/null; then has_artifacts=true; fi
 
     if [[ "$has_artifacts" == "false" ]]; then
         return
@@ -311,25 +502,52 @@ archive_previous_session() {
 
     local timestamp
     timestamp="$(date -u +"%Y%m%dT%H%M%SZ")"
-    local archive_dir="$review_root/archive/${timestamp}"
-    mkdir -p "$archive_dir/notes"
+    # Two sessions archived inside the same second would otherwise share a
+    # directory and mix their artefacts. `mkdir` without -p fails when the
+    # directory is already there, and that failure is the claim: whoever
+    # created it owns that name, and the next one moves on to a suffix.
+    # Only an existing directory sends the loop on; every other failure --
+    # a read-only or full filesystem, a denied permission -- ends the archiver.
+    if ! mkdir -p "$review_root/archive"; then
+        echo "ERROR: Failed to create $review_root/archive. Nothing was archived." >&2
+        return 1
+    fi
+    local archive_base="$review_root/archive/${timestamp}"
+    local archive_dir="$archive_base"
+    local suffix=2
+    while ! mkdir "$archive_dir" 2>/dev/null; do
+        if [[ ! -d "$archive_dir" ]]; then
+            echo "ERROR: Failed to create archive directory $archive_dir. Nothing was archived." >&2
+            return 1
+        fi
+        archive_dir="${archive_base}-${suffix}"
+        suffix=$((suffix + 1))
+    done
+    if ! mkdir -p "$archive_dir/notes"; then
+        echo "ERROR: Failed to create $archive_dir/notes. Nothing was archived." >&2
+        return 1
+    fi
 
     # Generate summary.json before moving artifacts (non-critical, must not block archiving)
     generate_archive_summary "$state_dir" "$archive_dir" "$timestamp" || \
         echo "WARNING: Failed to generate summary.json for archive." >&2
 
-    # Move artifacts
-    for f in state.json verdict.txt last_response.txt STATUS.md; do
-        [[ -f "$state_dir/$f" ]] && mv "$state_dir/$f" "$archive_dir/"
-    done
-    mv "$state_dir"/codex-*.log "$archive_dir/" 2>/dev/null || true
+    # Move artifacts. A failure here leaves an artifact under a name the next
+    # session reuses, so it stops the archiver instead of passing for success.
+    archive_move "$archive_dir" \
+        "$state_dir/state.json" "$state_dir/verdict.txt" \
+        "$state_dir/last_response.txt" "$state_dir/STATUS.md" || return 1
+    archive_move "$archive_dir" "$state_dir"/codex-*.log || return 1
     # Requests travel with the logs of the attempts that sent them: left behind,
     # they would be overwritten once a new session reuses the attempt numbers.
-    mv "$state_dir"/codex-*.request.md "$archive_dir/" 2>/dev/null || true
+    archive_move "$archive_dir" "$state_dir"/codex-*.request.md || return 1
     # The prompts travel with them: codex-init.prompt.md carries a fixed name, so
     # a new session would overwrite it where it stands.
-    mv "$state_dir"/codex-*.prompt.md "$archive_dir/" 2>/dev/null || true
-    mv "$state_dir"/notes/*.md "$archive_dir/notes/" 2>/dev/null || true
+    archive_move "$archive_dir" "$state_dir"/codex-*.prompt.md || return 1
+    # So do the replies of rounds that came back without a verdict — they are
+    # named after the attempt, and a new session reuses those numbers.
+    archive_move "$archive_dir" "$state_dir"/codex-*.reply.md || return 1
+    archive_move "$archive_dir/notes" "$state_dir"/notes/*.md || return 1
 
     echo "Previous session archived to: $archive_dir" >&2
 }

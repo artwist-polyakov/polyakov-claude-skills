@@ -169,12 +169,19 @@ fi
 # --- Load config & state ---
 REVIEW_ROOT="$(get_review_root)"
 load_config "$REVIEW_ROOT"
+
+# The limit is checked as soon as both of its sources are known and before
+# anything else runs — the codex probe included: it reaches state.json as a JSON
+# number, and a value the file cannot hold would otherwise surface only at the
+# write that follows the codex call, with the session already opened.
+MAX_ITERATIONS="$(state_counter_value "${MAX_ITER:-$CODEX_MAX_ITERATIONS}" "the iteration limit" \
+    'Pass --max-iter <N>, or fix CODEX_MAX_ITERATIONS in .codex-review/config.env.')" || exit 1
+
 check_codex_installed
 
 STATE_DIR="$(get_state_dir "$REVIEW_ROOT")"
 unset REVIEW_ROOT
 
-MAX_ITERATIONS="${MAX_ITER:-$CODEX_MAX_ITERATIONS}"
 SESSION_ID="$(get_effective_session_id)"
 
 # --- Build the flags shared by every codex exec call ---
@@ -301,33 +308,22 @@ resolve_new_session_id() {
     echo "$new_session_id"
 }
 
-# --- Read verdict from file, fallback to text parsing ---
-read_verdict() {
-    local output="$1"
-    local verdict_file="$STATE_DIR/verdict.txt"
-
-    # Primary: read from verdict file (format-agnostic via helper)
-    local file_verdict
-    file_verdict="$(parse_verdict_file "$verdict_file")"
-    if [[ "$file_verdict" == "APPROVED" || "$file_verdict" == "CHANGES_REQUESTED" ]]; then
-        echo "$file_verdict"
-        return
-    fi
-
-    # Fallback: parse response text
-    if echo "$output" | grep -qiE '(^|\W)APPROVED(\W|$)'; then
-        echo "APPROVED"
-    else
-        echo "CHANGES_REQUESTED"
-    fi
-}
-
 # --- Save review note ---
 save_note() {
     local phase="$1"
     local iteration="$2"
     local content="$3"
-    local note_file="$STATE_DIR/notes/${phase}-review-${iteration}.md"
+    # The iteration number is not unique over the life of a branch:
+    # `codex-state.sh reset` starts the count over while the notes of the
+    # previous cycle stay on disk. A taken name is stepped over the way
+    # next_attempt_log steps over a taken log.
+    local note_base="$STATE_DIR/notes/${phase}-review-${iteration}"
+    local note_file="${note_base}.md"
+    local attempt=2
+    while [[ -e "$note_file" ]]; do
+        note_file="${note_base}.${attempt}.md"
+        attempt=$((attempt + 1))
+    done
     {
         echo "# $(echo "$phase" | awk '{print toupper(substr($0,1,1)) substr($0,2)}') Review #${iteration}"
         echo "Date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -365,16 +361,15 @@ update_state() {
     local task_desc
     task_desc="$(read_state_field "task_description")"
 
-    write_state "{
-  \"session_id\": \"$SESSION_ID\",
-  \"phase\": \"$phase\",
-  \"iteration\": $iteration,
-  \"max_iterations\": $MAX_ITERATIONS,
-  \"last_review_status\": \"$status\",
-  \"last_review_timestamp\": \"$timestamp\",
-  \"reviews_completed\": $reviews_completed,
-  \"task_description\": \"$task_desc\"
-}"
+    write_state_fields \
+        session_id="$SESSION_ID" \
+        phase="$phase" \
+        iteration="$iteration" \
+        max_iterations="$MAX_ITERATIONS" \
+        last_review_status="$status" \
+        last_review_timestamp="$timestamp" \
+        reviews_completed="$reviews_completed" \
+        task_description="$task_desc"
 }
 
 # --- Format output ---
@@ -486,11 +481,11 @@ NARROW_FROM_ROUND=3
 # --- Rounds that actually produced a review ---
 # `reviews_completed` in state.json counts the rounds of the current review
 # cycle that came back with a review. It is what narrowing is measured against:
-# the iteration counter advances on a failed codex call too (see the ERROR
-# branch in cmd_review), and note files outlive `codex-state.sh reset`, so
-# neither of those tracks the current cycle. Reset to 0 by init, by a phase
-# change, and by `codex-state.sh reset`; a state.json written before this field
-# existed reads as 0.
+# a run that came back without a verdict advances neither counter, a run that
+# came back with one advances both, and note files outlive
+# `codex-state.sh reset`, so the notes on disk do not track the current cycle.
+# Reset to 0 by init, by a phase change, and by `codex-state.sh reset`; a
+# state.json written before this field existed reads as 0.
 
 late_round_narrowing() {
     local round="$1"
@@ -648,16 +643,15 @@ cmd_init() {
     # Extract session_id
     SESSION_ID="$(resolve_new_session_id "$marker" "$log_file")"
 
-    write_state "{
-  \"session_id\": \"$SESSION_ID\",
-  \"phase\": \"initialized\",
-  \"iteration\": 0,
-  \"max_iterations\": $MAX_ITERATIONS,
-  \"last_review_status\": \"\",
-  \"last_review_timestamp\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
-  \"reviews_completed\": 0,
-  \"task_description\": \"$TASK_LABEL_JSON\"
-}"
+    write_state_fields \
+        session_id="$SESSION_ID" \
+        phase="initialized" \
+        iteration=0 \
+        max_iterations="$MAX_ITERATIONS" \
+        last_review_status="" \
+        last_review_timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+        reviews_completed=0 \
+        task_description="$TASK_LABEL_JSON"
 
     write_status
     echo "Session created: $SESSION_ID"
@@ -688,16 +682,15 @@ cmd_review() {
     if [[ -n "$previous_phase" && "$previous_phase" != "$phase" ]]; then
         local task_desc
         task_desc="$(read_state_field "task_description")"
-        write_state "{
-  \"session_id\": \"$SESSION_ID\",
-  \"phase\": \"$previous_phase\",
-  \"iteration\": 0,
-  \"max_iterations\": $MAX_ITERATIONS,
-  \"last_review_status\": \"\",
-  \"last_review_timestamp\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
-  \"reviews_completed\": 0,
-  \"task_description\": \"$task_desc\"
-}"
+        write_state_fields \
+            session_id="$SESSION_ID" \
+            phase="$previous_phase" \
+            iteration=0 \
+            max_iterations="$MAX_ITERATIONS" \
+            last_review_status="" \
+            last_review_timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+            reviews_completed=0 \
+            task_description="$task_desc"
         echo "Phase changed ($previous_phase → $phase), iteration counter reset." >&2
     fi
 
@@ -728,19 +721,22 @@ cmd_review() {
     fi
 
     local codex_prompt
-    # Narrowing counts rounds that came back with a review, not iterations: a
-    # failed codex call advances the iteration counter without reviewing anything.
+    # Narrowing counts rounds that came back with a review. A call that came
+    # back without a verdict advances neither counter, and a counter moved by
+    # hand does not make a round, so the two numbers can differ.
     local reviews_completed review_round
     reviews_completed="$(read_state_number "reviews_completed")"
     review_round=$((reviews_completed + 1))
 
     codex_prompt="$(build_review_prompt "$phase" "$DESCRIPTION" "$review_round")"
 
-    # Clean previous verdict before calling codex
-    rm -f "$STATE_DIR/verdict.txt"
+    # Both files this run is read back through are cleared before the call, so
+    # whatever is found afterwards was written by this run. A reply left by the
+    # previous round would otherwise be filed as this round's note.
+    local output_file="$STATE_DIR/last_response.txt"
+    rm -f "$STATE_DIR/verdict.txt" "$output_file"
 
     # Call codex with resume
-    local output_file="$STATE_DIR/last_response.txt"
     local log_file
     log_file="$(next_attempt_log "$STATE_DIR/codex-${phase}-${next_iteration}")"
 
@@ -755,24 +751,57 @@ cmd_review() {
     echo "Sending $phase for review (iteration ${next_iteration}/${MAX_ITERATIONS})..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
 
+    local exit_code=0
     run_codex_exec \
         -o "$output_file" \
         resume "$SESSION_ID" \
-        - < "$prompt_file" > "$log_file" 2>&1 || {
-        local exit_code=$?
-        echo "ERROR: Codex exec failed (exit $exit_code)." >&2
-        cat "$log_file" >&2
-        # The call reviewed nothing, so the round count stands where it was.
-        update_state "$phase" "$next_iteration" "ERROR" "$reviews_completed"
-        exit 1
-    }
+        - < "$prompt_file" > "$log_file" 2>&1 || exit_code=$?
+
+    # The verdict file is the whole answer. It is removed before every request,
+    # so a valid word in it was written by this run: the review happened, the
+    # round is spent and that word is the verdict, whatever the exit status says
+    # afterwards. Nothing in it means no round — an exhausted quota, a dropped
+    # network, a dead session or a reviewer that answered without deciding would
+    # otherwise walk the counter to the limit and escalate a cycle in which
+    # nothing was ever settled.
+    local status
+    status="$(parse_verdict_file "$STATE_DIR/verdict.txt")"
 
     local output
     output=$(cat "$output_file" 2>/dev/null || echo "")
 
-    # Read verdict (file → fallback to text parsing)
-    local status
-    status="$(read_verdict "$output")"
+    if [[ -z "$status" ]]; then
+        if [[ $exit_code -ne 0 ]]; then
+            echo "ERROR: Codex exec failed (exit $exit_code)." >&2
+            cat "$log_file" >&2
+        else
+            echo "ERROR: the reviewer returned no verdict." >&2
+            echo "Expected APPROVED or CHANGES_REQUESTED in $STATE_DIR/verdict.txt." >&2
+        fi
+        # The reply is kept beside the attempt's own log rather than filed as a
+        # round's note: there was no round to file it under, and the next
+        # attempt reuses the same iteration number.
+        if [[ -n "${output//[[:space:]]/}" ]]; then
+            printf '%s' "$output" > "${log_file%.log}.reply.md"
+            echo "The reply is kept in ${log_file%.log}.reply.md" >&2
+        fi
+        # STATUS.md is rewritten too: left alone it keeps showing the previous
+        # round and its status, and the error stays invisible in the file a
+        # human reads.
+        update_state "$phase" "$current_iteration" "ERROR" "$reviews_completed"
+        write_status
+        echo "Iteration not consumed: still ${current_iteration}/${MAX_ITERATIONS}." >&2
+        exit 1
+    fi
+
+    if [[ $exit_code -ne 0 ]]; then
+        echo "WARNING: codex exec exited $exit_code after writing its verdict; the round counts." >&2
+        # The call died before writing a reply. The note says that rather than
+        # sitting there empty.
+        if [[ -z "${output//[[:space:]]/}" ]]; then
+            output="codex exec exited $exit_code after writing the verdict $status. No reply text was saved; the run is logged in ${log_file##*/}, one level up from this note."
+        fi
+    fi
 
     # Save note
     save_note "$phase" "$next_iteration" "$output"

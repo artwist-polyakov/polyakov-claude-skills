@@ -58,6 +58,38 @@ ensure_user_id() {
 
 # --------------- Host resolution ---------------
 
+# normalize_host_search <domain_or_url> — IDN ввод в формате ASCII-кеша.
+normalize_host_search() {
+    if ! printf '%s' "$1" | LC_ALL=C grep -q '[^ -~]'; then
+        printf '%s' "$1"
+        return 0
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "Error: для поиска кириллического домена нужен python3; можно указать домен в xn--… или --host-id." >&2
+        return 1
+    fi
+    python3 - "$1" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+try:
+    value = sys.argv[1].strip()
+    prefix = "" if "://" in value or value.startswith("//") else "//"
+    url = urlsplit(prefix + value)
+    if not url.hostname or url.username is not None:
+        raise ValueError("ожидается домен или URL сайта без учётных данных")
+    if url.hostname.isascii():
+        print(value)
+    else:
+        host = url.hostname.encode("idna").decode("ascii")
+        netloc = host if url.port is None else f"{host}:{url.port}"
+        print(url._replace(netloc=netloc).geturl()[len(prefix):])
+except (UnicodeError, ValueError) as error:
+    print(f"Error: не удалось преобразовать домен в IDNA: {error}", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 # resolve_host — sets HOST_ID from --host (domain search) or --host-id (direct)
 # Requires USER_ID to be set (call ensure_user_id first)
 resolve_host() {
@@ -66,12 +98,13 @@ resolve_host() {
     fi
 
     if [ -n "$HOST_SEARCH" ]; then
+        _rh_search=$(normalize_host_search "$HOST_SEARCH") || return 1
         _rh_tsv="$CACHE_DIR/hosts.tsv"
         if [ ! -f "$_rh_tsv" ] || [ ! -s "$_rh_tsv" ]; then
             _refresh_hosts_cache
         fi
 
-        _rh_match=$(grep -i "$HOST_SEARCH" "$_rh_tsv" | head -1)
+        _rh_match=$(grep -i -- "$_rh_search" "$_rh_tsv" | head -1)
         if [ -z "$_rh_match" ]; then
             echo "Error: no host matching '$HOST_SEARCH' in cache." >&2
             echo "Run: bash scripts/hosts.sh --no-cache" >&2

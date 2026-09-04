@@ -96,12 +96,17 @@ while [ $# -gt 0 ]; do
         *) prompt="$1"; shift ;;
     esac
 done
-if [ -n "$FAKE_CODEX_PROMPT" ]; then
-    if [ -n "$from_stdin" ]; then
-        cat > "$FAKE_CODEX_PROMPT"
-    elif [ -n "$prompt" ]; then
-        printf '%s' "$prompt" > "$FAKE_CODEX_PROMPT"
-    fi
+if [ -n "$from_stdin" ]; then
+    _prompt="$(mktemp)"
+    cat > "$_prompt"
+    [ -n "$FAKE_CODEX_PROMPT" ] && cp "$_prompt" "$FAKE_CODEX_PROMPT"
+    # The prompt names the file a reviewer writes its verdict to, and a review
+    # only counts when that file holds one.
+    _verdict_file="$(sed -n 's|^After your review, write your verdict to \(.*\)$|\1|p' "$_prompt" | head -1)"
+    [ -n "$_verdict_file" ] && printf 'APPROVED\n' > "$_verdict_file"
+    rm -f "$_prompt"
+elif [ -n "$FAKE_CODEX_PROMPT" ] && [ -n "$prompt" ]; then
+    printf '%s' "$prompt" > "$FAKE_CODEX_PROMPT"
 fi
 [ -n "$out" ] && printf 'APPROVED\n' > "$out"
 # Printed to the run log, where `init` looks for the new session id.

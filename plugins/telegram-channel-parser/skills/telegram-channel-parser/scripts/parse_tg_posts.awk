@@ -7,29 +7,56 @@
 # fwd_link = link to original post (empty if original)
 # media_url = first image/video thumbnail URL (empty if no media)
 
-BEGIN { OFS = "\t"; id = ""; date = ""; views = ""; text = ""; reactions = 0; fwd_from = ""; fwd_link = ""; media_url = ""; in_text = 0 }
+BEGIN { OFS = "\t"; id = ""; date = ""; views = ""; text = ""; reactions = 0; fwd_from = ""; fwd_link = ""; media_url = ""; text_depth = 0; text_done = 0; unsupported = 0 }
+
+function has_class(tag, name,    classes) {
+    if (!match(tag, /class="[^"]*"/)) return 0
+    classes = substr(tag, RSTART + 7, RLENGTH - 8)
+    return classes ~ ("(^|[[:space:]])" name "([[:space:]]|$)")
+}
+
+# Select the post body, not a reply preview, and track its nested divs.
+function collect_text(line,    tag, prefix) {
+    while (match(line, /<\/?div([[:space:]][^>]*)?>/)) {
+        prefix = substr(line, 1, RSTART - 1)
+        tag = substr(line, RSTART, RLENGTH)
+        line = substr(line, RSTART + RLENGTH)
+
+        if (has_class(tag, "message_media_not_supported")) unsupported = 1
+
+        if (text_depth > 0) {
+            text = text prefix
+            if (tag ~ /^<\/div/) {
+                if (text_depth > 1) text = text (quote_div[text_depth] ? "</blockquote>" : " ")
+                delete quote_div[text_depth]
+                text_depth--
+                if (text_depth == 0) text_done = 1
+            } else {
+                text_depth++
+                quote_div[text_depth] = tag ~ /class="[^"]*quote[^"]*"/
+                text = text (quote_div[text_depth] ? "<blockquote>" : " ")
+            }
+        } else if (!text_done && has_class(tag, "tgme_widget_message_text") && !has_class(tag, "js-message_reply_text")) {
+            text_depth = 1
+        }
+    }
+    if (text_depth > 0) text = text line " "
+}
+
+function print_post(    body) {
+    if (id == "") return
+    body = clean_text(text)
+    if (body == "" && unsupported) {
+        body = "[Текст недоступен в веб-превью Telegram: https://t.me/" post_path "]"
+    }
+    gsub(/[[:space:]]/, "", views)
+    print id, date, views, (reactions == 0 ? "" : reactions), fwd_from, fwd_link, body, media_url
+}
 
 function clean_text(t) {
     gsub(/[\t\n\r]+/, " ", t)
     # Convert tg_spoiler class
     gsub(/class="tg_spoiler"/, "class=\"tg-spoiler\"", t)
-    # Convert Telegram blockquote: opening div → <blockquote>, its closing </div> → </blockquote>
-    # Mark quote-divs before stripping all divs
-    gsub(/<div[^>]*class="[^"]*quote[^"]*"[^>]*>/, "<!BQ>", t)
-    # Strip all div tags (open and close)
-    gsub(/<\/?div[^>]*>/, "", t)
-    # Now restore blockquotes — each <!BQ> needs a closing tag
-    # Simple approach: replace markers, then ensure balanced tags
-    gsub(/<!BQ>/, "<blockquote>", t)
-    # Ensure all blockquotes are closed — count and append missing closers
-    {
-        _open = 0; _close = 0
-        _tmp = t
-        while (match(_tmp, /<blockquote>/)) { _open++; _tmp = substr(_tmp, RSTART + RLENGTH) }
-        _tmp = t
-        while (match(_tmp, /<\/blockquote>/)) { _close++; _tmp = substr(_tmp, RSTART + RLENGTH) }
-        while (_close < _open) { t = t "</blockquote>"; _close++ }
-    }
     # Preserve spoiler spans, remove all other spans
     gsub(/<span[^>]*tg-spoiler[^>]*>/, "<!SPOILER>", t)
     gsub(/<\/?span[^>]*>/, "", t)
@@ -62,16 +89,13 @@ function clean_text(t) {
 }
 
 /data-post=/ {
-    if (id != "") {
-        text = clean_text(text)
-        gsub(/[[:space:]]/, "", views)
-        if (reactions == 0) reactions = ""
-        print id, date, views, reactions, fwd_from, fwd_link, text, media_url
-    }
-    id = ""; date = ""; views = ""; text = ""; reactions = 0; fwd_from = ""; fwd_link = ""; media_url = ""; in_text = 0
-    tmp = $0
-    sub(/.*data-post="[^"]*\//, "", tmp)
-    sub(/".*/, "", tmp)
+    print_post()
+    id = ""; date = ""; views = ""; text = ""; reactions = 0; fwd_from = ""; fwd_link = ""; media_url = ""; text_depth = 0; text_done = 0; unsupported = 0
+    post_path = $0
+    sub(/.*data-post="/, "", post_path)
+    sub(/".*/, "", post_path)
+    tmp = post_path
+    sub(/.*\//, "", tmp)
     if (tmp ~ /^[0-9]+$/) id = tmp
 }
 
@@ -123,34 +147,7 @@ id != "" && /tgme_widget_message_video_thumb/ && media_url == "" {
     }
 }
 
-# Multi-line text capture: start collecting when we see tgme_widget_message_text
-id != "" && /tgme_widget_message_text/ && text == "" && in_text == 0 {
-    in_text = 1
-    tmp = $0
-    sub(/.*tgme_widget_message_text[^>]*>/, "", tmp)
-    # Check if closing </div> is on the same line
-    if (tmp ~ /<\/div>/) {
-        sub(/<\/div>.*/, "", tmp)
-        text = tmp
-        in_text = 0
-    } else {
-        text = tmp
-    }
-    next
-}
-
-# Continue collecting text lines until closing </div>
-in_text == 1 {
-    tmp = $0
-    if (tmp ~ /<\/div>/) {
-        sub(/<\/div>.*/, "", tmp)
-        text = text " " tmp
-        in_text = 0
-    } else {
-        text = text " " tmp
-    }
-    next
-}
+id != "" { collect_text($0) }
 
 id != "" && /tgme_reaction/ {
     tmp = $0
@@ -163,10 +160,5 @@ id != "" && /tgme_reaction/ {
 }
 
 END {
-    if (id != "") {
-        text = clean_text(text)
-        gsub(/[[:space:]]/, "", views)
-        if (reactions == 0) reactions = ""
-        print id, date, views, reactions, fwd_from, fwd_link, text, media_url
-    }
+    print_post()
 }

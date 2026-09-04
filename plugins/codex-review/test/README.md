@@ -13,6 +13,10 @@ test/
 ├── test-auto-approve-plan.sh   # unit tests for the auto-approve hook
 ├── test-integration.sh         # path-contract tests (hook ↔ state dir)
 ├── test-state-cache.sh         # cached state path and batched STATUS.md reads
+├── test-state-set.sh           # `codex-state.sh set`, one state.json writer
+├── test-failure-iteration.sh   # what a failed codex call costs
+├── test-verdict-source.sh      # the verdict file decides, the reply never does
+├── test-state-durability.sh    # what survives a write, a reset and a second archiver
 ├── test-description-file.sh    # --description-file, per-attempt logs, saved request
 ├── test-severity-calibration.sh # severity scale, finding headings, verdict threshold
 ├── test-exec-flags.sh          # model, reasoning effort, and Fast mode on every call
@@ -92,6 +96,38 @@ Run:
 
 ```sh
 sh plugins/codex-review/test/test-state-cache.sh
+```
+
+## test-state-set.sh
+
+Regression tests for `codex-state.sh set` and for `render_state_fields` in
+`common.sh` — the one place that describes the shape of `state.json`.
+
+Scenarios:
+
+1. The three counters (`iteration`, `max_iterations`, `reviews_completed`) are
+   actually written, a counter can be set back to zero, and `STATUS.md` follows
+   the stored numbers.
+2. An unknown field name and a counter value that is not a non-negative integer
+   exit `1` with a message naming the field, and leave `state.json` byte for
+   byte as it was.
+3. Writing one field keeps every other field, `reviews_completed` included.
+4. A value `state.json` could not give back unchanged — a double quote, a
+   backslash, a second line, a control character — is refused rather than
+   stored or repaired, and an ordinary value is stored exactly as passed.
+5. `set` against a missing `state.json` writes the whole file, with
+   `max_iterations` taken from `config.env`.
+6. The renderer refuses a field left out, a field given twice, and an argument
+   without a name; neither entry script carries its own copy of the file's
+   literal.
+
+Does **not** require the `codex` binary. JSON validity is asserted through
+`python3` or `jq`; that one assertion is skipped if neither is available.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-state-set.sh
 ```
 
 ## test-description-file.sh
@@ -180,9 +216,10 @@ Scenarios:
    `minor` unless it is `critical`.
 5. `CODEX_SEVERITY_CALIBRATION=false` restores the previous prompt: no scale, no
    headings, and the two original verdict lines back in place.
-6. A codex call that fails spends an iteration but no round: after a failed call
-   the next two reviews still carry no narrowing, the third one does, and it
-   reports the round number the reviews earned rather than the iteration counter.
+6. A codex call that fails spends neither a round nor an iteration: after a
+   failed call the next two reviews still carry no narrowing and the third one
+   does. A counter moved on its own does not become the round number — the
+   review sent under iteration 5 reports round 3.
 7. Clearing the cycle with the state helper starts the round count over — notes
    from the previous cycle survive it and must not push the next review into a
    narrowed round.
@@ -236,6 +273,112 @@ Run:
 
 ```sh
 sh plugins/codex-review/test/test-exec-flags.sh
+```
+
+## test-failure-iteration.sh
+
+Regression tests for what a `codex exec` that fails costs the review cycle.
+
+Scenarios:
+
+1. A call that comes back with nothing exits `1`, leaves both counters where
+   they were, stores `ERROR`, writes no review note, and says the iteration was
+   not consumed.
+2. `STATUS.md` is rewritten for that failure instead of keeping the previous
+   round and its status.
+3. Six failures in a row leave the counter at zero — a run of dropped calls
+   cannot walk a cycle to its limit and escalate a review that never happened.
+4. A review that does come back spends its iteration and its round.
+5. A call that wrote its verdict and then died still counts: the round is spent,
+   the rescued verdict is the stored status, and the note says the reply was
+   never written rather than carrying the previous round's reply.
+6. A stale reply file on disk does not rescue a failed call.
+7. A rescued `APPROVED` closes the cycle the same way a normal one does, down to
+   removing `STATUS.md`.
+
+Does **not** require the `codex` binary — a stub on `PATH` is told per call
+whether to fail and whether to leave a verdict behind first.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-failure-iteration.sh
+```
+
+## test-verdict-source.sh
+
+Regression tests for where the verdict comes from. The verdict file is the whole
+answer; the reply text never decides.
+
+Scenarios:
+
+1. A reply saying "Not APPROVED; changes are required" approves nothing: the run
+   exits `1`, stores `ERROR` and spends no iteration.
+2. A reply holding the word `APPROVED` decides nothing either, and no note is
+   filed for a round that did not happen.
+3. That reply is kept beside the attempt's log as `codex-<phase>-<N>.reply.md`,
+   and the run says where it is.
+4. The verdict file decides against the reply, both ways round, and those rounds
+   are spent.
+5. A verdict file holding anything but the two words — `APPROVED with caveats`,
+   `approved`, `LGTM`, nothing at all — is no verdict.
+6. A verdict written with blank lines and spaces around it still counts.
+7. A kept reply is archived with the session it belongs to, so the next session
+   reusing that attempt number cannot overwrite it.
+
+Does **not** require the `codex` binary — a stub on `PATH` is told per call what
+to write as the reply and what to write to the verdict file the prompt names.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-verdict-source.sh
+```
+
+## test-state-durability.sh
+
+Regression tests for four ways the plugin used to lose or invent something it
+had on disk, and for the archiver reporting what it could not do.
+
+Scenarios:
+
+1. A write that dies part way through leaves the previous `state.json` intact.
+   `ulimit -f 0` lets the file be created but not filled, which is the shape of
+   a full disk; a control write without that limit proves the call under test
+   does reach the file.
+2. A temporary file left behind by such a killed write is removed by the next
+   write, while one belonging to a process that is still running is left alone.
+3. `get` answers with what the field holds: an empty string field reads as
+   empty rather than as `0`, a counter reads as a number, and an unknown field
+   exits `1` naming what can be read.
+4. Notes of an earlier cycle survive `codex-state.sh reset` — the next cycle's
+   first round takes the next free name instead of overwriting them.
+5. Two archive runs that claim their directory at the same moment get one
+   each. Both are pinned to the same second by a `date` stub on `PATH` and
+   released together by a gate file, and they archive two state directories
+   under one review root, so they compete for the name and nothing else.
+6. An archive directory that cannot be created ends the run with an error and
+   leaves the artefacts where they are. This covers the case a loop watching
+   only `mkdir` would mistake for a name collision, and the archive root that
+   cannot be made at all.
+7. An artifact that cannot be moved into the archive stops the archiver and is
+   named in the error.
+
+Scenarios 6 and 7 get their failures from `mkdir` and `mv` stubs that refuse the
+target named in an environment variable, so the outcome does not depend on who
+runs the suite — a file permission means nothing to a superuser, which is who
+runs a container by default.
+
+Does **not** require the `codex` binary — a stub on `PATH` plays the reviewer.
+`common.sh` is a bash script, so the calls into it run under `bash` even though
+the suite itself is POSIX `sh`. Runs that would otherwise never end are bounded
+by `timeout`, or by `gtimeout` where GNU coreutils arrives under that name; the
+suite stops with an explanation when neither is on `PATH`.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-state-durability.sh
 ```
 
 ## test-e2e.sh
@@ -316,5 +459,5 @@ scenario — as an `init` task and as a code description, not as plans:
 
 ## Exit codes
 
-All six scripts exit `0` on success and `1` if any assertion failed.
+All eleven scripts exit `0` on success and `1` if any assertion failed.
 `test-e2e.sh` additionally exits `0` (skip) when `CODEX_E2E` is not set.

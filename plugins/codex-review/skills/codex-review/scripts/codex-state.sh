@@ -20,7 +20,15 @@ cmd_show() {
         # Replace session_id in output with effective value (config.env takes priority)
         sed "s|\"session_id\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"session_id\": \"$effective_sid\"|" "$STATE_FILE"
     else
-        echo "{\"session_id\":\"$effective_sid\",\"phase\":\"\",\"iteration\":0,\"max_iterations\":3,\"last_review_status\":\"\",\"last_review_timestamp\":\"\",\"reviews_completed\":0,\"task_description\":\"\"}"
+        render_state_fields \
+            session_id="$effective_sid" \
+            phase="" \
+            iteration=0 \
+            max_iterations="$CODEX_MAX_ITERATIONS" \
+            last_review_status="" \
+            last_review_timestamp="" \
+            reviews_completed=0 \
+            task_description=""
     fi
 }
 
@@ -34,16 +42,15 @@ cmd_reset() {
         local session_id task_desc
         session_id="$(get_effective_session_id)"
         task_desc="$(read_state_field "task_description")"
-        write_state "{
-  \"session_id\": \"$session_id\",
-  \"phase\": \"\",
-  \"iteration\": 0,
-  \"max_iterations\": $CODEX_MAX_ITERATIONS,
-  \"last_review_status\": \"\",
-  \"last_review_timestamp\": \"\",
-  \"reviews_completed\": 0,
-  \"task_description\": \"$task_desc\"
-}"
+        write_state_fields \
+            session_id="$session_id" \
+            phase="" \
+            iteration=0 \
+            max_iterations="$CODEX_MAX_ITERATIONS" \
+            last_review_status="" \
+            last_review_timestamp="" \
+            reviews_completed=0 \
+            task_description="$task_desc"
         write_status
         echo "Reset complete (session_id preserved)."
     fi
@@ -59,34 +66,71 @@ cmd_get() {
         parse_verdict_file "$STATE_DIR/verdict.txt"
         return
     fi
-    local val
-    val="$(read_state_field "$field")"
-    if [[ -z "$val" ]]; then
-        val="$(read_state_number "$field")"
-    fi
-    echo "$val"
+    # The reader is chosen by the field, not by what the first one returned:
+    # asking a string reader for an empty value and then retrying with the
+    # numeric one answered 0 for a field that holds an empty string, and for a
+    # field that does not exist at all.
+    case " $STATE_STRING_FIELDS " in
+        *" $field "*) read_state_field "$field"; return ;;
+    esac
+    case " $STATE_NUMBER_FIELDS " in
+        *" $field "*) read_state_number "$field"; return ;;
+    esac
+
+    echo "ERROR: Unsupported state field: $field" >&2
+    echo "Known fields: $STATE_STRING_FIELDS $STATE_NUMBER_FIELDS" >&2
+    echo "Also readable: session_id (config.env wins), verdict (from verdict.txt)" >&2
+    exit 1
 }
 
 cmd_set() {
     local field="${1:?Usage: codex-state.sh set <field> <value>}"
     local value="${2:?Usage: codex-state.sh set <field> <value>}"
 
-    if [[ ! -f "$STATE_FILE" ]]; then
-        write_state "{
-  \"session_id\": \"\",
-  \"phase\": \"\",
-  \"iteration\": 0,
-  \"max_iterations\": 3,
-  \"last_review_status\": \"\",
-  \"last_review_timestamp\": \"\",
-  \"reviews_completed\": 0,
-  \"task_description\": \"\"
-}"
+    case " $STATE_STRING_FIELDS $STATE_NUMBER_FIELDS " in
+        *" $field "*) ;;
+        *)
+            echo "ERROR: Unsupported state field: $field" >&2
+            echo "Known fields: $STATE_STRING_FIELDS $STATE_NUMBER_FIELDS" >&2
+            exit 1
+            ;;
+    esac
+
+    # The whole file is rewritten from its current values with the one field
+    # replaced. Patching the stored text in place could only reach the fields
+    # written as JSON strings, so the three counters stayed as they were while
+    # the command still reported the new value.
+    local state_json=""
+    if [[ -f "$STATE_FILE" ]]; then
+        state_json="$(<"$STATE_FILE")"
     fi
 
-    local tmp
-    tmp=$(sed "s|\"$field\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"$field\": \"$value\"|" "$STATE_FILE")
-    echo "$tmp" > "$STATE_FILE"
+    local session_id phase last_review_status last_review_timestamp task_description
+    local iteration max_iterations reviews_completed
+    session_id="$(read_state_field session_id "$state_json")"
+    phase="$(read_state_field phase "$state_json")"
+    last_review_status="$(read_state_field last_review_status "$state_json")"
+    last_review_timestamp="$(read_state_field last_review_timestamp "$state_json")"
+    task_description="$(read_state_field task_description "$state_json")"
+    iteration="$(read_state_number iteration "$state_json")"
+    reviews_completed="$(read_state_number reviews_completed "$state_json")"
+    if state_has_field max_iterations "$state_json"; then
+        max_iterations="$(read_state_number max_iterations "$state_json")"
+    else
+        max_iterations="$CODEX_MAX_ITERATIONS"
+    fi
+
+    printf -v "$field" '%s' "$value"
+
+    write_state_fields \
+        session_id="$session_id" \
+        phase="$phase" \
+        iteration="$iteration" \
+        max_iterations="$max_iterations" \
+        last_review_status="$last_review_status" \
+        last_review_timestamp="$last_review_timestamp" \
+        reviews_completed="$reviews_completed" \
+        task_description="$task_description"
     write_status
     echo "Set $field = $value"
 }
@@ -109,7 +153,7 @@ case "${1:-}" in
         echo "  reset             Reset iterations/phase (keep session_id)"
         echo "  reset --full      Full reset + delete notes"
         echo "  get <field>       Get a single field (special: 'verdict' reads verdict.txt)"
-        echo "  set <field> <val> Set a field (e.g. session_id)"
+        echo "  set <field> <val> Set a field: $STATE_STRING_FIELDS $STATE_NUMBER_FIELDS"
         exit 1
         ;;
 esac

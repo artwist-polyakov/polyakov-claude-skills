@@ -136,7 +136,19 @@ bash scripts/codex-state.sh reset --full      # Полный сброс
 bash scripts/codex-state.sh get session_id    # Получить поле
 bash scripts/codex-state.sh set session_id <val>  # Установить вручную
 bash scripts/codex-state.sh set phase implementing  # Обновить фазу
+bash scripts/codex-state.sh set iteration 2       # Откатить счётчик кругов
 ```
+
+`get` возвращает значение поля как оно записано: пустое строковое поле — пустой
+строкой, счётчик — числом. Незнакомое имя поля — ошибка с кодом возврата 1.
+Особые имена: `session_id` (приоритет у `config.env`) и `verdict` (из
+`verdict.txt`).
+
+`set` принимает поля `session_id`, `phase`, `iteration`, `max_iterations`,
+`reviews_completed`, `last_review_status`, `last_review_timestamp`,
+`task_description`. Неизвестное имя поля, нецелое значение счётчика и значение
+с кавычкой, обратным слэшем, переводом строки или табуляцией — ошибка с кодом
+возврата 1, состояние не меняется.
 
 Для чтения файлов ревью (notes, STATUS.md и пр.) используй `codex-state.sh dir` — он вернёт абсолютный путь к каталогу текущей ветки.
 
@@ -149,6 +161,10 @@ bash scripts/codex-state.sh set phase implementing  # Обновить фазу
 | 1 | ERROR | Сообщи об ошибке, предложи проверить session_id |
 | 2 | ESCALATE | Оповести пользователя, выведи краткое резюме, предложи варианты (см. «Обработка ESCALATE») |
 | 3 | NO_SESSION | Спроси: создать сессию через `init`? |
+
+При `ERROR` круг не состоялся: итерация не израсходована, тот же запрос
+можно отправить повторно. Итерацию расходует прогон, который вернул вердикт,
+— даже если сам запуск завершился ошибкой после этого.
 
 ### Обработка ESCALATE (exit 2)
 
@@ -180,7 +196,7 @@ bash scripts/codex-state.sh set phase implementing  # Обновить фазу
 
 ## Verdict
 
-Codex пишет свой вердикт в `verdict.txt` внутри state-каталога ветки (одно слово: `APPROVED` или `CHANGES_REQUESTED`). **Для чтения вердикта используй `bash scripts/codex-state.sh get verdict`** — helper возвращает `APPROVED`, `CHANGES_REQUESTED` или пустую строку (нет/невалидно). Файл очищается перед каждым запросом ревью. Если Codex не создал файл — скрипт парсит вердикт из текста ответа (fallback). Плагинный хук `ExitPlanMode` дополнительно связывает вердикт с текущей Claude-сессией через `current_session.txt` в том же каталоге — verdict, пришедший из другой сессии, удаляется.
+Codex пишет свой вердикт в `verdict.txt` внутри state-каталога ветки (одно слово: `APPROVED` или `CHANGES_REQUESTED`). **Для чтения вердикта используй `bash scripts/codex-state.sh get verdict`** — helper возвращает `APPROVED`, `CHANGES_REQUESTED` или пустую строку (нет/невалидно). Файл очищается перед каждым запросом ревью, поэтому слово в нём написано текущим кругом. Вердикт берётся только отсюда: текст ответа на решение не влияет. Если после прогона в файле нет `APPROVED` или `CHANGES_REQUESTED` — круг не состоялся: скрипт возвращает `ERROR` (exit 1), итерация не расходуется, ответ ревьюера сохраняется рядом с логом попытки как `codex-<фаза>-<N>.reply.md`. Плагинный хук `ExitPlanMode` дополнительно связывает вердикт с текущей Claude-сессией через `current_session.txt` в том же каталоге — verdict, пришедший из другой сессии, удаляется.
 
 ## Разделы ответа ревьюера
 

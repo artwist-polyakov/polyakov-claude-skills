@@ -86,7 +86,16 @@ while [ $# -gt 0 ]; do
         *) shift ;;
     esac
 done
-[ -n "$from_stdin" ] && cat >/dev/null
+# The prompt names the file the reviewer writes its verdict to, and a review is
+# only counted when that file holds a verdict — so the stub writes it where the
+# prompt says, exactly as a reviewer does.
+if [ -n "$from_stdin" ]; then
+    _prompt="$(mktemp)"
+    cat > "$_prompt"
+    _verdict_file="$(sed -n 's|^After your review, write your verdict to \(.*\)$|\1|p' "$_prompt" | head -1)"
+    [ -n "$_verdict_file" ] && printf 'APPROVED\n' > "$_verdict_file"
+    rm -f "$_prompt"
+fi
 [ -n "$out" ] && printf 'APPROVED\n' > "$out"
 printf 'session sess_teststub01 ready\n'
 exit 0
