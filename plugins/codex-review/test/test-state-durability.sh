@@ -187,5 +187,31 @@ assert_contains "an unknown field lists what can be read" "verdict" "$out"
 
 assert_eq "session_id is still readable" "test-session" "$(state_cmd get session_id)"
 
+# ============================
+# Test 4: a reset does not put the next round's note over the previous one
+# ============================
+printf 'Test 4: notes of an earlier cycle survive a reset\n'
+
+state_cmd reset >/dev/null
+run_review
+FIRST_NOTE="$STATE_DIR/notes/code-review-1.md"
+if [ -f "$FIRST_NOTE" ]; then
+    pass "the first cycle leaves its note"
+else
+    fail "the first cycle leaves its note" "no note at $FIRST_NOTE"
+fi
+FIRST_CONTENT="$(cat "$FIRST_NOTE" 2>/dev/null || printf '<no note>')"
+
+state_cmd reset >/dev/null
+run_review
+assert_eq "the first note is untouched" "$FIRST_CONTENT" \
+    "$(cat "$FIRST_NOTE" 2>/dev/null || printf '<no note>')"
+if [ -f "$STATE_DIR/notes/code-review-1.2.md" ]; then
+    pass "the new cycle's note takes the next free name"
+else
+    fail "the new cycle's note takes the next free name" \
+        "$(find "$STATE_DIR/notes" -name 'code-review-*' | tr '\n' ' ')"
+fi
+
 printf '\nPASS: %d  FAIL: %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
