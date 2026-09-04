@@ -29,6 +29,11 @@ PLACEHOLDER_RE = re.compile(r"\b(TODO|TBD|PLACEHOLDER)\b|ЗАПОЛНИ|ЗАМЕ
 WORD_RE = re.compile(r"[\wА-Яа-яЁё]+", re.UNICODE)
 SEGMENT_RE = re.compile(r"(?<![\w-])seg-[0-9]+(?![\w-])")
 CLAIM_ID_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+ATX_HEADING_RE = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*$")
+SETEXT_RE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
+THEMATIC_BREAK_RE = re.compile(r"^ {0,3}(?:(?:\* *){3,}|(?:- *){3,}|(?:_ *){3,})$")
+LIST_RE = re.compile(r"^ {0,3}(?:[-+*]|[0-9]{1,9}[.)])(?P<padding> +)")
+FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 SOURCE_INDEX = "references/source-index.md"
 
 
@@ -70,18 +75,57 @@ def check_json(path: Path, errors: list[str]) -> object:
 
 
 def markdown_lines(text: str):
-    """Yield numbered lines outside fenced code blocks and HTML comments."""
+    """Yield visible lines and headings, excluding code blocks and comments."""
     marker = ""
     length = 0
     in_comment = False
+    in_indented_code = False
+    paragraph = []
+    list_indents = []
     for number, line in enumerate(text.splitlines(), start=1):
-        fence = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        line = line.expandtabs(4)
+        indent = len(line) - len(line.lstrip(" "))
+        lazy_continuation = bool(
+            paragraph and list_indents and line.strip() and indent < list_indents[-1]
+            and not ATX_HEADING_RE.match(line) and not THEMATIC_BREAK_RE.fullmatch(line)
+            and not LIST_RE.match(line) and not FENCE_RE.match(line)
+            and not line.lstrip().startswith((">", "<!--"))
+        )
+        # List continuation is prose; code needs four *additional* spaces.
+        while not lazy_continuation and line.strip() and list_indents and indent < list_indents[-1]:
+            list_indents.pop()
+            paragraph.clear()
+            marker = ""
+            in_indented_code = False
+        container_indent = list_indents[-1] if list_indents else 0
+        if not lazy_continuation:
+            line = line[container_indent:]
+        if not marker and not in_comment:
+            if in_indented_code and (not line.strip() or line.startswith("    ")):
+                continue
+            in_indented_code = False
+            # Indented code cannot interrupt an existing paragraph.
+            if not paragraph and line.startswith("    "):
+                in_indented_code = True
+                continue
+            item = LIST_RE.match(line)
+            if item and not THEMATIC_BREAK_RE.fullmatch(line):
+                padding = len(item.group("padding"))
+                content_start = item.start("padding") + (padding if padding <= 4 else 1)
+                list_indents.append(container_indent + content_start)
+                line = line[content_start:]
+                paragraph.clear()
+                if line.startswith("    "):
+                    in_indented_code = True
+                    continue
+        fence = FENCE_RE.match(line)
         if fence and not in_comment:
             run, tail = fence.groups()
             if not marker:
                 marker, length = run[0], len(run)
             elif run[0] == marker and len(run) >= length and not tail.strip():
                 marker = ""
+            paragraph.clear()
             continue
         if marker:
             continue
@@ -89,10 +133,28 @@ def markdown_lines(text: str):
             _, closed, line = line.partition("-->")
             if not closed:
                 continue
+            paragraph.clear()
         line = re.sub(r"<!--.*?-->", "", line)
         line, opened, _ = line.partition("<!--")
         in_comment = bool(opened)
-        yield number, line
+
+        heading = None
+        atx = ATX_HEADING_RE.match(line)
+        setext = SETEXT_RE.fullmatch(line)
+        if atx:
+            level, title = atx.groups()
+            heading = (len(level), re.sub(r"[ \t]+#+$", "", title), True)
+            paragraph.clear()
+        elif setext and paragraph and not lazy_continuation:
+            heading = (1 if setext.group(1)[0] == "=" else 2, "\n".join(paragraph), False)
+            paragraph.clear()
+        elif not line.strip() or THEMATIC_BREAK_RE.fullmatch(line) or line.lstrip().startswith(">"):
+            paragraph.clear()
+        else:
+            paragraph.append(line.strip())
+        yield number, line, heading
+        if in_comment:
+            paragraph.clear()
 
 
 def heading_key(title: str) -> str:
@@ -146,12 +208,9 @@ def check_source_map(source_map: object, skill_dir: Path, errors: list[str]) -> 
             errors.append(f"Markdown file outside skill: {path.relative_to(skill_dir)}")
             continue
         file_headings = []
-        for number, line in markdown_lines(path.read_text(encoding="utf-8")):
-            heading = re.match(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*$", line)
+        for number, line, heading in markdown_lines(path.read_text(encoding="utf-8")):
             if heading:
-                level, title = heading.groups()
-                title = re.sub(r"[ \t]+#+$", "", title)
-                file_headings.append((len(level), title))
+                file_headings.append(heading)
             for segment_id in sorted(set(SEGMENT_RE.findall(line))):
                 if segment_id not in segments:
                     errors.append(f"unknown segment {segment_id}: {path.relative_to(skill_dir)}:{number}")
@@ -194,8 +253,8 @@ def check_source_map(source_map: object, skill_dir: Path, errors: list[str]) -> 
             errors.append(f"missing artifact {artifact}: claim {claim_id}")
             continue
         file_headings = headings.get(path, [])
-        matches = [level for level, title in file_headings if title == claim_id]
-        anchor_count = sum(heading_key(title) == claim_id for _, title in file_headings)
+        matches = [level for level, title, atx in file_headings if atx and title == claim_id]
+        anchor_count = sum(heading_key(title) == claim_id for _, title, _ in file_headings)
         if matches != [2] or anchor_count != 1:
             errors.append(f"claim heading {claim_id}: expected exactly one '## {claim_id}' in {artifact}")
 

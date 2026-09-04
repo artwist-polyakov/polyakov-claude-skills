@@ -251,6 +251,92 @@ class QualityGateTests(unittest.TestCase):
         self.run_gate("--write-source-index")
         self.run_gate()
 
+    def test_indented_code_ignores_segment_examples(self):
+        for indent in ("    ", "\t"):
+            with self.subTest(indent=repr(indent)):
+                self.concepts.write_text(
+                    self.concept_text + f"\n{indent}Источник: seg-999.\n", encoding="utf-8"
+                )
+                self.run_gate("--write-source-index")
+                self.run_gate()
+
+    def test_real_reference_after_indented_code_is_checked(self):
+        self.concepts.write_text(
+            self.concept_text + "\n    Источник: seg-001.\n\nИсточник: seg-999.\n",
+            encoding="utf-8",
+        )
+        self.assert_rejected_without_index_write("unknown segment")
+
+    def test_indentation_does_not_interrupt_paragraph(self):
+        for indent in ("    ", "\t"):
+            with self.subTest(indent=repr(indent)):
+                self.concepts.write_text(
+                    self.concept_text + f"{indent}Продолжение абзаца: seg-999.\n",
+                    encoding="utf-8",
+                )
+                self.assert_rejected_without_index_write("unknown segment")
+
+    def test_list_indentation_distinguishes_text_from_code(self):
+        for item in ("- Пункт\n", "- Пункт\nПродолжение без отступа\n"):
+            for width, is_code in ((4, False), (6, True)):
+                with self.subTest(item=item, width=width):
+                    self.concepts.write_text(
+                        self.concept_text + "\n" + item + "\n" + " " * width + "seg-999\n",
+                        encoding="utf-8",
+                    )
+                    if is_code:
+                        self.run_gate("--write-source-index")
+                        self.run_gate()
+                    else:
+                        self.assert_rejected_without_index_write("unknown segment")
+
+    def test_setext_heading_conflicts_with_claim_anchor(self):
+        headings = [
+            f"{indent}diagnosis-before-action\n{indent}{underline}\n"
+            for underline in ("---", "===") for indent in ("", " ", "  ", "   ")
+        ]
+        headings += [f"Diagnosis-\nBefore Action\n{underline}\n" for underline in ("---", "===")]
+        for heading in headings:
+            with self.subTest(heading=heading):
+                self.concepts.write_text(heading + "\n" + self.concept_text, encoding="utf-8")
+                self.assert_rejected_without_index_write("claim heading")
+
+    def test_multiline_setext_anchor_does_not_add_hyphen_for_newline(self):
+        for underline in ("---", "==="):
+            with self.subTest(underline=underline):
+                self.concepts.write_text(
+                    f"Diagnosis\nBefore Action\n{underline}\n\n" + self.concept_text,
+                    encoding="utf-8",
+                )
+                self.run_gate("--write-source-index")
+                self.run_gate()
+
+    def test_setext_heading_does_not_replace_canonical_claim_heading(self):
+        for underline in ("---", "==="):
+            with self.subTest(underline=underline):
+                self.concepts.write_text(
+                    f"# Concepts\n\ndiagnosis-before-action\n{underline}\n", encoding="utf-8"
+                )
+                self.assert_rejected_without_index_write("claim heading")
+
+    def test_thematic_break_after_blank_line_does_not_create_heading(self):
+        self.concepts.write_text(
+            "diagnosis-before-action\n\n---\n\n" + self.concept_text, encoding="utf-8"
+        )
+        self.run_gate("--write-source-index")
+        self.run_gate()
+
+    def test_setext_examples_inside_code_and_comments_are_ignored(self):
+        for example in (
+            "```markdown\ndiagnosis-before-action\n---\n```\n",
+            "    diagnosis-before-action\n    ---\n",
+            "<!--\ndiagnosis-before-action\n---\n-->\n",
+        ):
+            with self.subTest(example=example):
+                self.concepts.write_text(example + "\n" + self.concept_text, encoding="utf-8")
+                self.run_gate("--write-source-index")
+                self.run_gate()
+
     def test_existing_quality_errors_prevent_index_write(self):
         with (self.skill / "SKILL.md").open("a", encoding="utf-8") as stream:
             stream.write("\nTODO\n")
