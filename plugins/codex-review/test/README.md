@@ -14,6 +14,7 @@ test/
 ├── test-integration.sh         # path-contract tests (hook ↔ state dir)
 ├── test-state-cache.sh         # cached state path and batched STATUS.md reads
 ├── test-state-set.sh           # `codex-state.sh set`, one state.json writer
+├── test-failure-iteration.sh   # what a failed codex call costs
 ├── test-description-file.sh    # --description-file, per-attempt logs, saved request
 ├── test-severity-calibration.sh # severity scale, finding headings, verdict threshold
 ├── test-exec-flags.sh          # model and reasoning effort on every codex exec call
@@ -213,9 +214,10 @@ Scenarios:
    `minor` unless it is `critical`.
 5. `CODEX_SEVERITY_CALIBRATION=false` restores the previous prompt: no scale, no
    headings, and the two original verdict lines back in place.
-6. A codex call that fails spends an iteration but no round: after a failed call
-   the next two reviews still carry no narrowing, the third one does, and it
-   reports the round number the reviews earned rather than the iteration counter.
+6. A codex call that fails spends neither a round nor an iteration: after a
+   failed call the next two reviews still carry no narrowing and the third one
+   does. A counter moved on its own does not become the round number — the
+   review sent under iteration 5 reports round 3.
 7. Clearing the cycle with the state helper starts the round count over — notes
    from the previous cycle survive it and must not push the next review into a
    narrowed round.
@@ -266,6 +268,37 @@ Run:
 
 ```sh
 sh plugins/codex-review/test/test-exec-flags.sh
+```
+
+## test-failure-iteration.sh
+
+Regression tests for what a `codex exec` that fails costs the review cycle.
+
+Scenarios:
+
+1. A call that comes back with nothing exits `1`, leaves both counters where
+   they were, stores `ERROR`, writes no review note, and says the iteration was
+   not consumed.
+2. `STATUS.md` is rewritten for that failure instead of keeping the previous
+   round and its status.
+3. Six failures in a row leave the counter at zero — a run of dropped calls
+   cannot walk a cycle to its limit and escalate a review that never happened.
+4. A review that does come back spends its iteration and its round.
+5. A call that wrote its verdict and then died still counts: the round is spent,
+   the rescued verdict is the stored status, and the note says the reply was
+   never written rather than carrying the previous round's reply.
+6. A stale reply file on disk is not read as a verdict by a failed call — the
+   text fallback would have found the word `APPROVED` in it.
+7. A rescued `APPROVED` closes the cycle the same way a normal one does, down to
+   removing `STATUS.md`.
+
+Does **not** require the `codex` binary — a stub on `PATH` is told per call
+whether to fail and whether to leave a verdict behind first.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-failure-iteration.sh
 ```
 
 ## test-e2e.sh
@@ -346,5 +379,5 @@ scenario — as an `init` task and as a code description, not as plans:
 
 ## Exit codes
 
-All eight scripts exit `0` on success and `1` if any assertion failed.
+All nine scripts exit `0` on success and `1` if any assertion failed.
 `test-e2e.sh` additionally exits `0` (skip) when `CODEX_E2E` is not set.
