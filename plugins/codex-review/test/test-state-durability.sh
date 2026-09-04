@@ -46,6 +46,22 @@ assert_contains() {
     esac
 }
 
+# GNU coreutils ships `timeout`; on macOS it arrives as `gtimeout` with
+# coreutils from Homebrew. Without either, the scenarios that bound a run
+# cannot be trusted, so the suite says so and stops.
+TIMEOUT_CMD=""
+for _c in timeout gtimeout; do
+    if command -v "$_c" >/dev/null 2>&1; then
+        TIMEOUT_CMD="$_c"
+        break
+    fi
+done
+if [ -z "$TIMEOUT_CMD" ]; then
+    printf 'ERROR: neither `timeout` nor `gtimeout` is on PATH.\n' >&2
+    printf 'Install GNU coreutils (macOS: `brew install coreutils`) and run again.\n' >&2
+    exit 1
+fi
+
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
@@ -112,19 +128,74 @@ orphan_count() {
 rc_of() { printf '%s' "${1%%|*}"; }
 msg_of() { printf '%s' "${1#*|}"; }
 
+# Stubs that make one operation fail on demand. They live in their own
+# directory, put on PATH only by the scenarios that want the failure, and they
+# name the target through an environment variable rather than through file
+# permissions — a permission a superuser ignores would make those scenarios
+# report a break that is not there.
+mkdir -p "$REPO/failbin"
+cat > "$REPO/failbin/mkdir" <<'MKDIRSTUB'
+#!/bin/sh
+for arg in "$@"; do
+    case "$arg" in
+        -*) continue ;;
+    esac
+    case "${MKDIR_FAIL:-}" in
+        "") ;;
+        *)
+            case "$arg" in
+                *"$MKDIR_FAIL"*)
+                    printf 'mkdir: cannot create directory %s: Permission denied\n' \
+                        "$arg" >&2
+                    exit 1
+                    ;;
+            esac
+            ;;
+    esac
+done
+exec /bin/mkdir "$@"
+MKDIRSTUB
+cat > "$REPO/failbin/mv" <<'MVSTUB'
+#!/bin/sh
+for arg in "$@"; do
+    case "$arg" in
+        -*) continue ;;
+    esac
+    case "${MV_FAIL:-}" in
+        "") ;;
+        *)
+            case "$arg" in
+                *"$MV_FAIL"*)
+                    printf 'mv: cannot move %s: Permission denied\n' "$arg" >&2
+                    exit 1
+                    ;;
+            esac
+            ;;
+    esac
+done
+exec /bin/mv "$@"
+MVSTUB
+chmod +x "$REPO/failbin/mkdir" "$REPO/failbin/mv"
+
+# What archive_run puts on PATH, and which target each stub refuses. The
+# scenarios that want a failure set these and put them back afterwards.
+RUN_BIN="$REPO/bin"
+MKDIR_FAIL=""
+MV_FAIL=""
+export MKDIR_FAIL MV_FAIL
+
 # Prints "<exit code>|<output on one line>"; `timeout` bounds a run that would
-# otherwise never end. $1, when given, is the state directory to archive.
+# otherwise never end.
 archive_run() {
-    _dir="${1:-$STATE_DIR}"
     _out="$(
-        timeout 10 bash -c '
+        "$TIMEOUT_CMD" 10 bash -c '
             set -uo pipefail
             PATH="$3:$PATH"
             source "$1"
             STATE_DIR="$2"
             CODEX_MAX_ITERATIONS=5
             archive_previous_session
-        ' _ "$COMMON" "$_dir" "$REPO/bin" 2>&1
+        ' _ "$COMMON" "$STATE_DIR" "$RUN_BIN" 2>&1
     )" && _rc=0 || _rc=$?
     printf '%s|%s\n' "$_rc" "$(printf '%s' "$_out" | tr '\n' ' ')"
 }
@@ -132,7 +203,7 @@ archive_run() {
 # Archives $1 once the gate file appears, so two of these claim their directory
 # at the same moment rather than one after the other.
 archive_at_gate() {
-    timeout 10 bash -c '
+    "$TIMEOUT_CMD" 10 bash -c '
         set -uo pipefail
         PATH="$3:$PATH"
         source "$1"
@@ -316,15 +387,17 @@ printf 'Test 6: an archive directory that cannot be created ends the run\n'
 # The archiver only runs when there is something to archive.
 printf 'third session\n' > "$STATE_DIR/last_response.txt"
 
-# A read-only archive root: the timestamped directory cannot be created and
-# does not exist afterwards either, which is the case a loop looking only at
-# `mkdir` failing would take for a name collision and retry forever.
-chmod 555 "$ARCHIVE"
+RUN_BIN="$REPO/failbin:$REPO/bin"
+
+# The timestamped directory cannot be created and does not exist afterwards
+# either, which is the case a loop looking only at `mkdir` failing would take
+# for a name collision and retry forever.
+MKDIR_FAIL="20260904T120000Z"
 r="$(archive_run)"
-chmod 755 "$ARCHIVE"
+MKDIR_FAIL=""
 
 assert_eq "the run ends with an error" "1" "$(rc_of "$r")"
-assert_contains "the error names the directory" "archive" "$(msg_of "$r")"
+assert_contains "the error names the directory" "20260904T120000Z" "$(msg_of "$r")"
 assert_contains "the error says nothing was archived" "Nothing was archived" \
     "$(msg_of "$r")"
 if [ -f "$STATE_DIR/last_response.txt" ]; then
@@ -333,11 +406,12 @@ else
     fail "the artefacts are left where they were" "last_response.txt is gone"
 fi
 
-# A file sitting where the archive root belongs: the root itself cannot be made.
+# The archive root itself cannot be made.
 rm -rf "$ARCHIVE"
-printf 'not a directory\n' > "$ARCHIVE"
+MKDIR_FAIL="/archive"
 r="$(archive_run)"
-rm -f "$ARCHIVE"
+MKDIR_FAIL=""
+RUN_BIN="$REPO/bin"
 
 assert_eq "a blocked archive root also ends the run" "1" "$(rc_of "$r")"
 assert_contains "that error says nothing was archived too" "Nothing was archived" \
@@ -351,12 +425,11 @@ printf 'Test 7: a move into the archive that fails stops the archiver\n'
 rm -rf "$ARCHIVE"
 printf 'fourth session\n' > "$STATE_DIR/last_response.txt"
 
-# Moving a file out of a directory needs write permission on that directory,
-# so a read-only state directory makes every move fail while leaving the
-# artifacts readable.
-chmod 555 "$STATE_DIR"
+RUN_BIN="$REPO/failbin:$REPO/bin"
+MV_FAIL="last_response.txt"
 r="$(archive_run)"
-chmod 755 "$STATE_DIR"
+MV_FAIL=""
+RUN_BIN="$REPO/bin"
 
 assert_eq "the archiver reports the failure" "1" "$(rc_of "$r")"
 assert_contains "the message names the file that stayed" "last_response.txt" \

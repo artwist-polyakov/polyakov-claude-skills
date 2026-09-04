@@ -355,16 +355,22 @@ Scenarios:
    released together by a gate file, and they archive two state directories
    under one review root, so they compete for the name and nothing else.
 6. An archive directory that cannot be created ends the run with an error and
-   leaves the artefacts where they are. A read-only archive root covers the
-   case a loop watching only `mkdir` would mistake for a name collision;
-   `timeout` bounds a run that would otherwise never end.
+   leaves the artefacts where they are. This covers the case a loop watching
+   only `mkdir` would mistake for a name collision, and the archive root that
+   cannot be made at all.
 7. An artifact that cannot be moved into the archive stops the archiver and is
-   named in the error. A read-only state directory makes every move fail while
-   leaving the files readable.
+   named in the error.
+
+Scenarios 6 and 7 get their failures from `mkdir` and `mv` stubs that refuse the
+target named in an environment variable, so the outcome does not depend on who
+runs the suite — a file permission means nothing to a superuser, which is who
+runs a container by default.
 
 Does **not** require the `codex` binary — a stub on `PATH` plays the reviewer.
 `common.sh` is a bash script, so the calls into it run under `bash` even though
-the suite itself is POSIX `sh`.
+the suite itself is POSIX `sh`. Runs that would otherwise never end are bounded
+by `timeout`, or by `gtimeout` where GNU coreutils arrives under that name; the
+suite stops with an explanation when neither is on `PATH`.
 
 Run:
 
