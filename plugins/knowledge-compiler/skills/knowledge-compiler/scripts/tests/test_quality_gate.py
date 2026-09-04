@@ -222,6 +222,21 @@ class QualityGateTests(unittest.TestCase):
                     self.index.chmod(mode)
                     self.assertEqual(self.snapshot(), before)
 
+    def test_cyclic_references_directory_fails_without_mutations(self):
+        self.run_gate("--write-source-index")
+        before = self.snapshot()
+        backup = self.skill / "references-backup"
+        self.references.rename(backup)
+        try:
+            self.references.symlink_to(self.references.name)
+            for flags in ((), ("--write-source-index",)):
+                with self.subTest(flags=flags):
+                    self.run_gate(*flags, success=False, diagnostic="cannot inspect source-index.md")
+        finally:
+            self.references.unlink(missing_ok=True)
+            backup.rename(self.references)
+            self.assertEqual(self.snapshot(), before)
+
     def test_invalid_source_map(self):
         mutations = (
             ("empty segments", lambda data: data.update(segments=[])),
@@ -489,6 +504,21 @@ class QualityGateTests(unittest.TestCase):
                 data["claims"][0]["artifact"] = artifact
                 self.write_map(data)
                 self.assert_rejected_without_index_write("invalid artifact")
+
+    def test_cyclic_artifact_and_segment_link_fail_without_index_write(self):
+        loop = self.references / "loop.md"
+        loop.symlink_to(loop.name)
+        for location, diagnostic in (("artifact", "artifact"), ("href", "segment link")):
+            with self.subTest(location=location):
+                data = copy.deepcopy(self.source_map)
+                text = self.concept_text
+                if location == "artifact":
+                    data["claims"][0]["artifact"] = "references/loop.md"
+                else:
+                    text += '\n<a href="loop.md#seg-001">seg-001</a>'
+                self.write_map(data)
+                self.concepts.write_text(text, encoding="utf-8")
+                self.assert_rejected_without_index_write(diagnostic)
 
     def test_missing_duplicate_and_hidden_claim_heading(self):
         for text in (
@@ -831,6 +861,33 @@ class QualityGateTests(unittest.TestCase):
             with self.subTest(link=link):
                 self.concepts.write_text(self.concept_text + "\n" + link + "\n", encoding="utf-8")
                 self.assert_rejected_without_index_write("segment link")
+
+    def test_first_duplicate_html_attribute_is_validated(self):
+        for markup, diagnostic in (
+            ('<a href="other.md#seg-001" href="source-index.md#seg-001">seg-001</a>', "segment link"),
+            ('<img src="icon.png#seg-999" src="icon.png">', "unknown segment"),
+            ('<img src="icon.png" alt="seg-999" alt="diagram">', "unknown segment"),
+            ('<div id="diagnosis-before-action" id="other"></div>', "claim heading"),
+            ('<a name="diagnosis-before-action" name="other"></a>', "claim heading"),
+        ):
+            with self.subTest(markup=markup):
+                self.concepts.write_text(self.concept_text + "\n" + markup, encoding="utf-8")
+                self.assert_rejected_without_index_write(diagnostic)
+
+    def test_later_duplicate_html_attributes_are_ignored(self):
+        for markup in (
+            '<a href="source-index.md#seg-001" href="other.md#seg-999">seg-001</a>',
+            '<img src="icon.png" src="icon.png#seg-999">',
+            '<img src="icon.png" alt="diagram" alt="seg-999">',
+            '<div id="other" id="diagnosis-before-action"></div>',
+            '<a name="other" name="diagnosis-before-action"></a>',
+        ):
+            with self.subTest(markup=markup):
+                self.concepts.write_text(self.concept_text + "\n" + markup, encoding="utf-8")
+                self.run_gate("--write-source-index")
+                before = self.snapshot()
+                self.run_gate()
+                self.assertEqual(self.snapshot(), before)
 
     def test_segment_substrings_are_allowed_in_claim_ids_and_links(self):
         for claim_id in ("concept-seg-001", "seg-001-extra", "prefix-seg-001", "concept-seg-999"):

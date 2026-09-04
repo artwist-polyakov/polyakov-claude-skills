@@ -97,8 +97,11 @@ class MarkdownContent(HTMLParser):
         self.pre_depth = 0
 
     def handle_starttag(self, tag, attrs):
+        attributes = {}
+        for key, value in attrs:
+            attributes.setdefault(key, value)  # HTML keeps the first duplicate attribute.
         self.explicit_anchors.update(
-            value for key, value in attrs
+            value for key, value in attributes.items()
             if value and (key == "id" or (tag == "a" and key == "name"))
         )
         if tag in self.TEXT_BREAKS:
@@ -111,12 +114,12 @@ class MarkdownContent(HTMLParser):
             self.heading = []
         if tag == "a":
             self.finish_link()
-            attributes = dict(attrs)
             if "href" in attributes:
                 self.link = (attributes["href"] or "", len(self.text))
         if tag == "img":
-            self.text.append(dict(attrs).get("alt") or "")
-        self.links.extend((key, value) for key, value in attrs if key in {"href", "src", "alt"} and value)
+            self.text.append(attributes.get("alt") or "")
+        self.links.extend((key, value) for key, value in attributes.items()
+                          if key in {"href", "src", "alt"} and value)
 
     def handle_endtag(self, tag):
         if tag in self.TEXT_BREAKS:
@@ -275,7 +278,7 @@ def check_source_map(source_map: object, skill_dir: Path, source_text: str, erro
                     and (path.parent / relative).resolve() == root / SOURCE_INDEX
                     and segment_id in segments and link_segments == {segment_id}
                 )
-            except (ValueError, OSError):
+            except (ValueError, OSError, RuntimeError):
                 if not link_segments:
                     continue
                 valid = False
@@ -327,7 +330,7 @@ def check_source_map(source_map: object, skill_dir: Path, source_text: str, erro
             artifact_is_index = path == index_path or (
                 artifact_is_file and index_path.is_file() and path.samefile(index_path)
             )
-        except (ValueError, OSError):
+        except (ValueError, OSError, RuntimeError):
             errors.append(f"invalid artifact {artifact!r}: claim {claim_id}")
             continue
         if (relative.is_absolute() or ".." in relative.parts
@@ -435,25 +438,25 @@ def main() -> int:
         check_source_map(source_map, skill_dir, source_text, errors)
         if not errors:
             index_text = render_source_index(source_map)
-    if index_path.is_symlink() or not index_path.resolve().is_relative_to(skill_dir.resolve()):
-        errors.append("source-index.md must be a regular file inside the skill")
-    elif index_path.exists() and not index_path.is_file():
-        errors.append("source-index.md must be a regular file")
-    elif not args.write_source_index:
-        if not index_path.is_file():
-            errors.append("missing source-index.md: run with --write-source-index")
-        elif index_text is not None:
-            try:
-                current_index = index_path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError) as exc:
-                errors.append(f"cannot read source-index.md: {exc}")
-            else:
-                if current_index != index_text:
-                    errors.append("stale source-index.md: run with --write-source-index")
     try:
+        if index_path.is_symlink() or not index_path.resolve().is_relative_to(skill_dir.resolve()):
+            errors.append("source-index.md must be a regular file inside the skill")
+        elif index_path.exists() and not index_path.is_file():
+            errors.append("source-index.md must be a regular file")
+        elif not args.write_source_index:
+            if not index_path.is_file():
+                errors.append("missing source-index.md: run with --write-source-index")
+            elif index_text is not None:
+                try:
+                    current_index = index_path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError) as exc:
+                    errors.append(f"cannot read source-index.md: {exc}")
+                else:
+                    if current_index != index_text:
+                        errors.append("stale source-index.md: run with --write-source-index")
         if index_path.is_file() and index_path.stat().st_nlink > 1:
             errors.append("source-index.md must not share hard links with other files")
-    except OSError as exc:
+    except (OSError, ValueError, RuntimeError) as exc:
         errors.append(f"cannot inspect source-index.md: {exc}")
 
     result_text = None
