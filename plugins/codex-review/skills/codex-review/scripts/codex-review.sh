@@ -169,12 +169,19 @@ fi
 # --- Load config & state ---
 REVIEW_ROOT="$(get_review_root)"
 load_config "$REVIEW_ROOT"
+
+# The limit is checked as soon as both of its sources are known and before
+# anything else runs — the codex probe included: it reaches state.json as a JSON
+# number, and a value the file cannot hold would otherwise surface only at the
+# write that follows the codex call, with the session already opened.
+MAX_ITERATIONS="$(state_counter_value "${MAX_ITER:-$CODEX_MAX_ITERATIONS}" "the iteration limit" \
+    'Pass --max-iter <N>, or fix CODEX_MAX_ITERATIONS in .codex-review/config.env.')" || exit 1
+
 check_codex_installed
 
 STATE_DIR="$(get_state_dir "$REVIEW_ROOT")"
 unset REVIEW_ROOT
 
-MAX_ITERATIONS="${MAX_ITER:-$CODEX_MAX_ITERATIONS}"
 SESSION_ID="$(get_effective_session_id)"
 
 # --- Build codex exec flags (as arrays to avoid word splitting) ---
@@ -355,16 +362,15 @@ update_state() {
     local task_desc
     task_desc="$(read_state_field "task_description")"
 
-    write_state "{
-  \"session_id\": \"$SESSION_ID\",
-  \"phase\": \"$phase\",
-  \"iteration\": $iteration,
-  \"max_iterations\": $MAX_ITERATIONS,
-  \"last_review_status\": \"$status\",
-  \"last_review_timestamp\": \"$timestamp\",
-  \"reviews_completed\": $reviews_completed,
-  \"task_description\": \"$task_desc\"
-}"
+    write_state_fields \
+        session_id="$SESSION_ID" \
+        phase="$phase" \
+        iteration="$iteration" \
+        max_iterations="$MAX_ITERATIONS" \
+        last_review_status="$status" \
+        last_review_timestamp="$timestamp" \
+        reviews_completed="$reviews_completed" \
+        task_description="$task_desc"
 }
 
 # --- Format output ---
@@ -641,16 +647,15 @@ cmd_init() {
     # Extract session_id
     SESSION_ID="$(resolve_new_session_id "$marker" "$log_file")"
 
-    write_state "{
-  \"session_id\": \"$SESSION_ID\",
-  \"phase\": \"initialized\",
-  \"iteration\": 0,
-  \"max_iterations\": $MAX_ITERATIONS,
-  \"last_review_status\": \"\",
-  \"last_review_timestamp\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
-  \"reviews_completed\": 0,
-  \"task_description\": \"$TASK_LABEL_JSON\"
-}"
+    write_state_fields \
+        session_id="$SESSION_ID" \
+        phase="initialized" \
+        iteration=0 \
+        max_iterations="$MAX_ITERATIONS" \
+        last_review_status="" \
+        last_review_timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+        reviews_completed=0 \
+        task_description="$TASK_LABEL_JSON"
 
     write_status
     echo "Session created: $SESSION_ID"
@@ -681,16 +686,15 @@ cmd_review() {
     if [[ -n "$previous_phase" && "$previous_phase" != "$phase" ]]; then
         local task_desc
         task_desc="$(read_state_field "task_description")"
-        write_state "{
-  \"session_id\": \"$SESSION_ID\",
-  \"phase\": \"$previous_phase\",
-  \"iteration\": 0,
-  \"max_iterations\": $MAX_ITERATIONS,
-  \"last_review_status\": \"\",
-  \"last_review_timestamp\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
-  \"reviews_completed\": 0,
-  \"task_description\": \"$task_desc\"
-}"
+        write_state_fields \
+            session_id="$SESSION_ID" \
+            phase="$previous_phase" \
+            iteration=0 \
+            max_iterations="$MAX_ITERATIONS" \
+            last_review_status="" \
+            last_review_timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+            reviews_completed=0 \
+            task_description="$task_desc"
         echo "Phase changed ($previous_phase → $phase), iteration counter reset." >&2
     fi
 

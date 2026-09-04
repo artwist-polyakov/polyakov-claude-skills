@@ -13,6 +13,7 @@ test/
 ├── test-auto-approve-plan.sh   # unit tests for the auto-approve hook
 ├── test-integration.sh         # path-contract tests (hook ↔ state dir)
 ├── test-state-cache.sh         # cached state path and batched STATUS.md reads
+├── test-state-set.sh           # `codex-state.sh set`, one state.json writer
 ├── test-description-file.sh    # --description-file, per-attempt logs, saved request
 ├── test-severity-calibration.sh # severity scale, finding headings, verdict threshold
 ├── test-exec-flags.sh          # model and reasoning effort on every codex exec call
@@ -92,6 +93,38 @@ Run:
 
 ```sh
 sh plugins/codex-review/test/test-state-cache.sh
+```
+
+## test-state-set.sh
+
+Regression tests for `codex-state.sh set` and for `render_state_fields` in
+`common.sh` — the one place that describes the shape of `state.json`.
+
+Scenarios:
+
+1. The three counters (`iteration`, `max_iterations`, `reviews_completed`) are
+   actually written, a counter can be set back to zero, and `STATUS.md` follows
+   the stored numbers.
+2. An unknown field name and a counter value that is not a non-negative integer
+   exit `1` with a message naming the field, and leave `state.json` byte for
+   byte as it was.
+3. Writing one field keeps every other field, `reviews_completed` included.
+4. A value `state.json` could not give back unchanged — a double quote, a
+   backslash, a second line, a control character — is refused rather than
+   stored or repaired, and an ordinary value is stored exactly as passed.
+5. `set` against a missing `state.json` writes the whole file, with
+   `max_iterations` taken from `config.env`.
+6. The renderer refuses a field left out, a field given twice, and an argument
+   without a name; neither entry script carries its own copy of the file's
+   literal.
+
+Does **not** require the `codex` binary. JSON validity is asserted through
+`python3` or `jq`; that one assertion is skipped if neither is available.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-state-set.sh
 ```
 
 ## test-description-file.sh
@@ -313,5 +346,5 @@ scenario — as an `init` task and as a code description, not as plans:
 
 ## Exit codes
 
-All six scripts exit `0` on success and `1` if any assertion failed.
+All eight scripts exit `0` on success and `1` if any assertion failed.
 `test-e2e.sh` additionally exits `0` (skip) when `CODEX_E2E` is not set.

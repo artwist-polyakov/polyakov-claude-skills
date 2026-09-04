@@ -170,7 +170,14 @@ bash scripts/codex-state.sh reset         # Сброс итераций
 bash scripts/codex-state.sh reset --full  # Полный сброс
 bash scripts/codex-state.sh set session_id <value>  # Ручная установка
 bash scripts/codex-state.sh set phase implementing  # Обновить фазу
+bash scripts/codex-state.sh set iteration 2        # Откатить счётчик кругов
 ```
+
+Записываемые поля: `session_id`, `phase`, `iteration`, `max_iterations`,
+`reviews_completed`, `last_review_status`, `last_review_timestamp`,
+`task_description`. Неизвестное имя поля, нецелое значение счётчика и значение
+с кавычкой, обратным слэшем, переводом строки или табуляцией — ошибка с кодом
+возврата 1, состояние не меняется.
 
 ## Структура .codex-review/
 
