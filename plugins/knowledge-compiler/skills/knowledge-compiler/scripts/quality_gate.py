@@ -106,7 +106,7 @@ class MarkdownContent(HTMLParser):
             self.link = (dict(attrs).get("href") or "", len(self.text))
         if tag == "img":
             self.text.append(dict(attrs).get("alt") or "")
-        self.links.extend(value for key, value in attrs if key in {"href", "src", "alt"} and value)
+        self.links.extend((key, value) for key, value in attrs if key in {"href", "src", "alt"} and value)
 
     def handle_endtag(self, tag):
         if tag in self.TEXT_BREAKS:
@@ -161,8 +161,13 @@ def markdown_content(text: str):
         occupied.add(anchor)
         anchors.append((base, anchor))
     segments = set(SEGMENT_RE.findall("".join(content.text)))
-    for target in content.links:
-        segments.update(SEGMENT_RE.findall(unquote(target)))
+    for attribute, target in content.links:
+        if attribute != "alt":
+            try:
+                target = unquote(urlsplit(target).fragment)
+            except ValueError:
+                continue
+        segments.update(SEGMENT_RE.findall(target))
     return canonical, anchors, segments, content.source_links
 
 

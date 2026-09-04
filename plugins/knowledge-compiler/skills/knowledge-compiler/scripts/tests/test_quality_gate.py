@@ -590,6 +590,30 @@ class QualityGateTests(unittest.TestCase):
         self.concepts.write_text(self.concept_text + "\n![seg-999](icon.png)\n", encoding="utf-8")
         self.assert_rejected_without_index_write("unknown segment")
 
+    def test_segment_names_in_url_paths_and_queries_are_not_references(self):
+        for example in (
+            "[docs](https://example.com/seg-999/guide)",
+            "![diagram](images/seg-999.png)",
+            "[docs](https://example.com/guide?section=seg-999)",
+            "[docs][guide]\n\n[guide]: https://example.com/seg-999/guide",
+        ):
+            with self.subTest(example=example):
+                self.concepts.write_text(self.concept_text + "\n" + example + "\n", encoding="utf-8")
+                self.run_gate("--write-source-index")
+                self.run_gate()
+
+    def test_unknown_segment_fragments_and_alt_are_checked(self):
+        for example in (
+            "[docs](source-index.md#seg-999)",
+            "![diagram](images/icon.svg#seg-999)",
+            "![seg-999](images/icon.png)",
+            "[docs](source-index.md#seg%2D999)",
+            "![diagram](images/icon.svg#seg%2D999)",
+        ):
+            with self.subTest(example=example):
+                self.concepts.write_text(self.concept_text + "\n" + example + "\n", encoding="utf-8")
+                self.assert_rejected_without_index_write("unknown segment")
+
     def test_existing_quality_errors_prevent_index_write(self):
         with (self.skill / "SKILL.md").open("a", encoding="utf-8") as stream:
             stream.write("\nTODO\n")
