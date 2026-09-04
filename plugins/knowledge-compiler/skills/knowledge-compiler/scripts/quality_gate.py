@@ -110,7 +110,10 @@ class MarkdownContent(HTMLParser):
         if tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
             self.heading = []
         if tag == "a":
-            self.link = (dict(attrs).get("href") or "", len(self.text))
+            self.finish_link()
+            attributes = dict(attrs)
+            if "href" in attributes:
+                self.link = (attributes["href"] or "", len(self.text))
         if tag == "img":
             self.text.append(dict(attrs).get("alt") or "")
         self.links.extend((key, value) for key, value in attrs if key in {"href", "src", "alt"} and value)
@@ -124,10 +127,18 @@ class MarkdownContent(HTMLParser):
             if self.heading is not None:
                 self.headings.append("".join(self.heading))
                 self.heading = None
-        if not self.pre_depth and tag == "a" and self.link is not None:
+        if not self.pre_depth and tag == "a":
+            self.finish_link()
+
+    def finish_link(self):
+        if self.link is not None:
             target, start = self.link
             self.source_links.append((target, "".join(self.text[start:])))
             self.link = None
+
+    def close(self):
+        super().close()
+        self.finish_link()  # Raw HTML may omit the closing </a>.
 
     def handle_data(self, data):
         if not self.pre_depth:

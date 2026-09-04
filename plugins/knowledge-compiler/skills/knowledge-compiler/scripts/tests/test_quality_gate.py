@@ -847,6 +847,48 @@ class QualityGateTests(unittest.TestCase):
                 self.run_gate()
                 self.assertEqual(self.snapshot(), before)
 
+    def test_unclosed_html_segment_links_are_checked(self):
+        for link in (
+            '<a href="other.md#seg-001">source',
+            '<a href="source-index.md#seg-002">seg-001',
+            '<a href="other.md">seg-001',
+            '<a href>seg-001',
+            '<a href="">seg-001',
+            '<a href="source-index.md#seg-002"><img src="icon.png" alt="seg-001">',
+        ):
+            with self.subTest(link=link):
+                self.concepts.write_text(self.concept_text + "\n" + link, encoding="utf-8")
+                self.assert_rejected_without_index_write("segment link")
+
+    def test_new_html_anchor_does_not_discard_previous_unclosed_link(self):
+        for next_link in (
+            '<a href="https://example.com">guide</a>',
+            '<a href="source-index.md#seg-001">seg-001</a>',
+            '<a name="aside">aside</a>',
+        ):
+            with self.subTest(next_link=next_link):
+                self.concepts.write_text(
+                    self.concept_text + '\n<a href="other.md#seg-001">source ' + next_link,
+                    encoding="utf-8",
+                )
+                self.assert_rejected_without_index_write("segment link")
+
+    def test_valid_and_unrelated_unclosed_html_links_are_allowed(self):
+        for link in (
+            '<a href="source-index.md#seg-001">source',
+            '<a href="source-index.md#seg-001">seg-001',
+            '<a href="source-index.md#seg-001"><img src="icon.png" alt="seg-001">',
+            '<a href="other.md#ordinary-anchor">source',
+            '<a name="section">seg-001</a>',
+            '<a name="section">seg-001',
+        ):
+            with self.subTest(link=link):
+                self.concepts.write_text(self.concept_text + "\n" + link, encoding="utf-8")
+                self.run_gate("--write-source-index")
+                before = self.snapshot()
+                self.run_gate()
+                self.assertEqual(self.snapshot(), before)
+
     def test_exact_segment_ids_are_reserved_from_claim_ids(self):
         for claim_id in ("seg-001", "seg-002", "seg-999"):
             with self.subTest(claim_id=claim_id):
