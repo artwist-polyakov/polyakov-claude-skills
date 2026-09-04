@@ -498,6 +498,9 @@ class QualityGateTests(unittest.TestCase):
             f"[seg-001]({target})"
             for target in (
                 "source-index.md#seg-002",
+                "source-index.md#seg-001-extra",
+                "source-index.md#prefix-seg-001",
+                "source-index.md#seg-001_extra",
                 "source%2Dindex.md#seg%2D002",
                 "source%2Dindex.md#seg%2D999",
                 "concepts.md#seg-001",
@@ -512,6 +515,21 @@ class QualityGateTests(unittest.TestCase):
             with self.subTest(link=link):
                 self.concepts.write_text(self.concept_text + "\n" + link + "\n", encoding="utf-8")
                 self.assert_rejected_without_index_write("segment link")
+
+    def test_segment_substrings_are_allowed_in_claim_ids_and_links(self):
+        for claim_id in ("concept-seg-001", "seg-001-extra", "prefix-seg-001", "concept-seg-999"):
+            with self.subTest(claim_id=claim_id):
+                self.source_map["claims"][0]["claim_id"] = claim_id
+                self.write_map(self.source_map)
+                self.concepts.write_text(
+                    self.concept_text.replace("diagnosis-before-action", claim_id)
+                    + f"\n[Тезис](concepts.md#{claim_id})\n",
+                    encoding="utf-8",
+                )
+                self.run_gate("--write-source-index")
+                before = self.snapshot()
+                self.run_gate()
+                self.assertEqual(self.snapshot(), before)
 
     def test_segment_link_paths_are_relative_to_containing_document(self):
         nested = self.references / "topics" / "details.md"
