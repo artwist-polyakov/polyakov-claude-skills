@@ -167,5 +167,25 @@ else
 fi
 rm -f "$STATE_DIR/.state.json.$$"
 
+# ============================
+# Test 3: an empty field reads as empty, not as zero
+# ============================
+printf 'Test 3: get answers with what the field holds\n'
+
+state_cmd reset >/dev/null
+assert_eq "an empty string field is empty" "" "$(state_cmd get phase)"
+assert_eq "an empty status field is empty" "" "$(state_cmd get last_review_status)"
+assert_eq "a counter is a number" "0" "$(state_cmd get iteration)"
+
+state_cmd set phase code >/dev/null
+assert_eq "a string field that holds something returns it" "code" "$(state_cmd get phase)"
+
+out="$(state_cmd get bogus_field)" && rc=0 || rc=$?
+assert_eq "an unknown field exits 1" "1" "$rc"
+assert_contains "an unknown field says so" "Unsupported state field: bogus_field" "$out"
+assert_contains "an unknown field lists what can be read" "verdict" "$out"
+
+assert_eq "session_id is still readable" "test-session" "$(state_cmd get session_id)"
+
 printf '\nPASS: %d  FAIL: %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
