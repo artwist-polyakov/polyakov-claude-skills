@@ -22,11 +22,12 @@ class QualityGateTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
         self.source = root / "source.txt"
-        self.source.write_text(
+        source_text = (
             "Исходный текст содержит подробные объяснения и примеры автора.\n"
-            "Эта уникальная строка источника не должна попадать в указатель.\n",
-            encoding="utf-8",
+            "Эта уникальная строка источника не должна попадать в указатель.\n"
         )
+        self.source.write_text(source_text, encoding="utf-8")
+        first_line_end = source_text.index("\n") + 1
         self.skill = root / "sample-skill"
         self.references = self.skill / "references"
         self.references.mkdir(parents=True)
@@ -61,8 +62,8 @@ class QualityGateTests(unittest.TestCase):
                 {
                     "segment_id": f"seg-{number:03d}",
                     "title": f"Глава {number}",
-                    "char_start": (number - 1) * 60,
-                    "char_end": number * 60,
+                    "char_start": 0 if number == 1 else first_line_end,
+                    "char_end": first_line_end if number == 1 else len(source_text),
                     "line_start": number,
                     "line_end": number,
                     "confidence": 0.8,
@@ -128,9 +129,11 @@ class QualityGateTests(unittest.TestCase):
         ):
             self.assertIn(expected, text)
         first, second = text.split("## seg-001", 1)[1].split("## seg-002", 1)
-        for expected in ("1–1", "[0, 60)", "#diagnosis-before-action", "#choose-after-intent"):
+        first_end = self.source_map["segments"][0]["char_end"]
+        source_end = self.source_map["segments"][1]["char_end"]
+        for expected in ("1–1", f"[0, {first_end})", "#diagnosis-before-action", "#choose-after-intent"):
             self.assertIn(expected, first)
-        for expected in ("2–2", "[60, 120)", "#diagnosis-before-action"):
+        for expected in ("2–2", f"[{first_end}, {source_end})", "#diagnosis-before-action"):
             self.assertIn(expected, second)
         self.assertNotIn("#choose-after-intent", second)
         self.assertNotIn("references/concepts.md#", text)
@@ -226,6 +229,62 @@ class QualityGateTests(unittest.TestCase):
                 data["segments"][-1][field] = value
                 self.write_map(data)
                 self.assert_rejected_without_index_write("source-map")
+
+    def test_line_ranges_must_match_character_ranges(self):
+        for index, changes in (
+            (0, {"line_start": 2, "line_end": 2}),
+            (1, {"line_start": 1, "line_end": 1}),
+            (0, {"line_end": 2}),
+        ):
+            with self.subTest(segment=index, changes=changes):
+                data = copy.deepcopy(self.source_map)
+                data["segments"][index].update(changes)
+                self.write_map(data)
+                self.assert_rejected_without_index_write("line range does not match char range")
+
+    def test_character_ranges_handle_line_boundaries_and_separators(self):
+        for separator in ("\n", "\f"):
+            self.source.write_text(f"Я{separator}🙂{separator}Б", encoding="utf-8")
+            self.source_map["segments"][1].update(char_start=4, char_end=5, line_start=3, line_end=3)
+            for start, end, first, last in (
+                (0, 1, 1, 1),
+                (0, 2, 1, 1),
+                (1, 2, 1, 1),
+                (2, 3, 2, 2),
+                (1, 3, 1, 2),
+                (0, 5, 1, 3),
+            ):
+                with self.subTest(separator=repr(separator), start=start, end=end):
+                    self.source_map["segments"][0].update(
+                        char_start=start, char_end=end, line_start=first, line_end=last
+                    )
+                    self.write_map(self.source_map)
+                    self.run_gate("--write-source-index")
+                    self.run_gate()
+
+    def test_gate_accepts_real_segmenter_output(self):
+        self.source.write_text(
+            "# Первая глава\n\n" + " ".join(f"наблюдение{i}" for i in range(45))
+            + "\n\n# Вторая глава\n\n" + " ".join(f"проверка{i}" for i in range(45)) + "\n",
+            encoding="utf-8",
+        )
+        output_dir = self.source.parent / "segments"
+        result = subprocess.run(
+            [os.environ.get("UV", "uv"), "run", "--script", str(QUALITY_GATE.with_name("segment_text.py")),
+             "--input", str(self.source), "--out", str(output_dir), "--min-headings", "2"],
+            text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.source_map["segments"] = json.loads(
+            (output_dir / "outline.json").read_text(encoding="utf-8")
+        )["segments"]
+        segment_ids = [segment["segment_id"] for segment in self.source_map["segments"]]
+        self.assertEqual(segment_ids, ["seg-001", "seg-002"])
+        self.source_map["claims"][0]["source_segments"] = segment_ids
+        self.source_map["claims"][1]["source_segments"] = segment_ids[:1]
+        self.write_map(self.source_map)
+        self.run_gate("--write-source-index")
+        self.run_gate()
 
     def test_exact_source_upper_bounds_are_allowed(self):
         for text in ("А\nБ", "А\nБ\n", "А\fБ"):

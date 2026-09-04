@@ -18,6 +18,8 @@ from urllib.parse import quote, unquote, urlsplit
 
 from markdown_it import MarkdownIt
 
+from segment_text import build_lines, line_for_char
+
 
 REQUIRED = [
     "SKILL.md",
@@ -187,7 +189,8 @@ def check_source_map(source_map: object, skill_dir: Path, source_text: str, erro
     if errors:
         return
 
-    limits = {"char": len(source_text), "line": max(1, len(source_text.splitlines()))}
+    source_lines = build_lines(source_text)
+    limits = {"char": len(source_text), "line": len(source_lines)}
     segments = {}
     for segment in source_map["segments"]:
         if not isinstance(segment, dict):
@@ -202,12 +205,22 @@ def check_source_map(source_map: object, skill_dir: Path, source_text: str, erro
         segments[segment_id] = segment
         if not isinstance(segment.get("title"), str) or not segment["title"].strip():
             errors.append(f"source-map {segment_id}: title must be non-empty text")
+        ranges_valid = True
         for prefix, minimum in (("char", 0), ("line", 1)):
             start, end = segment.get(f"{prefix}_start"), segment.get(f"{prefix}_end")
             if (type(start) is not int or type(end) is not int
                     or start < minimum or end < start or end > limits[prefix]
                     or (prefix == "char" and end == start)):
                 errors.append(f"source-map {segment_id}: invalid {prefix} range")
+                ranges_valid = False
+        if ranges_valid:
+            expected_lines = (
+                line_for_char(source_lines, segment["char_start"]),
+                line_for_char(source_lines, segment["char_end"] - 1),
+            )
+            if (segment["line_start"], segment["line_end"]) != expected_lines:
+                errors.append(f"source-map {segment_id}: line range does not match char range "
+                              f"(expected {expected_lines[0]}–{expected_lines[1]})")
         check_confidence(segment, segment_id, errors)
 
     # Reuse the same Markdown scan for source references and claim headings.
