@@ -120,6 +120,8 @@ class MarkdownContent(HTMLParser):
             self.finish_link()
             if "href" in attributes:
                 self.link = (attributes["href"] or "", len(self.text))
+        if tag == "area" and "href" in attributes:
+            self.source_links.append((attributes["href"] or "", attributes.get("alt") or ""))
         if tag == "img":
             self.text.append(attributes.get("alt") or "")
         self.links.extend((key, value) for key, value in attributes.items()

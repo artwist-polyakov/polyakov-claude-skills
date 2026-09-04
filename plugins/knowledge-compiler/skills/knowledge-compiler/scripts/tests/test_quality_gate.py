@@ -1184,6 +1184,43 @@ class QualityGateTests(unittest.TestCase):
                 else:
                     self.assert_rejected_without_index_write("segment link")
 
+    def test_image_map_segment_links_reject_invalid_destinations(self):
+        for area in (
+            '<area href="other.md#seg-001" alt="Источник">',
+            '<area href="source-index.md#seg-002" alt="seg-001">',
+            '<area href="source-index.md#seg-002" alt="seg-001" />',
+            '<area href="" alt="seg-001">',
+            '<area href="source-index.md" alt="seg-001">',
+            '<area href="other.md#seg-001" href="source-index.md#seg-001" alt="seg-001">',
+            '<area href="source-index.md#seg-002" alt="seg-001" alt="seg-002">',
+        ):
+            with self.subTest(area=area):
+                self.concepts.write_text(
+                    self.concept_text + '\n<img src="diagram.png" usemap="#sources">'
+                    '<map name="sources">' + area + "</map>\n", encoding="utf-8"
+                )
+                self.assert_rejected_without_index_write("segment link")
+
+    def test_valid_and_unrelated_image_map_links_are_allowed(self):
+        for area in (
+            '<area href="source-index.md#seg-001" alt="seg-001">',
+            '<area href="source-index.md#seg-001" alt="Источник">',
+            '<area href="https://example.com/help" alt="Справка">',
+            '<area alt="seg-001">',
+            '<area href="source-index.md#seg-001" alt="seg-001" />',
+            '<area href="source-index.md#seg-001" href="other.md#seg-999" alt="seg-001">',
+            '<area href="source-index.md#seg-001" alt="seg-001" alt="seg-999">',
+        ):
+            with self.subTest(area=area):
+                self.concepts.write_text(
+                    self.concept_text + '\n<img src="diagram.png" usemap="#sources">'
+                    '<map name="sources">' + area + "</map>\n", encoding="utf-8"
+                )
+                self.run_gate("--write-source-index")
+                before = self.snapshot()
+                self.run_gate()
+                self.assertEqual(self.snapshot(), before)
+
     def test_image_alt_is_excluded_from_heading_anchor(self):
         self.concepts.write_text(
             "# ![Diagnosis Before Action](icon.png)\n\n" + self.concept_text, encoding="utf-8"
