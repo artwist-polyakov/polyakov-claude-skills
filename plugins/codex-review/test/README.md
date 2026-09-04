@@ -15,6 +15,7 @@ test/
 ├── test-state-cache.sh         # cached state path and batched STATUS.md reads
 ├── test-state-set.sh           # `codex-state.sh set`, one state.json writer
 ├── test-failure-iteration.sh   # what a failed codex call costs
+├── test-verdict-source.sh      # the verdict file decides, the reply never does
 ├── test-description-file.sh    # --description-file, per-attempt logs, saved request
 ├── test-severity-calibration.sh # severity scale, finding headings, verdict threshold
 ├── test-exec-flags.sh          # model and reasoning effort on every codex exec call
@@ -287,8 +288,7 @@ Scenarios:
 5. A call that wrote its verdict and then died still counts: the round is spent,
    the rescued verdict is the stored status, and the note says the reply was
    never written rather than carrying the previous round's reply.
-6. A stale reply file on disk is not read as a verdict by a failed call — the
-   text fallback would have found the word `APPROVED` in it.
+6. A stale reply file on disk does not rescue a failed call.
 7. A rescued `APPROVED` closes the cycle the same way a normal one does, down to
    removing `STATUS.md`.
 
@@ -299,6 +299,36 @@ Run:
 
 ```sh
 sh plugins/codex-review/test/test-failure-iteration.sh
+```
+
+## test-verdict-source.sh
+
+Regression tests for where the verdict comes from. The verdict file is the whole
+answer; the reply text never decides.
+
+Scenarios:
+
+1. A reply saying "Not APPROVED; changes are required" approves nothing: the run
+   exits `1`, stores `ERROR` and spends no iteration.
+2. A reply holding the word `APPROVED` decides nothing either, and no note is
+   filed for a round that did not happen.
+3. That reply is kept beside the attempt's log as `codex-<phase>-<N>.reply.md`,
+   and the run says where it is.
+4. The verdict file decides against the reply, both ways round, and those rounds
+   are spent.
+5. A verdict file holding anything but the two words — `APPROVED with caveats`,
+   `approved`, `LGTM`, nothing at all — is no verdict.
+6. A verdict written with blank lines and spaces around it still counts.
+7. A kept reply is archived with the session it belongs to, so the next session
+   reusing that attempt number cannot overwrite it.
+
+Does **not** require the `codex` binary — a stub on `PATH` is told per call what
+to write as the reply and what to write to the verdict file the prompt names.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-verdict-source.sh
 ```
 
 ## test-e2e.sh
@@ -379,5 +409,5 @@ scenario — as an `init` task and as a code description, not as plans:
 
 ## Exit codes
 
-All nine scripts exit `0` on success and `1` if any assertion failed.
+All ten scripts exit `0` on success and `1` if any assertion failed.
 `test-e2e.sh` additionally exits `0` (skip) when `CODEX_E2E` is not set.

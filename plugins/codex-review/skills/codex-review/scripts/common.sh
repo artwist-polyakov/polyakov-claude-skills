@@ -447,6 +447,7 @@ archive_previous_session() {
     if ls "$state_dir"/codex-*.log &>/dev/null; then has_artifacts=true; fi
     if ls "$state_dir"/codex-*.request.md &>/dev/null; then has_artifacts=true; fi
     if ls "$state_dir"/codex-*.prompt.md &>/dev/null; then has_artifacts=true; fi
+    if ls "$state_dir"/codex-*.reply.md &>/dev/null; then has_artifacts=true; fi
 
     if [[ "$has_artifacts" == "false" ]]; then
         return
@@ -472,6 +473,9 @@ archive_previous_session() {
     # The prompts travel with them: codex-init.prompt.md carries a fixed name, so
     # a new session would overwrite it where it stands.
     mv "$state_dir"/codex-*.prompt.md "$archive_dir/" 2>/dev/null || true
+    # So do the replies of rounds that came back without a verdict — they are
+    # named after the attempt, and a new session reuses those numbers.
+    mv "$state_dir"/codex-*.reply.md "$archive_dir/" 2>/dev/null || true
     mv "$state_dir"/notes/*.md "$archive_dir/notes/" 2>/dev/null || true
 
     echo "Previous session archived to: $archive_dir" >&2

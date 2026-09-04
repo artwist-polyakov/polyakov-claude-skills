@@ -298,27 +298,6 @@ resolve_new_session_id() {
     echo "$new_session_id"
 }
 
-# --- Read verdict from file, fallback to text parsing ---
-read_verdict() {
-    local output="$1"
-    local verdict_file="$STATE_DIR/verdict.txt"
-
-    # Primary: read from verdict file (format-agnostic via helper)
-    local file_verdict
-    file_verdict="$(parse_verdict_file "$verdict_file")"
-    if [[ "$file_verdict" == "APPROVED" || "$file_verdict" == "CHANGES_REQUESTED" ]]; then
-        echo "$file_verdict"
-        return
-    fi
-
-    # Fallback: parse response text
-    if echo "$output" | grep -qiE '(^|\W)APPROVED(\W|$)'; then
-        echo "APPROVED"
-    else
-        echo "CHANGES_REQUESTED"
-    fi
-}
-
 # --- Save review note ---
 save_note() {
     local phase="$1"
@@ -764,44 +743,51 @@ cmd_review() {
         resume "$SESSION_ID" \
         - < "$prompt_file" > "$log_file" 2>&1 || exit_code=$?
 
-    # A call that died decides the iteration by what the reviewer left behind.
-    # verdict.txt is removed before every request, so a valid word in it can
-    # only have been written by this run: the review happened and the round is
-    # spent, whatever the exit status says afterwards. With no verdict there was
-    # no round — an exhausted quota, a dropped network or a dead session would
+    # The verdict file is the whole answer. It is removed before every request,
+    # so a valid word in it was written by this run: the review happened, the
+    # round is spent and that word is the verdict, whatever the exit status says
+    # afterwards. Nothing in it means no round — an exhausted quota, a dropped
+    # network, a dead session or a reviewer that answered without deciding would
     # otherwise walk the counter to the limit and escalate a cycle in which
-    # nothing was ever reviewed. The reply text is deliberately not consulted
-    # here: `read_verdict` falls back to searching it for a word, and half a
-    # reply is not a verdict.
-    local rescued_verdict=""
-    if [[ $exit_code -ne 0 ]]; then
-        rescued_verdict="$(parse_verdict_file "$STATE_DIR/verdict.txt")"
-        if [[ -z "$rescued_verdict" ]]; then
-            echo "ERROR: Codex exec failed (exit $exit_code)." >&2
-            cat "$log_file" >&2
-            # STATUS.md is rewritten too: left alone it keeps showing the
-            # previous round and its status, and the error stays invisible
-            # in the file a human reads.
-            update_state "$phase" "$current_iteration" "ERROR" "$reviews_completed"
-            write_status
-            echo "Iteration not consumed: still ${current_iteration}/${MAX_ITERATIONS}." >&2
-            exit 1
-        fi
-        echo "WARNING: codex exec exited $exit_code after writing its verdict; the round counts." >&2
-    fi
+    # nothing was ever settled.
+    local status
+    status="$(parse_verdict_file "$STATE_DIR/verdict.txt")"
 
     local output
     output=$(cat "$output_file" 2>/dev/null || echo "")
 
-    # A rescued round has its verdict but usually no reply: the call died before
-    # writing one. The note says that rather than sitting there empty.
-    if [[ -n "$rescued_verdict" && -z "${output//[[:space:]]/}" ]]; then
-        output="codex exec exited $exit_code after writing the verdict $rescued_verdict. No reply text was saved; the run is logged in ${log_file##*/}, one level up from this note."
+    if [[ -z "$status" ]]; then
+        if [[ $exit_code -ne 0 ]]; then
+            echo "ERROR: Codex exec failed (exit $exit_code)." >&2
+            cat "$log_file" >&2
+        else
+            echo "ERROR: the reviewer returned no verdict." >&2
+            echo "Expected APPROVED or CHANGES_REQUESTED in $STATE_DIR/verdict.txt." >&2
+        fi
+        # The reply is kept beside the attempt's own log rather than filed as a
+        # round's note: there was no round to file it under, and the next
+        # attempt reuses the same iteration number.
+        if [[ -n "${output//[[:space:]]/}" ]]; then
+            printf '%s' "$output" > "${log_file%.log}.reply.md"
+            echo "The reply is kept in ${log_file%.log}.reply.md" >&2
+        fi
+        # STATUS.md is rewritten too: left alone it keeps showing the previous
+        # round and its status, and the error stays invisible in the file a
+        # human reads.
+        update_state "$phase" "$current_iteration" "ERROR" "$reviews_completed"
+        write_status
+        echo "Iteration not consumed: still ${current_iteration}/${MAX_ITERATIONS}." >&2
+        exit 1
     fi
 
-    # Read verdict (file → fallback to text parsing)
-    local status
-    status="$(read_verdict "$output")"
+    if [[ $exit_code -ne 0 ]]; then
+        echo "WARNING: codex exec exited $exit_code after writing its verdict; the round counts." >&2
+        # The call died before writing a reply. The note says that rather than
+        # sitting there empty.
+        if [[ -z "${output//[[:space:]]/}" ]]; then
+            output="codex exec exited $exit_code after writing the verdict $status. No reply text was saved; the run is logged in ${log_file##*/}, one level up from this note."
+        fi
+    fi
 
     # Save note
     save_note "$phase" "$next_iteration" "$output"
