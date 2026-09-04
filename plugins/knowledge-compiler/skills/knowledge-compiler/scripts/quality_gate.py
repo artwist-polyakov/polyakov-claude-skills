@@ -104,6 +104,8 @@ class MarkdownContent(HTMLParser):
             self.heading = []
         if tag == "a":
             self.link = (dict(attrs).get("href") or "", len(self.text))
+        if tag == "img":
+            self.text.append(dict(attrs).get("alt") or "")
         self.links.extend(value for key, value in attrs if key in {"href", "src", "alt"} and value)
 
     def handle_endtag(self, tag):
@@ -164,7 +166,7 @@ def markdown_content(text: str):
     return canonical, anchors, segments, content.source_links
 
 
-def check_source_map(source_map: object, skill_dir: Path, errors: list[str]) -> None:
+def check_source_map(source_map: object, skill_dir: Path, source_text: str, errors: list[str]) -> None:
     if not isinstance(source_map, dict):
         errors.append("source-map must be a JSON object")
         return
@@ -174,6 +176,7 @@ def check_source_map(source_map: object, skill_dir: Path, errors: list[str]) -> 
     if errors:
         return
 
+    limits = {"char": len(source_text), "line": max(1, len(source_text.splitlines()))}
     segments = {}
     for segment in source_map["segments"]:
         if not isinstance(segment, dict):
@@ -191,7 +194,8 @@ def check_source_map(source_map: object, skill_dir: Path, errors: list[str]) -> 
         for prefix, minimum in (("char", 0), ("line", 1)):
             start, end = segment.get(f"{prefix}_start"), segment.get(f"{prefix}_end")
             if (type(start) is not int or type(end) is not int
-                    or start < minimum or end < start or (prefix == "char" and end == start)):
+                    or start < minimum or end < start or end > limits[prefix]
+                    or (prefix == "char" and end == start)):
                 errors.append(f"source-map {segment_id}: invalid {prefix} range")
         confidence = segment.get("confidence")
         if type(confidence) not in (int, float) or not 0 <= confidence <= 1:
@@ -322,8 +326,14 @@ def main() -> int:
     errors: list[str] = []
     warnings: list[str] = []
 
+    source_text = None
     if not source_path.is_file():
         errors.append(f"source not found: {source_path}")
+    else:
+        try:
+            source_text = source_path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            errors.append(f"cannot read source: {source_path} ({exc})")
     if not skill_dir.is_dir():
         errors.append(f"skill dir not found: {skill_dir}")
 
@@ -349,7 +359,7 @@ def main() -> int:
     index_path = skill_dir / SOURCE_INDEX
     index_text = None
     if not errors:
-        check_source_map(source_map, skill_dir, errors)
+        check_source_map(source_map, skill_dir, source_text, errors)
         if not errors:
             index_text = render_source_index(source_map)
     if index_path.is_symlink() or not index_path.resolve().is_relative_to(skill_dir.resolve()):
@@ -368,9 +378,9 @@ def main() -> int:
             result_text += "\n\n" + index_text
         if PLACEHOLDER_RE.search(result_text):
             errors.append("placeholder marker found in generated skill")
-        if source_path.is_file():
+        if source_text is not None:
             overlap = longest_ngram_run(
-                words(source_path.read_text(encoding="utf-8", errors="replace")),
+                words(source_text),
                 words(result_text),
                 args.ngram_words,
             )

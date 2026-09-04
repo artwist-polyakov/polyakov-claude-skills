@@ -180,6 +180,46 @@ class QualityGateTests(unittest.TestCase):
                 self.write_map(data)
                 self.assert_rejected_without_index_write("source-map")
 
+    def test_segment_ranges_cannot_exceed_source_bounds(self):
+        source_text = self.source.read_text(encoding="utf-8")
+        for field, value in (
+            ("char_end", len(source_text) + 1),
+            ("line_end", len(source_text.splitlines()) + 1),
+        ):
+            with self.subTest(field=field):
+                data = copy.deepcopy(self.source_map)
+                data["segments"][-1][field] = value
+                self.write_map(data)
+                self.assert_rejected_without_index_write("source-map")
+
+    def test_exact_source_upper_bounds_are_allowed(self):
+        for text in ("А\nБ", "А\nБ\n", "А\fБ"):
+            with self.subTest(text=repr(text)):
+                self.source.write_text(text, encoding="utf-8")
+                self.source_map["segments"][0].update(char_start=0, char_end=2)
+                self.source_map["segments"][1].update(char_start=2, char_end=len(text), line_end=2)
+                self.write_map(self.source_map)
+                self.run_gate("--write-source-index")
+                self.run_gate()
+
+    def test_unicode_crlf_coordinates_count_normalized_characters_not_bytes(self):
+        raw_text = "Я\r\n🙂\r\n"
+        self.source.write_bytes(raw_text.encode("utf-8"))
+        self.source_map["segments"][0].update(char_start=0, char_end=2)
+        self.source_map["segments"][1].update(char_start=2, char_end=4)
+        self.write_map(self.source_map)
+        self.run_gate("--write-source-index")
+        self.run_gate()
+        for end in (len(raw_text), len(raw_text.encode("utf-8"))):
+            with self.subTest(char_end=end):
+                self.source_map["segments"][1]["char_end"] = end
+                self.write_map(self.source_map)
+                self.assert_rejected_without_index_write("source-map")
+
+    def test_empty_source_cannot_have_nonempty_segments(self):
+        self.source.write_text("", encoding="utf-8")
+        self.assert_rejected_without_index_write("source-map")
+
     def test_duplicate_ids_and_unknown_claim_segment(self):
         cases = (
             ("segments", "duplicate segment_id"),
@@ -521,6 +561,34 @@ class QualityGateTests(unittest.TestCase):
                 self.concepts.write_text(self.concept_text + "\n" + example + "\n", encoding="utf-8")
                 self.run_gate("--write-source-index")
                 self.run_gate()
+
+    def test_linked_image_alt_must_match_segment_destination(self):
+        for segment_id, valid in (("seg-002", False), ("seg-001", True)):
+            with self.subTest(segment_id=segment_id):
+                self.concepts.write_text(
+                    self.concept_text + f"\n[![seg-001](icon.png)](source-index.md#{segment_id})\n",
+                    encoding="utf-8",
+                )
+                if valid:
+                    self.run_gate("--write-source-index")
+                    self.run_gate()
+                else:
+                    self.assert_rejected_without_index_write("segment link")
+
+    def test_image_alt_is_excluded_from_heading_anchor(self):
+        self.concepts.write_text(
+            "# ![Diagnosis Before Action](icon.png)\n\n" + self.concept_text, encoding="utf-8"
+        )
+        self.run_gate("--write-source-index")
+        self.run_gate()
+        self.concepts.write_text(
+            "# ![badge](icon.png)Diagnosis Before Action\n\n" + self.concept_text, encoding="utf-8"
+        )
+        self.assert_rejected_without_index_write("claim heading")
+
+    def test_unknown_segment_in_image_alt_is_checked(self):
+        self.concepts.write_text(self.concept_text + "\n![seg-999](icon.png)\n", encoding="utf-8")
+        self.assert_rejected_without_index_write("unknown segment")
 
     def test_existing_quality_errors_prevent_index_write(self):
         with (self.skill / "SKILL.md").open("a", encoding="utf-8") as stream:
