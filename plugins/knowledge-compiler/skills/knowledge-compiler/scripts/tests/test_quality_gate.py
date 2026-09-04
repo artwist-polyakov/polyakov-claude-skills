@@ -453,6 +453,75 @@ class QualityGateTests(unittest.TestCase):
                 )
                 self.assert_rejected_without_index_write("unknown segment")
 
+    def test_segment_links_must_point_to_matching_index_entry(self):
+        links = [
+            f"[seg-001]({target})"
+            for target in (
+                "source-index.md#seg-002",
+                "source%2Dindex.md#seg%2D002",
+                "source%2Dindex.md#seg%2D999",
+                "concepts.md#seg-001",
+                "missing.md#seg-001",
+                "https://example.com/source-index.md#seg-001",
+                f"{self.index.as_posix()}#seg-001",
+            )
+        ]
+        links.append("[seg-001][source]\n\n[source]: source-index.md#seg-002")
+        links.append("[Источник](other.md#seg-001)")
+        for link in links:
+            with self.subTest(link=link):
+                self.concepts.write_text(self.concept_text + "\n" + link + "\n", encoding="utf-8")
+                self.assert_rejected_without_index_write("segment link")
+
+    def test_segment_link_paths_are_relative_to_containing_document(self):
+        nested = self.references / "topics" / "details.md"
+        nested.parent.mkdir()
+        nested.write_text("# Details\n", encoding="utf-8")
+        for path in (self.skill / "SKILL.md", nested):
+            with self.subTest(path=path.relative_to(self.skill)):
+                original = path.read_text(encoding="utf-8")
+                try:
+                    path.write_text(
+                        original + "\n[seg-001](source-index.md#seg-001)\n", encoding="utf-8"
+                    )
+                    self.assert_rejected_without_index_write("segment link")
+                finally:
+                    path.write_text(original, encoding="utf-8")
+
+    def test_plain_segments_and_valid_segment_links_are_allowed(self):
+        for link in (
+            "seg-001",
+            "[seg-001](source-index.md#seg-001)",
+            "[seg-001](source%2Dindex.md#seg%2D001)",
+            "[seg-001][source]\n\n[source]: source-index.md#seg-001",
+            "[`seg-001`](source-index.md#seg-001)",
+        ):
+            with self.subTest(link=link):
+                self.concepts.write_text(self.concept_text + "\n" + link + "\n", encoding="utf-8")
+                self.run_gate("--write-source-index")
+                self.run_gate()
+
+    def test_valid_segment_links_from_root_and_nested_documents(self):
+        skill_md = self.skill / "SKILL.md"
+        skill_md.write_text(
+            skill_md.read_text(encoding="utf-8")
+            + "\n[seg-001](references/source-index.md#seg-001)\n",
+            encoding="utf-8",
+        )
+        nested = self.references / "topics" / "details.md"
+        nested.parent.mkdir()
+        nested.write_text("# Details\n\n[seg-001](../source-index.md#seg-001)\n", encoding="utf-8")
+        self.run_gate("--write-source-index")
+        self.run_gate()
+
+    def test_invalid_segment_links_inside_code_and_comments_are_ignored(self):
+        link = "[seg-001](source-index.md#seg-002)"
+        for example in (f"```markdown\n{link}\n```", f"    {link}", f"`{link}`", f"<!-- {link} -->"):
+            with self.subTest(example=example):
+                self.concepts.write_text(self.concept_text + "\n" + example + "\n", encoding="utf-8")
+                self.run_gate("--write-source-index")
+                self.run_gate()
+
     def test_existing_quality_errors_prevent_index_write(self):
         with (self.skill / "SKILL.md").open("a", encoding="utf-8") as stream:
             stream.write("\nTODO\n")

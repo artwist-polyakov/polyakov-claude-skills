@@ -14,7 +14,7 @@ import re
 import unicodedata
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlsplit
 
 from markdown_it import MarkdownIt
 
@@ -87,6 +87,8 @@ class MarkdownContent(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.text = []
         self.links = []
+        self.source_links = []
+        self.link = None
         self.headings = []
         self.heading = None
         self.pre_depth = 0
@@ -100,6 +102,8 @@ class MarkdownContent(HTMLParser):
             return
         if tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
             self.heading = []
+        if tag == "a":
+            self.link = (dict(attrs).get("href") or "", len(self.text))
         self.links.extend(value for key, value in attrs if key in {"href", "src", "alt"} and value)
 
     def handle_endtag(self, tag):
@@ -111,6 +115,10 @@ class MarkdownContent(HTMLParser):
             if self.heading is not None:
                 self.headings.append("".join(self.heading))
                 self.heading = None
+        if not self.pre_depth and tag == "a" and self.link is not None:
+            target, start = self.link
+            self.source_links.append((target, "".join(self.text[start:])))
+            self.link = None
 
     def handle_data(self, data):
         if not self.pre_depth:
@@ -152,8 +160,8 @@ def markdown_content(text: str):
         anchors.append((base, anchor))
     segments = set(SEGMENT_RE.findall("".join(content.text)))
     for target in content.links:
-        segments.update(SEGMENT_RE.findall(target))
-    return canonical, anchors, segments
+        segments.update(SEGMENT_RE.findall(unquote(target)))
+    return canonical, anchors, segments, content.source_links
 
 
 def check_source_map(source_map: object, skill_dir: Path, errors: list[str]) -> None:
@@ -198,9 +206,29 @@ def check_source_map(source_map: object, skill_dir: Path, errors: list[str]) -> 
         if not path.resolve().is_relative_to(root):
             errors.append(f"Markdown file outside skill: {path.relative_to(skill_dir)}")
             continue
-        canonical, anchors, references = markdown_content(path.read_text(encoding="utf-8"))
+        canonical, anchors, references, links = markdown_content(path.read_text(encoding="utf-8"))
         for segment_id in sorted(references - segments.keys()):
             errors.append(f"unknown segment {segment_id}: {path.relative_to(skill_dir)}")
+        for target, label in links:
+            shown = set(SEGMENT_RE.findall(label))
+            try:
+                url = urlsplit(target)
+                segment_id = unquote(url.fragment)
+                if not shown and not SEGMENT_RE.fullmatch(segment_id):
+                    continue  # Unrelated links are outside the source-map contract.
+                relative = Path(unquote(url.path))
+                valid = (
+                    not url.scheme and not url.netloc and not url.query
+                    and not relative.is_absolute()
+                    and (path.parent / relative).resolve() == root / SOURCE_INDEX
+                    and segment_id in segments and (not shown or shown == {segment_id})
+                )
+            except (ValueError, OSError):
+                if not shown:
+                    continue
+                valid = False
+            if not valid:
+                errors.append(f"invalid segment link {target!r}: {path.relative_to(skill_dir)}")
         headings[path.resolve()] = canonical, anchors
 
     claim_ids = set()
