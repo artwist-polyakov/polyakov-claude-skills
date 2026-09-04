@@ -395,6 +395,25 @@ class QualityGateTests(unittest.TestCase):
         self.write_map(self.source_map)
         self.assert_rejected_without_index_write("missing artifact")
 
+    def test_mixed_case_markdown_artifacts_preserve_filename_in_index(self):
+        for suffix in (".MD", ".Md"):
+            with self.subTest(suffix=suffix):
+                artifact = self.references / f"notes{suffix}"
+                data = copy.deepcopy(self.source_map)
+                data["claims"][0]["artifact"] = f"references/{artifact.name}"
+                self.write_map(data)
+                artifact.write_text(self.concept_text, encoding="utf-8")
+                try:
+                    self.run_gate("--write-source-index")
+                    self.run_gate()
+                    self.assertIn(
+                        f"({artifact.name}#diagnosis-before-action)",
+                        self.index.read_text(encoding="utf-8"),
+                    )
+                finally:
+                    artifact.unlink()
+                    self.write_map(self.source_map)
+
     def test_artifact_must_be_reference_markdown(self):
         for artifact in ("../source.txt", "SKILL.md", "references/source-map.json", "references/source-index.md"):
             with self.subTest(artifact=artifact):
@@ -426,6 +445,31 @@ class QualityGateTests(unittest.TestCase):
     def test_unknown_markdown_segment(self):
         self.concepts.write_text(self.concept_text + "\nИсточник: seg-999.\n", encoding="utf-8")
         self.assert_rejected_without_index_write("unknown segment")
+
+    def test_mixed_case_markdown_auxiliary_errors_are_checked(self):
+        for suffix in (".MD", ".Md"):
+            for text, diagnostic in (
+                ("Источник: seg-999.\n", "unknown segment"),
+                ("[seg-001](wrong.md#seg-001)\n", "segment link"),
+            ):
+                with self.subTest(suffix=suffix, text=text):
+                    notes = self.references / f"notes{suffix}"
+                    notes.write_text(text, encoding="utf-8")
+                    try:
+                        self.assert_rejected_without_index_write(diagnostic)
+                    finally:
+                        notes.unlink()
+
+    def test_mixed_case_markdown_auxiliary_valid_links_are_accepted(self):
+        for suffix in (".MD", ".Md"):
+            with self.subTest(suffix=suffix):
+                notes = self.references / f"notes{suffix}"
+                notes.write_text("[seg-001](source-index.md#seg-001)\n", encoding="utf-8")
+                try:
+                    self.run_gate("--write-source-index")
+                    self.run_gate()
+                finally:
+                    notes.unlink()
 
     def test_fenced_examples_do_not_create_references_or_headings(self):
         for fence in ("```", "~~~"):

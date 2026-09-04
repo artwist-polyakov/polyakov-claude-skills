@@ -233,8 +233,8 @@ def check_source_map(source_map: object, skill_dir: Path, source_text: str, erro
     # Reuse the same Markdown scan for source references and claim headings.
     root = skill_dir.resolve()
     headings = {}
-    for path in sorted(skill_dir.rglob("*.md")):
-        if path == skill_dir / SOURCE_INDEX or not path.is_file():
+    for path in sorted(skill_dir.rglob("*")):
+        if path.suffix.lower() != ".md" or path == skill_dir / SOURCE_INDEX or not path.is_file():
             continue
         if not path.resolve().is_relative_to(root):
             errors.append(f"Markdown file outside skill: {path.relative_to(skill_dir)}")
@@ -317,7 +317,7 @@ def check_source_map(source_map: object, skill_dir: Path, source_text: str, erro
             continue
         if (relative.is_absolute() or ".." in relative.parts
                 or not relative.parts or relative.parts[0] != "references"
-                or relative.suffix != ".md" or relative.as_posix() == SOURCE_INDEX
+                or relative.suffix.lower() != ".md" or relative.as_posix() == SOURCE_INDEX
                 or not path.is_relative_to(root / "references")):
             errors.append(f"invalid artifact {artifact!r}: expected a Markdown file inside references")
             continue
