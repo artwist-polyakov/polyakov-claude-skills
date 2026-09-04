@@ -180,6 +180,41 @@ class QualityGateTests(unittest.TestCase):
                 self.write_map(data)
                 self.assert_rejected_without_index_write("source-map")
 
+    def test_claim_provenance_fields_are_required(self):
+        for field in ("extraction_type", "verbatim_quote_words", "confidence"):
+            with self.subTest(field=field):
+                data = copy.deepcopy(self.source_map)
+                del data["claims"][0][field]
+                self.write_map(data)
+                self.assert_rejected_without_index_write(field)
+
+    def test_claim_provenance_fields_reject_invalid_values(self):
+        for field, values in (
+            ("extraction_type", ("unknown", None, [], {})),
+            ("verbatim_quote_words", (-1, True, 1.0, "1", None)),
+            ("confidence", (-0.1, 1.1, True, "0.5", None, float("nan"), float("inf"), -float("inf"))),
+        ):
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    data = copy.deepcopy(self.source_map)
+                    data["claims"][0][field] = value
+                    self.write_map(data)
+                    self.assert_rejected_without_index_write(field)
+
+    def test_claim_provenance_fields_accept_valid_values(self):
+        for field, values in (
+            ("extraction_type", ("synthesized", "named-framework", "short-quote", "inferred")),
+            ("verbatim_quote_words", (0, 3)),
+            ("confidence", (0, 1, 0.5)),
+        ):
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    data = copy.deepcopy(self.source_map)
+                    data["claims"][0][field] = value
+                    self.write_map(data)
+                    self.run_gate("--write-source-index")
+                    self.run_gate()
+
     def test_segment_ranges_cannot_exceed_source_bounds(self):
         source_text = self.source.read_text(encoding="utf-8")
         for field, value in (

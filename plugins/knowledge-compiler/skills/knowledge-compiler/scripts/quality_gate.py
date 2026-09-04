@@ -171,6 +171,12 @@ def markdown_content(text: str):
     return canonical, anchors, segments, content.source_links
 
 
+def check_confidence(item: dict, identifier: str, errors: list[str]) -> None:
+    confidence = item.get("confidence")
+    if type(confidence) not in (int, float) or not 0 <= confidence <= 1:
+        errors.append(f"source-map {identifier}: confidence must be between 0 and 1")
+
+
 def check_source_map(source_map: object, skill_dir: Path, source_text: str, errors: list[str]) -> None:
     if not isinstance(source_map, dict):
         errors.append("source-map must be a JSON object")
@@ -202,9 +208,7 @@ def check_source_map(source_map: object, skill_dir: Path, source_text: str, erro
                     or start < minimum or end < start or end > limits[prefix]
                     or (prefix == "char" and end == start)):
                 errors.append(f"source-map {segment_id}: invalid {prefix} range")
-        confidence = segment.get("confidence")
-        if type(confidence) not in (int, float) or not 0 <= confidence <= 1:
-            errors.append(f"source-map {segment_id}: confidence must be between 0 and 1")
+        check_confidence(segment, segment_id, errors)
 
     # Reuse the same Markdown scan for source references and claim headings.
     root = skill_dir.resolve()
@@ -254,6 +258,15 @@ def check_source_map(source_map: object, skill_dir: Path, source_text: str, erro
         if claim_id in claim_ids:
             errors.append(f"duplicate claim_id: {claim_id}")
         claim_ids.add(claim_id)
+
+        if claim.get("extraction_type") not in (
+            "synthesized", "named-framework", "short-quote", "inferred"
+        ):
+            errors.append(f"source-map {claim_id}: invalid extraction_type")
+        quote_words = claim.get("verbatim_quote_words")
+        if type(quote_words) is not int or quote_words < 0:
+            errors.append(f"source-map {claim_id}: verbatim_quote_words must be a non-negative integer")
+        check_confidence(claim, claim_id, errors)
 
         source_segments = claim.get("source_segments")
         if not isinstance(source_segments, list) or not source_segments:
