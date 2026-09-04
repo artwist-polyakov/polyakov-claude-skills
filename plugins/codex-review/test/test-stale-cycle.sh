@@ -194,5 +194,57 @@ assert_contains "the refusal says the origin is unknown" "does not record which 
 
 rm -f "$REPO/.codex-review/config.env" "$STATE_DIR/verdict.txt" "$STATE_DIR/verdict.phase"
 
+# ============================
+# Test 3: a cycle closed by an approval is not continued in silence
+# ============================
+printf 'Test 3: a round sent into a closed cycle is refused\n'
+
+review init "TASK-A" >/dev/null
+printf 'APPROVED\n' > "$REPO/verdict-next"
+r="$(review code --description-file "$REPO/desc.md")"
+assert_eq "the approved round runs" "0" "$(rc_of "$r")"
+assert_eq "the cycle is closed" "APPROVED" "$(state_cmd get last_review_status)"
+
+r="$(review code --description-file "$REPO/desc.md")"
+assert_eq "the next code round is refused" "1" "$(rc_of "$r")"
+assert_contains "the refusal says the cycle is closed" "that cycle is closed" "$(msg_of "$r")"
+assert_contains "the refusal names the way to a new task" "init" "$(msg_of "$r")"
+assert_contains "the refusal names the way to more work on this one" \
+    "codex-state.sh reset" "$(msg_of "$r")"
+assert_contains "the refusal says it changed nothing" "Nothing was changed" "$(msg_of "$r")"
+assert_eq "the counter did not move" "1" "$(state_cmd get iteration)"
+
+r="$(review plan --plan-file "$REPO/desc.md")"
+assert_eq "a plan round is refused the same way" "1" "$(rc_of "$r")"
+
+# ============================
+# Test 4: both ways out of a closed cycle work
+# ============================
+printf 'Test 4: a reset reopens the cycle, an init opens a new one\n'
+
+state_cmd reset >/dev/null
+r="$(review code --description-file "$REPO/desc.md")"
+assert_eq "the round after a reset runs" "0" "$(rc_of "$r")"
+assert_eq "it is the first round again" "1" "$(state_cmd get iteration)"
+assert_eq "the task keeps its name" "TASK-A" "$(state_cmd get task_description)"
+
+printf 'APPROVED\n' > "$REPO/verdict-next"
+review code --description-file "$REPO/desc.md" >/dev/null
+r="$(review init "TASK-B")"
+assert_eq "init runs on a closed cycle" "0" "$(rc_of "$r")"
+assert_eq "the new task is named" "TASK-B" "$(state_cmd get task_description)"
+assert_eq "the counter starts over" "0" "$(state_cmd get iteration)"
+if [ -f "$STATE_DIR/verdict.phase" ]; then
+    fail "init clears the previous marker" "verdict.phase survived init"
+else
+    pass "init clears the previous marker"
+fi
+ARCHIVED="$(find "$REPO/.codex-review/archive" -name 'verdict.phase' | wc -l)"
+if [ "$ARCHIVED" -gt 0 ]; then
+    pass "the marker travels into the archive"
+else
+    fail "the marker travels into the archive" "no verdict.phase under the archive"
+fi
+
 printf '\nPASS: %d  FAIL: %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

@@ -676,6 +676,28 @@ cmd_review() {
         exit 3
     fi
 
+    # A code review that came back APPROVED ends the cycle: STATUS.md is
+    # removed and nothing else in this session refers to it. A round sent after
+    # that is either the next task or more work on this one, and the two need
+    # different things — a new session, or the counter back at one. Continuing
+    # silently gives neither: the round arrives with a number the reviewer reads
+    # as "late in this cycle, raise nothing new".
+    local closed_phase closed_status
+    closed_phase="$(read_state_field "phase")"
+    closed_status="$(read_state_field "last_review_status")"
+    if [[ "$closed_phase" == "code" && "$closed_status" == "APPROVED" ]]; then
+        echo "ERROR: the last code review of this branch came back APPROVED — that cycle is closed." >&2
+        echo "" >&2
+        echo "Next task:            codex-review.sh init \"<task>\"" >&2
+        echo "                      Archives this cycle and opens a new Codex session." >&2
+        echo "More on this task:    codex-state.sh reset, then run this command again." >&2
+        echo "                      The count starts at round 1 and the reviewer reads the" >&2
+        echo "                      new work in full; the task name and session are kept." >&2
+        echo "" >&2
+        echo "Nothing was changed." >&2
+        exit 1
+    fi
+
     # Reset iteration counter on phase change (e.g. plan → code)
     local previous_phase
     previous_phase="$(read_state_field "phase")"

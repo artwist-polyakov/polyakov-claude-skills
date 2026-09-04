@@ -395,6 +395,10 @@ Scenarios:
 2. The `ExitPlanMode` gate takes an approval only from a plan review. One left
    by a code review, or one with no marker at all, is deleted and refused; the
    marker is cleared together with the verdict it was used for.
+3. A round sent into a cycle already closed by an approval is refused, exits
+   `1`, changes nothing and names both ways forward.
+4. Both ways out work: `codex-state.sh reset` reopens the cycle at round 1 with
+   the task name kept, and `init` opens a new one and archives the marker.
 
 Does **not** require the `codex` binary — a stub on `PATH` plays the reviewer
 and writes whatever `verdict-next` holds, a request for changes by default, so

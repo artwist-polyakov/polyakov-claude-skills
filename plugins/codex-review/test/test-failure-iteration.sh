@@ -56,7 +56,8 @@ mkdir -p "$REPO/bin"
 
 # The stub reads two marker files beside the repo:
 #   fail-next    — this review call exits 1
-#   verdict-next — before failing, write this word to verdict.txt
+#   verdict-next — write this word to verdict.txt instead of the default
+#                  approval, whether the call goes on to fail or not
 # Only a review call is affected: `common.sh` probes `codex --version` before
 # every run, and failing that probe would abort before any review was attempted.
 cat > "$REPO/bin/codex" <<'STUB'
@@ -89,7 +90,14 @@ if [ -n "$from_stdin" ] && [ -f "$REPO_DIR/fail-next" ]; then
     printf 'stream error: connection reset\n' >&2
     exit 1
 fi
-[ -n "$_verdict_file" ] && printf 'APPROVED\n' > "$_verdict_file"
+if [ -n "$_verdict_file" ]; then
+    if [ -f "$REPO_DIR/verdict-next" ]; then
+        cat "$REPO_DIR/verdict-next" > "$_verdict_file"
+        rm -f "$REPO_DIR/verdict-next"
+    else
+        printf 'APPROVED\n' > "$_verdict_file"
+    fi
+fi
 [ -n "$out" ] && printf 'APPROVED\n' > "$out"
 printf 'session sess_teststub01 ready\n'
 exit 0
@@ -176,6 +184,9 @@ assert_eq "the sixth failure still exits 1" "1" "$(rc_of "$r")"
 # ============================
 printf 'Test 4: a review that comes back spends its iteration\n'
 
+# CHANGES_REQUESTED rather than the stub's default: an approved code round ends
+# the cycle, and the scenarios below carry on with the same one.
+printf 'CHANGES_REQUESTED\n' > "$REPO/verdict-next"
 r="$(run_review)"
 assert_eq "a completed review exits 0" "0" "$(rc_of "$r")"
 assert_eq "the iteration counter advances" "1" "$(number iteration)"
