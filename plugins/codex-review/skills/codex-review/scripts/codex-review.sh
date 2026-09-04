@@ -482,11 +482,11 @@ NARROW_FROM_ROUND=3
 # --- Rounds that actually produced a review ---
 # `reviews_completed` in state.json counts the rounds of the current review
 # cycle that came back with a review. It is what narrowing is measured against:
-# the iteration counter advances on a failed codex call too (see the ERROR
-# branch in cmd_review), and note files outlive `codex-state.sh reset`, so
-# neither of those tracks the current cycle. Reset to 0 by init, by a phase
-# change, and by `codex-state.sh reset`; a state.json written before this field
-# existed reads as 0.
+# a run that came back without a verdict advances neither counter, a run that
+# came back with one advances both, and note files outlive
+# `codex-state.sh reset`, so the notes on disk do not track the current cycle.
+# Reset to 0 by init, by a phase change, and by `codex-state.sh reset`; a
+# state.json written before this field existed reads as 0.
 
 late_round_narrowing() {
     local round="$1"
@@ -725,19 +725,22 @@ cmd_review() {
     fi
 
     local codex_prompt
-    # Narrowing counts rounds that came back with a review, not iterations: a
-    # failed codex call advances the iteration counter without reviewing anything.
+    # Narrowing counts rounds that came back with a review. A call that came
+    # back without a verdict advances neither counter, and a counter moved by
+    # hand does not make a round, so the two numbers can differ.
     local reviews_completed review_round
     reviews_completed="$(read_state_number "reviews_completed")"
     review_round=$((reviews_completed + 1))
 
     codex_prompt="$(build_review_prompt "$phase" "$DESCRIPTION" "$review_round")"
 
-    # Clean previous verdict before calling codex
-    rm -f "$STATE_DIR/verdict.txt"
+    # Both files this run is read back through are cleared before the call, so
+    # whatever is found afterwards was written by this run. A reply left by the
+    # previous round would otherwise be filed as this round's note.
+    local output_file="$STATE_DIR/last_response.txt"
+    rm -f "$STATE_DIR/verdict.txt" "$output_file"
 
     # Call codex with resume
-    local output_file="$STATE_DIR/last_response.txt"
     local log_file
     log_file="$(next_attempt_log "$STATE_DIR/codex-${phase}-${next_iteration}")"
 
@@ -752,23 +755,49 @@ cmd_review() {
     echo "Sending $phase for review (iteration ${next_iteration}/${MAX_ITERATIONS})..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
 
+    local exit_code=0
     CODEX_REVIEWER=1 codex exec \
         "${MODEL_FLAG[@]}" \
         "${REASONING_FLAG[@]}" \
         "${YOLO_FLAG[@]}" \
         -o "$output_file" \
         resume "$SESSION_ID" \
-        - < "$prompt_file" > "$log_file" 2>&1 || {
-        local exit_code=$?
-        echo "ERROR: Codex exec failed (exit $exit_code)." >&2
-        cat "$log_file" >&2
-        # The call reviewed nothing, so the round count stands where it was.
-        update_state "$phase" "$next_iteration" "ERROR" "$reviews_completed"
-        exit 1
-    }
+        - < "$prompt_file" > "$log_file" 2>&1 || exit_code=$?
+
+    # A call that died decides the iteration by what the reviewer left behind.
+    # verdict.txt is removed before every request, so a valid word in it can
+    # only have been written by this run: the review happened and the round is
+    # spent, whatever the exit status says afterwards. With no verdict there was
+    # no round — an exhausted quota, a dropped network or a dead session would
+    # otherwise walk the counter to the limit and escalate a cycle in which
+    # nothing was ever reviewed. The reply text is deliberately not consulted
+    # here: `read_verdict` falls back to searching it for a word, and half a
+    # reply is not a verdict.
+    local rescued_verdict=""
+    if [[ $exit_code -ne 0 ]]; then
+        rescued_verdict="$(parse_verdict_file "$STATE_DIR/verdict.txt")"
+        if [[ -z "$rescued_verdict" ]]; then
+            echo "ERROR: Codex exec failed (exit $exit_code)." >&2
+            cat "$log_file" >&2
+            # STATUS.md is rewritten too: left alone it keeps showing the
+            # previous round and its status, and the error stays invisible
+            # in the file a human reads.
+            update_state "$phase" "$current_iteration" "ERROR" "$reviews_completed"
+            write_status
+            echo "Iteration not consumed: still ${current_iteration}/${MAX_ITERATIONS}." >&2
+            exit 1
+        fi
+        echo "WARNING: codex exec exited $exit_code after writing its verdict; the round counts." >&2
+    fi
 
     local output
     output=$(cat "$output_file" 2>/dev/null || echo "")
+
+    # A rescued round has its verdict but usually no reply: the call died before
+    # writing one. The note says that rather than sitting there empty.
+    if [[ -n "$rescued_verdict" && -z "${output//[[:space:]]/}" ]]; then
+        output="codex exec exited $exit_code after writing the verdict $rescued_verdict. No reply text was saved; the run is logged in ${log_file##*/}, one level up from this note."
+    fi
 
     # Read verdict (file → fallback to text parsing)
     local status

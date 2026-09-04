@@ -220,12 +220,12 @@ assert_file_contains "a late non-critical subject is minor" "$P" \
 
 rm -rf "$REPO"
 
-echo "=== A failed codex call does not spend a round ==="
+echo "=== A failed codex call spends neither a round nor an iteration ==="
 
 REPO="$(make_repo)"
 printf 'What changed: nothing much.\n' > "$REPO/desc.md"
 
-# Round 1 dies inside codex: the iteration counter advances, no review comes back.
+# Round 1 dies inside codex with no verdict written: nothing was reviewed.
 : > "$REPO/fail-next"
 run_review "$REPO" code --description-file "$REPO/desc.md"
 if [ -f "$(state_dir "$REPO")/notes/code-review-1.md" ]; then
@@ -234,22 +234,48 @@ else
     pass "a failed call leaves no review note"
 fi
 
-# Two real reviews follow. They are rounds 1 and 2 of the review, whatever the
-# iteration counter now says, so neither may carry the narrowing.
+# Two real reviews follow. The failed call left both counters where they were,
+# so the first retry is iteration 1 again and keeps its prompt beside the failed
+# attempt's log; neither review may carry the narrowing.
 run_review "$REPO" code --description-file "$REPO/desc.md"
 run_review "$REPO" code --description-file "$REPO/desc.md"
-assert_file_lacks "first review after the failure is not narrowed" \
-    "$(prompt_file "$REPO" code 2)" "Open a subject no earlier round raised only when it is critical"
+assert_file_lacks "the retry after the failure is not narrowed" \
+    "$(state_dir "$REPO")/codex-code-1.2.prompt.md" \
+    "Open a subject no earlier round raised only when it is critical"
 assert_file_lacks "second review after the failure is not narrowed" \
-    "$(prompt_file "$REPO" code 3)" "Open a subject no earlier round raised only when it is critical"
+    "$(prompt_file "$REPO" code 2)" "Open a subject no earlier round raised only when it is critical"
 
-# The third review is the one that narrows, and it says round 3, not round 4.
+# The third review is the one that narrows, and it says round 3.
 run_review "$REPO" code --description-file "$REPO/desc.md"
-P="$(prompt_file "$REPO" code 4)"
+P="$(prompt_file "$REPO" code 3)"
 assert_file_contains "third review after the failure narrows" "$P" \
     "Open a subject no earlier round raised only when it is critical"
-assert_file_contains "the round number counts reviews, not iterations" "$P" "Round 3 of this phase"
-assert_file_lacks "the iteration number is not used as the round" "$P" "Round 4 of this phase"
+assert_file_contains "the failed call cost no round" "$P" "Round 3 of this phase"
+
+rm -rf "$REPO"
+
+echo "=== The round number counts reviews, not iterations ==="
+
+REPO="$(make_repo)"
+printf 'What changed: nothing much.\n' > "$REPO/desc.md"
+run_review "$REPO" code --description-file "$REPO/desc.md"
+
+# The iteration counter is moved on its own, the way a hand-edited cycle leaves
+# it. The next review is the second one this cycle, whatever that counter says.
+(cd "$REPO" && bash "$STATE_CMD" set iteration 3 >/dev/null 2>&1)
+run_review "$REPO" code --description-file "$REPO/desc.md"
+P="$(prompt_file "$REPO" code 4)"
+assert_file_lacks "the second review is not narrowed" "$P" \
+    "Open a subject no earlier round raised only when it is critical"
+
+# One more review: it is round 3 of this cycle and narrows, while the iteration
+# counter it was sent under is 5.
+run_review "$REPO" code --description-file "$REPO/desc.md"
+P="$(prompt_file "$REPO" code 5)"
+assert_file_contains "the third review narrows whatever the counter says" "$P" \
+    "Open a subject no earlier round raised only when it is critical"
+assert_file_contains "the round number counts reviews" "$P" "Round 3 of this phase"
+assert_file_lacks "the iteration number is not used as the round" "$P" "Round 5 of this phase"
 
 rm -rf "$REPO"
 
