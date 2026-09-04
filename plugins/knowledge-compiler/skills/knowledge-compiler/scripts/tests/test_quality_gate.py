@@ -337,6 +337,122 @@ class QualityGateTests(unittest.TestCase):
                 self.run_gate("--write-source-index")
                 self.run_gate()
 
+    def test_code_inside_quotes_and_nested_lists_is_ignored(self):
+        for example in (
+            ">     seg-999\n",
+            "> ```markdown\n> seg-999\n> ```\n",
+            "> - Пункт\n>\n>       seg-999\n",
+            "- Пункт\n\n  > ```markdown\n  > seg-999\n  > ```\n",
+        ):
+            with self.subTest(example=example):
+                self.concepts.write_text(self.concept_text + "\n" + example, encoding="utf-8")
+                self.run_gate("--write-source-index")
+                self.run_gate()
+
+    def test_quoted_references_are_still_checked(self):
+        for reference in ("> Источник: seg-999.\n", "> Источник: `seg-999`.\n"):
+            with self.subTest(reference=reference):
+                self.concepts.write_text(self.concept_text + "\n" + reference, encoding="utf-8")
+                self.assert_rejected_without_index_write("unknown segment")
+
+    def test_quoted_setext_heading_conflicts_with_claim_anchor(self):
+        self.concepts.write_text(
+            "> Diagnosis Before Action\n> ---\n\n" + self.concept_text, encoding="utf-8"
+        )
+        self.assert_rejected_without_index_write("claim heading")
+
+    def test_reference_link_heading_conflicts_with_claim_anchor(self):
+        for heading, definition in (
+            ("[Diagnosis Before Action][details]", "[details]: /details"),
+            ("[Diagnosis Before Action][]", "[Diagnosis Before Action]: /details"),
+            ("[Diagnosis Before Action]", "[Diagnosis Before Action]: /details"),
+        ):
+            with self.subTest(heading=heading):
+                self.concepts.write_text(
+                    f"{heading}\n---\n\n" + self.concept_text + f"\n{definition}\n",
+                    encoding="utf-8",
+                )
+                self.assert_rejected_without_index_write("claim heading")
+
+    def test_unresolved_reference_link_keeps_visible_label_in_anchor(self):
+        self.concepts.write_text(
+            "[Diagnosis Before Action][details]\n---\n\n" + self.concept_text,
+            encoding="utf-8",
+        )
+        self.run_gate("--write-source-index")
+        self.run_gate()
+
+    def test_duplicate_heading_suffix_conflicts_with_claim_anchor(self):
+        self.source_map["claims"][0]["claim_id"] = "diagnosis-1"
+        self.write_map(self.source_map)
+        self.concepts.write_text(
+            "# Diagnosis\n\n# Diagnosis\n\n## diagnosis-1\n\nИсточник: seg-001.\n",
+            encoding="utf-8",
+        )
+        self.assert_rejected_without_index_write("claim heading")
+
+    def test_literal_underscores_remain_in_heading_anchor(self):
+        for heading in (r"# diagnosis\_-before-action", "# `diagnosis_-before-action`"):
+            with self.subTest(heading=heading):
+                self.concepts.write_text(heading + "\n\n" + self.concept_text, encoding="utf-8")
+                self.run_gate("--write-source-index")
+                self.run_gate()
+
+    def test_emphasized_heading_conflicts_with_claim_anchor(self):
+        self.concepts.write_text(
+            "# _Diagnosis Before Action_\n\n" + self.concept_text, encoding="utf-8"
+        )
+        self.assert_rejected_without_index_write("claim heading")
+
+    def test_combining_mark_remains_in_heading_anchor(self):
+        self.source_map["claims"][0]["claim_id"] = "cafe"
+        self.write_map(self.source_map)
+        self.concepts.write_text(
+            "# cafe\u0301\n\n## cafe\n\nИсточник: seg-001.\n", encoding="utf-8"
+        )
+        self.run_gate("--write-source-index")
+        self.run_gate()
+
+    def test_other_number_is_removed_from_heading_anchor(self):
+        self.concepts.write_text(
+            "# diagnosis²-before-action\n\n" + self.concept_text, encoding="utf-8"
+        )
+        self.assert_rejected_without_index_write("claim heading")
+
+    def test_reference_link_destination_segment_is_checked(self):
+        self.concepts.write_text(
+            self.concept_text + "\n[Источник][details]\n\n"
+            "[details]: source-index.md#seg-999\n",
+            encoding="utf-8",
+        )
+        self.assert_rejected_without_index_write("unknown segment")
+
+    def test_inline_html_comment_does_not_create_segment_reference(self):
+        self.concepts.write_text(
+            self.concept_text + "\nЭто пример <!-- seg-999 --> без ссылки.\n",
+            encoding="utf-8",
+        )
+        self.run_gate("--write-source-index")
+        self.run_gate()
+
+    def test_inline_html_heading_conflicts_by_visible_text(self):
+        self.concepts.write_text(
+            "# <em>Diagnosis</em> Before Action\n\n" + self.concept_text, encoding="utf-8"
+        )
+        self.assert_rejected_without_index_write("claim heading")
+
+    def test_html_text_boundaries_preserve_segment_references(self):
+        for example in (
+            "seg-001<br>seg-999",
+            "<p>seg-001</p><p>seg-999</p>",
+            "seg-<em>999</em>",
+        ):
+            with self.subTest(example=example):
+                self.concepts.write_text(
+                    self.concept_text + "\n" + example + "\n", encoding="utf-8"
+                )
+                self.assert_rejected_without_index_write("unknown segment")
+
     def test_existing_quality_errors_prevent_index_write(self):
         with (self.skill / "SKILL.md").open("a", encoding="utf-8") as stream:
             stream.write("\nTODO\n")
