@@ -625,6 +625,16 @@ class QualityGateTests(unittest.TestCase):
                 self.run_gate()
                 self.assertEqual(self.snapshot(), before)
 
+    def test_exact_segment_ids_are_reserved_from_claim_ids(self):
+        for claim_id in ("seg-001", "seg-002", "seg-999"):
+            with self.subTest(claim_id=claim_id):
+                self.source_map["claims"][0]["claim_id"] = claim_id
+                self.write_map(self.source_map)
+                self.concepts.write_text(
+                    self.concept_text.replace("diagnosis-before-action", claim_id), encoding="utf-8"
+                )
+                self.assert_rejected_without_index_write("reserved for segments")
+
     def test_segment_link_paths_are_relative_to_containing_document(self):
         nested = self.references / "topics" / "details.md"
         nested.parent.mkdir()

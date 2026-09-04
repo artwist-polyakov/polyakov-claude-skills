@@ -268,6 +268,9 @@ def check_source_map(source_map: object, skill_dir: Path, source_text: str, erro
         if not isinstance(claim_id, str) or not CLAIM_ID_RE.fullmatch(claim_id):
             errors.append("invalid claim_id in source-map: use lowercase letters, digits and single hyphens")
             continue
+        if SEGMENT_RE.fullmatch(claim_id):
+            errors.append(f"invalid claim_id {claim_id}: seg-<number> is reserved for segments")
+            continue
         if claim_id in claim_ids:
             errors.append(f"duplicate claim_id: {claim_id}")
         claim_ids.add(claim_id)
