@@ -770,6 +770,16 @@ cmd_review() {
     local prompt_file="${log_file%.log}.prompt.md"
     printf '%s' "$codex_prompt" > "$prompt_file"
 
+    # Every round after the first names the task it belongs to. A cycle left
+    # behind by an abandoned task is indistinguishable from one still in
+    # progress, so the round says out loud what it is continuing.
+    if [[ $current_iteration -ge 1 ]]; then
+        local continued_task previous_round
+        continued_task="$(read_state_field "task_description")"
+        previous_round="$(read_state_field "last_review_timestamp")"
+        echo "Continuing task: ${continued_task:-<unnamed>} (previous round ${previous_round:-unknown})." >&2
+    fi
+
     echo "Sending $phase for review (iteration ${next_iteration}/${MAX_ITERATIONS})..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
 

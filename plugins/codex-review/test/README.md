@@ -399,6 +399,8 @@ Scenarios:
    `1`, changes nothing and names both ways forward.
 4. Both ways out work: `codex-state.sh reset` reopens the cycle at round 1 with
    the task name kept, and `init` opens a new one and archives the marker.
+5. Every round after the first names the task it continues and when the
+   previous round ran; the first round says nothing.
 
 Does **not** require the `codex` binary — a stub on `PATH` plays the reviewer
 and writes whatever `verdict-next` holds, a request for changes by default, so

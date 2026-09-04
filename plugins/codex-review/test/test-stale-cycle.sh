@@ -246,5 +246,18 @@ else
     fail "the marker travels into the archive" "no verdict.phase under the archive"
 fi
 
+# ============================
+# Test 5: every round after the first says what it continues
+# ============================
+printf 'Test 5: a round names the task it is continuing\n'
+
+r="$(review code --description-file "$REPO/desc.md")"
+assert_lacks "the first round says nothing about continuing" "Continuing task" "$(msg_of "$r")"
+
+r="$(review code --description-file "$REPO/desc.md")"
+assert_contains "the second round says it is continuing" "Continuing task" "$(msg_of "$r")"
+assert_contains "it names the task" "TASK-B" "$(msg_of "$r")"
+assert_contains "it names the previous round" "previous round 20" "$(msg_of "$r")"
+
 printf '\nPASS: %d  FAIL: %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
