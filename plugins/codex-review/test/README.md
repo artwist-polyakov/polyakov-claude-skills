@@ -18,6 +18,7 @@ test/
 ├── test-verdict-source.sh      # the verdict file decides, the reply never does
 ├── test-state-durability.sh    # what survives a write, a reset and a second archiver
 ├── test-stale-cycle.sh         # a cycle that outlives the task it opened for
+├── test-branch-lock.sh         # one run at a time on a branch
 ├── test-description-file.sh    # --description-file, per-attempt logs, saved request
 ├── test-severity-calibration.sh # severity scale, finding headings, verdict threshold
 ├── test-exec-flags.sh          # model, reasoning effort, and Fast mode on every call
@@ -418,6 +419,63 @@ Run:
 sh plugins/codex-review/test/test-stale-cycle.sh
 ```
 
+## test-branch-lock.sh
+
+Regression tests for the lock a review command holds over its branch. Reading
+the iteration counter, sending the round and writing the result back is one
+sequence, and two runs of the same branch used to interleave freely.
+
+Scenarios:
+
+1. A branch already in use turns away a state write, a review and a reset; each
+   names the holding command, its pid, its host and when it started, says
+   nothing was changed, and leaves the lock where it is.
+2. `show`, `get` and `dir` answer while the branch is in use.
+3. A lock left by a process of this user that is gone from this host is refused
+   with a line saying the holder is no longer running and naming the directory
+   to remove; the lock stays where it is, and the command runs once it is
+   removed by hand.
+4. A lock claimed on another machine, one belonging to another user, and one
+   carrying no owner record are all refused with a refusal that does not claim
+   to know whether the holder is running: `kill -0` refuses a live process of
+   another user exactly as it refuses a pid that does not exist.
+5. The lock is released when the command ends: after a write, after a review,
+   and after a command that failed on a value the state file cannot hold.
+6. A command started while a review genuinely holds the branch is turned away,
+   the refusal names the running holder, and the branch is usable again once
+   that review ends with a clean exit. The reviewer stub reports itself ready
+   and then waits to be let go, so no assertion rides on a delay.
+7. `init` is refused by a lock like any other command; once the lock is gone it
+   runs, and no lock reaches the archive.
+8. A claim that cannot record its owner gives the lock back and fails, leaving
+   the state untouched.
+9. A shell told to stop while its reviewer is still writing keeps the branch:
+   the signal is checked to have been delivered, the lock is still there, a
+   command started meanwhile is still refused, the branch comes back only once
+   the reviewer is done, and the run ends on the code of the signal it was
+   sent. Bash runs a trap for a signal received during a foreground command
+   only after that command finishes.
+10. A claim that can neither record its owner nor take back the directory it
+    made says the lock is still there and names it, rather than reporting that
+    nothing was changed.
+11. A lock removed by hand under a running command and claimed again is left
+    alone by that command when it ends, whether the replacement already names
+    its holder or does not name anyone yet. Removing either would let a third
+    command in beside the new holder.
+
+Does **not** require the `codex` binary — a stub on `PATH` plays the reviewer.
+The `mv` and `rm` a claim uses are failed on demand by stubs keyed on the target
+they refuse, so the failure paths do not depend on file permissions or on who
+runs the suite. Locks are planted by hand with the records a real claim
+writes, so the holder can be a live process, a dead one, one of another user,
+or one on another machine.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-branch-lock.sh
+```
+
 ## test-e2e.sh
 
 Opt-in end-to-end tests that exercise real `codex` / `claude` CLIs.
@@ -496,5 +554,5 @@ scenario — as an `init` task and as a code description, not as plans:
 
 ## Exit codes
 
-All twelve scripts exit `0` on success and `1` if any assertion failed.
+All thirteen scripts exit `0` on success and `1` if any assertion failed.
 `test-e2e.sh` additionally exits `0` (skip) when `CODEX_E2E` is not set.
