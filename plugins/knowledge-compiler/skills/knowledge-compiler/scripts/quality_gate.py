@@ -303,15 +303,20 @@ def check_source_map(source_map: object, skill_dir: Path, source_text: str, erro
         if not isinstance(artifact, str):
             errors.append(f"invalid artifact: claim {claim_id}")
             continue
-        relative = Path(artifact)
-        path = (skill_dir / relative).resolve()
+        try:
+            relative = Path(artifact)
+            path = (skill_dir / relative).resolve()
+            artifact_is_file = path.is_file()
+        except (ValueError, OSError):
+            errors.append(f"invalid artifact {artifact!r}: claim {claim_id}")
+            continue
         if (relative.is_absolute() or ".." in relative.parts
                 or not relative.parts or relative.parts[0] != "references"
                 or relative.suffix != ".md" or relative.as_posix() == SOURCE_INDEX
                 or not path.is_relative_to(root / "references")):
             errors.append(f"invalid artifact {artifact!r}: expected a Markdown file inside references")
             continue
-        if not path.is_file():
+        if not artifact_is_file:
             errors.append(f"missing artifact {artifact}: claim {claim_id}")
             continue
         canonical, anchors = headings.get(path, ([], []))

@@ -99,6 +99,7 @@ class QualityGateTests(unittest.TestCase):
             text=True, capture_output=True, check=False,
         )
         output = result.stdout + result.stderr
+        self.assertNotIn("Traceback", output)
         self.assertEqual(result.returncode, 0 if success else 1, output)
         if diagnostic:
             self.assertIn(diagnostic, output)
@@ -342,6 +343,14 @@ class QualityGateTests(unittest.TestCase):
                 data["claims"][0]["artifact"] = artifact
                 self.write_map(data)
                 self.assert_rejected_without_index_write("artifact")
+
+    def test_malformed_artifact_paths_fail_without_traceback_or_index_write(self):
+        for artifact in ("references/\x00.md", "references/" + "x" * 300 + ".md"):
+            with self.subTest(artifact=artifact):
+                data = copy.deepcopy(self.source_map)
+                data["claims"][0]["artifact"] = artifact
+                self.write_map(data)
+                self.assert_rejected_without_index_write("invalid artifact")
 
     def test_missing_duplicate_and_hidden_claim_heading(self):
         for text in (
