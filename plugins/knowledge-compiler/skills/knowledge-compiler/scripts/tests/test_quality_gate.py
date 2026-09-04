@@ -476,6 +476,30 @@ class QualityGateTests(unittest.TestCase):
         )
         self.assertEqual(self.snapshot(), before)
 
+    def test_unclaimed_symlink_to_existing_or_missing_index_is_allowed(self):
+        for existing in (False, True):
+            with self.subTest(existing=existing):
+                self.index.unlink(missing_ok=True)
+                if existing:
+                    self.run_gate("--write-source-index")
+                alias = self.references / "index-alias.md"
+                alias.symlink_to(self.index.name)
+                alias_state = (alias.readlink(), alias.lstat().st_mtime_ns)
+                derived = {self.index.relative_to(self.skill), alias.relative_to(self.skill)}
+                before = {path: state for path, state in self.snapshot().items() if path not in derived}
+                try:
+                    self.run_gate("--write-source-index")
+                    generated = self.snapshot()
+                    self.run_gate()
+                    self.assertEqual(self.snapshot(), generated)
+                    self.assertEqual(
+                        {path: state for path, state in generated.items() if path not in derived}, before
+                    )
+                    self.assertTrue(alias.is_symlink())
+                    self.assertEqual((alias.readlink(), alias.lstat().st_mtime_ns), alias_state)
+                finally:
+                    alias.unlink()
+
     def test_artifact_links_to_other_files_and_similar_names_are_allowed(self):
         for kind in ("symlink", "hardlink", "separate"):
             with self.subTest(kind=kind):
@@ -776,6 +800,40 @@ class QualityGateTests(unittest.TestCase):
             "# <em>Diagnosis</em> Before Action\n\n" + self.concept_text, encoding="utf-8"
         )
         self.assert_rejected_without_index_write("claim heading")
+
+    def test_script_and_style_data_do_not_create_source_references(self):
+        for tag in ("script", "style"):
+            for markup in (
+                f"<{tag}>seg-999</{tag}>",
+                f'<a href="source-index.md#seg-001">seg-001<{tag}> seg-002 </{tag}></a>',
+            ):
+                with self.subTest(tag=tag, markup=markup):
+                    self.concepts.write_text(markup + "\n\n" + self.concept_text, encoding="utf-8")
+                    self.run_gate("--write-source-index")
+                    before = self.snapshot()
+                    self.run_gate()
+                    self.assertEqual(self.snapshot(), before)
+
+    def test_visible_content_after_script_and_style_is_still_checked(self):
+        for tag in ("script", "style"):
+            for text, diagnostic in (
+                ("Источник: seg-999.", "unknown segment"),
+                ("## diagnosis-before-action", "claim heading"),
+            ):
+                with self.subTest(tag=tag, text=text):
+                    self.concepts.write_text(
+                        self.concept_text + f"\n<{tag}>ignored</{tag}>\n\n{text}\n", encoding="utf-8"
+                    )
+                    self.assert_rejected_without_index_write(diagnostic)
+
+    def test_explicit_script_and_style_ids_still_conflict_with_claim_heading(self):
+        for tag in ("script", "style"):
+            with self.subTest(tag=tag):
+                self.concepts.write_text(
+                    f'<{tag} id="diagnosis-before-action">ignored</{tag}>\n\n' + self.concept_text,
+                    encoding="utf-8",
+                )
+                self.assert_rejected_without_index_write("claim heading")
 
     def test_explicit_html_anchors_conflict_with_claim_heading(self):
         for markup in (

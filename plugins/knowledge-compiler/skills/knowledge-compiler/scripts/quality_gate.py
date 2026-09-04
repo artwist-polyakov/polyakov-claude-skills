@@ -95,6 +95,7 @@ class MarkdownContent(HTMLParser):
         self.explicit_anchors = set()
         self.heading = None
         self.pre_depth = 0
+        self.hidden_text_tag = None
 
     def handle_starttag(self, tag, attrs):
         attributes = {}
@@ -110,6 +111,8 @@ class MarkdownContent(HTMLParser):
             self.pre_depth += 1
         if self.pre_depth:
             return
+        if tag in {"script", "style"}:
+            self.hidden_text_tag = tag
         if tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
             self.heading = []
         if tag == "a":
@@ -122,6 +125,8 @@ class MarkdownContent(HTMLParser):
                           if key in {"href", "src", "alt"} and value)
 
     def handle_endtag(self, tag):
+        if tag == self.hidden_text_tag:
+            self.hidden_text_tag = None
         if tag in self.TEXT_BREAKS:
             self.text.append("\n")
         if tag == "pre":
@@ -144,7 +149,7 @@ class MarkdownContent(HTMLParser):
         self.finish_link()  # Raw HTML may omit the closing </a>.
 
     def handle_data(self, data):
-        if not self.pre_depth:
+        if not self.pre_depth and self.hidden_text_tag is None:
             self.text.append(data)
             if self.heading is not None:
                 self.heading.append(data)
