@@ -121,6 +121,17 @@ run_review() {
 rc_of() { printf '%s' "${1%%|*}"; }
 msg_of() { printf '%s' "${1#*|}"; }
 
+# An approved code round closes the cycle: the next round refuses to run and
+# asks for a new task or a reset. The scenarios below carry on with the same
+# cycle, so the stored status goes back to the one an open cycle carries. This
+# leaves the counters alone, which the assertions read.
+reopen_cycle() {
+    (
+        unset CODEX_REVIEWER CODEX_SESSION_ID CODEX_MAX_ITERATIONS
+        cd "$REPO" && bash "$STATE_CMD" set last_review_status CHANGES_REQUESTED
+    ) >/dev/null
+}
+
 number() {
     sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p" \
         "$STATE_DIR/state.json" | head -1
@@ -191,6 +202,7 @@ printf 'I would not merge this.\n' > "$REPO/reply-next"
 r="$(run_review)"
 assert_eq "an approval in the file approves" "APPROVED" "$(field last_review_status)"
 assert_eq "that round is spent too" "2" "$(number iteration)"
+reopen_cycle
 
 # ============================
 # Test 5: only the two words count
@@ -215,6 +227,7 @@ printf 'A reply.\n' > "$REPO/reply-next"
 r="$(run_review)"
 assert_eq "the padded verdict is read" "APPROVED" "$(field last_review_status)"
 assert_eq "its round is spent" "3" "$(number iteration)"
+reopen_cycle
 
 # ============================
 # Test 7: the kept reply is archived with the session it belongs to

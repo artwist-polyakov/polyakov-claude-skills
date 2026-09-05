@@ -594,7 +594,7 @@ cmd_init() {
     archive_previous_session
 
     # Clear verdict to prevent stale auto-approve (AUTO_REVIEW hook)
-    rm -f "$STATE_DIR/verdict.txt"
+    rm -f "$STATE_DIR/verdict.txt" "$STATE_DIR/verdict.phase"
 
     # Warn if config.env already has a session
     if [[ -n "${CODEX_SESSION_ID:-}" ]]; then
@@ -676,6 +676,38 @@ cmd_review() {
         exit 3
     fi
 
+    # A code review that came back APPROVED ends the cycle: STATUS.md is
+    # removed and nothing else in this session refers to it. A round sent after
+    # that is either the next task or more work on this one, and the two need
+    # different things — a new session, or the counter back at one. Continuing
+    # silently gives neither: the round arrives with a number the reviewer reads
+    # as "late in this cycle, raise nothing new".
+    local closed_phase closed_status
+    closed_phase="$(read_state_field "phase")"
+    closed_status="$(read_state_field "last_review_status")"
+    if [[ "$closed_phase" == "code" && "$closed_status" == "APPROVED" ]]; then
+        echo "ERROR: the last code review of this branch came back APPROVED — that cycle is closed." >&2
+        echo "" >&2
+        echo "Next task:            codex-review.sh init \"<task>\"" >&2
+        echo "                      Archives this cycle and opens a new Codex session." >&2
+        echo "More on this task:    codex-state.sh reset, then run this command again." >&2
+        echo "                      The count starts at round 1 and the reviewer reads the" >&2
+        echo "                      new work in full; the task name and session are kept." >&2
+        echo "" >&2
+        echo "Nothing was changed." >&2
+        exit 1
+    fi
+
+    # What the branch carried into this command, read before anything resets
+    # it: the phase change below zeroes the counters and stamps the timestamp
+    # with the current time, and the line that names the task is the only place
+    # a cycle left behind by an abandoned task becomes visible.
+    local prior_rounds prior_reviews prior_round_time prior_task
+    prior_rounds="$(read_state_number "iteration")"
+    prior_reviews="$(read_state_number "reviews_completed")"
+    prior_round_time="$(read_state_field "last_review_timestamp")"
+    prior_task="$(read_state_field "task_description")"
+
     # Reset iteration counter on phase change (e.g. plan → code)
     local previous_phase
     previous_phase="$(read_state_field "phase")"
@@ -734,7 +766,7 @@ cmd_review() {
     # whatever is found afterwards was written by this run. A reply left by the
     # previous round would otherwise be filed as this round's note.
     local output_file="$STATE_DIR/last_response.txt"
-    rm -f "$STATE_DIR/verdict.txt" "$output_file"
+    rm -f "$STATE_DIR/verdict.txt" "$STATE_DIR/verdict.phase" "$output_file"
 
     # Call codex with resume
     local log_file
@@ -747,6 +779,17 @@ cmd_review() {
     # The prompt goes to codex on stdin — see cmd_init for why it is a file.
     local prompt_file="${log_file%.log}.prompt.md"
     printf '%s' "$codex_prompt" > "$prompt_file"
+
+    # Every round names the task it belongs to. A cycle left behind by an
+    # abandoned task is indistinguishable from one still in progress, and the
+    # name is what tells them apart, so it is printed unconditionally rather
+    # than on a rule about which rounds deserve it. A round that follows
+    # earlier ones on this branch also says when the last of them ran.
+    if [[ $prior_rounds -ge 1 || $prior_reviews -ge 1 ]]; then
+        echo "Continuing task: ${prior_task:-<unnamed>} (previous round ${prior_round_time:-unknown})." >&2
+    else
+        echo "Task: ${prior_task:-<unnamed>}." >&2
+    fi
 
     echo "Sending $phase for review (iteration ${next_iteration}/${MAX_ITERATIONS})..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
@@ -793,6 +836,11 @@ cmd_review() {
         echo "Iteration not consumed: still ${current_iteration}/${MAX_ITERATIONS}." >&2
         exit 1
     fi
+
+    # The phase that asked travels with the verdict. The ExitPlanMode hook of
+    # AUTO_REVIEW mode reads verdict.txt on its own, and an APPROVED left by a
+    # code review would otherwise let the next task's plan through unreviewed.
+    printf '%s\n' "$phase" > "$STATE_DIR/verdict.phase"
 
     if [[ $exit_code -ne 0 ]]; then
         echo "WARNING: codex exec exited $exit_code after writing its verdict; the round counts." >&2

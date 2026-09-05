@@ -536,7 +536,8 @@ archive_previous_session() {
     # session reuses, so it stops the archiver instead of passing for success.
     archive_move "$archive_dir" \
         "$state_dir/state.json" "$state_dir/verdict.txt" \
-        "$state_dir/last_response.txt" "$state_dir/STATUS.md" || return 1
+        "$state_dir/verdict.phase" "$state_dir/last_response.txt" \
+        "$state_dir/STATUS.md" || return 1
     archive_move "$archive_dir" "$state_dir"/codex-*.log || return 1
     # Requests travel with the logs of the attempts that sent them: left behind,
     # they would be overwritten once a new session reuses the attempt numbers.

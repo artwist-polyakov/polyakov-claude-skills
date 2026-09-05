@@ -81,7 +81,7 @@ make_repo() {
     mkdir -p "$repo/bin"
     cat > "$repo/bin/codex" <<'STUB'
 #!/bin/sh
-# Test stub: reads the prompt from stdin, writes APPROVED to the -o target.
+# Test stub: reads the prompt from stdin, writes a verdict and a reply.
 out=""
 from_stdin=""
 while [ $# -gt 0 ]; do
@@ -109,8 +109,11 @@ if [ -n "$from_stdin" ] && [ -f "$(dirname "$0")/../fail-next" ]; then
     printf 'stream error: connection reset\n' >&2
     exit 1
 fi
-[ -n "$_verdict_file" ] && printf 'APPROVED\n' > "$_verdict_file"
-[ -n "$out" ] && printf 'APPROVED\n' > "$out"
+# CHANGES_REQUESTED, not an approval: an approved code round closes the cycle,
+# and this suite sends several rounds through the same one to read the prompts
+# they build.
+[ -n "$_verdict_file" ] && printf 'CHANGES_REQUESTED\n' > "$_verdict_file"
+[ -n "$out" ] && printf 'A review.\n' > "$out"
 printf 'session sess_teststub01 ready\n'
 exit 0
 STUB
