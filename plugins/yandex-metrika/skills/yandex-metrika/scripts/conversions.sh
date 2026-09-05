@@ -130,8 +130,8 @@ else
     REPORT_MODE="table"
 fi
 
-command -v python3 >/dev/null 2>&1 || {
-    echo "Error: Python 3 is required to combine conversion reports (standard library only)." >&2
+command -v uv >/dev/null 2>&1 || {
+    echo "Error: uv is required to combine conversion reports. Install it from https://docs.astral.sh/uv/." >&2
     exit 1
 }
 
@@ -197,7 +197,7 @@ if [ "$BATCH_COUNT" -gt 0 ]; then
     set -- "$@" --batch "$BATCH_FILE" "$BATCH_COUNT" "$BATCH_HELPERS"
 fi
 
-python3 "$SCRIPT_DIR/merge_conversions.py" "$REPORT_MODE" "$CONV_TMPDIR/report.csv" "$@"
+uv run --script "$SCRIPT_DIR/merge_conversions.py" "$REPORT_MODE" "$CONV_TMPDIR/report.csv" "$@"
 # Publish the cache only after every request and the merge have succeeded.
 _cache_tmp=$(mktemp "$COUNTER_DIR/reports/.conversions.XXXXXX")
 cp "$CONV_TMPDIR/report.csv" "$_cache_tmp" && mv -f "$_cache_tmp" "$CACHE_FILE" || {

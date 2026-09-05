@@ -1,5 +1,9 @@
-#!/usr/bin/env python3
-"""Offline integration checks: python3 -m unittest discover -s scripts/tests."""
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# ///
+"""Offline integration checks: uv run --script scripts/tests/test_conversions.py."""
 
 import csv
 import json

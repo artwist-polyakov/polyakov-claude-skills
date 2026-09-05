@@ -15,7 +15,9 @@ description: |
 
 Требуется `YANDEX_METRIKA_TOKEN` в `config/.env`.
 Инструкция: `config/README.md`.
-Для `conversions.sh` нужен Python 3; используются только модули стандартной библиотеки.
+Для `conversions.sh` нужен `uv`: обработчик CSV запускается через `uv run --script`.
+Версия Python и пустой список зависимостей объявлены в самом скрипте;
+используются только модули стандартной библиотеки.
 
 ## Philosophy
 
