@@ -36,7 +36,7 @@ def metric_label(metric, grouped=False):
     match = re.fullmatch(r"ym:s:goal(\d+)(visits|reaches|conversionRate)", metric)
     goal, suffix = match.groups()
     label = LABELS[SUFFIXES.index(suffix)]
-    return label if grouped else f'{label} (Goal {goal}, "purchase")'
+    return label if grouped else f'{label} (Goal {goal}, "purchase"\r\nnext line)'
 
 
 def metric_value(metric, source, period=0):
@@ -85,6 +85,12 @@ def fake_curl(args):
         output.write_text("Synthetic API failure")
         return 0
     headers.write_text("HTTP/1.1 200 OK\r\n\r\n")
+    if failure == "csv" and number == 2:
+        output.write_text('\ufeff"unterminated\r\n', encoding="utf-8")
+        return 0
+    if failure == "header":
+        output.write_text('\ufeff\n', encoding="utf-8")
+        return 0
     grouped = urlsplit(url).path.endswith("/bytime.csv")
     metrics = params["metrics"].split(",")
     limit = int(params.get("top_keys" if grouped else "limit", "100"))
@@ -96,8 +102,11 @@ def fake_curl(args):
         sources.pop()
     if number == 2 and failure == "source_order":
         sources.reverse()
+    if os.environ.get("FAKE_CURL_EMPTY"):
+        sources = []
     with output.open("w", encoding="utf-8-sig", newline="") as stream:
-        writer = csv.writer(stream)
+        # Equivalent CSV quoting must not affect source or period matching.
+        writer = csv.writer(stream, quoting=csv.QUOTE_ALL if number % 2 == 0 else csv.QUOTE_MINIMAL)
         if grouped:
             writer.writerow(["Period"] + [f"{SOURCES[source]} ({metric_label(metric, True)})"
                                           for metric in metrics for source in sources])
@@ -123,7 +132,7 @@ class ConversionsTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.scripts = self.root / "scripts"
         self.scripts.mkdir()
-        for name in ("common.sh", "conversions.sh", "merge_conversions.py"):
+        for name in ("common.sh", "conversions.sh", "merge_conversions.awk"):
             shutil.copy2(SCRIPTS / name, self.scripts / name)
         config = self.root / "config"
         config.mkdir()
@@ -134,13 +143,23 @@ class ConversionsTests(unittest.TestCase):
         self.log = self.root / "requests.jsonl"
         bin_dir = self.root / "bin"
         bin_dir.mkdir()
+        # The tested script can use only standard shell tools and fake curl.
+        # Python is exclusively the test harness, invoked by its absolute path.
+        for command in ("sh", "dirname", "mkdir", "cut", "tr", "sed", "grep", "cksum",
+                        "awk", "date", "head", "wc", "mktemp", "rm", "cp", "mv", "cat", "sleep"):
+            executable = shutil.which(command, path=os.defpath)
+            self.assertIsNotNone(executable, f"Required shell command is missing: {command}")
+            (bin_dir / command).symlink_to(executable)
         curl = bin_dir / "curl"
         curl.write_text(f"#!/bin/sh\nexec {shlex.quote(sys.executable)} "
                         f"{shlex.quote(str(Path(__file__).resolve()))} --fake-curl \"$@\"\n")
         curl.chmod(0o755)
-        self.env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        self.env = dict(os.environ, PATH=str(bin_dir),
                         TMPDIR=str(self.root / "tmp"), FAKE_CURL_LOG=str(self.log))
         self.env.pop("FAKE_CURL_FAILURE", None)
+        self.env.pop("FAKE_CURL_EMPTY", None)
+        self.assertIsNone(shutil.which("python3", path=self.env["PATH"]))
+        self.assertIsNone(shutil.which("uv", path=self.env["PATH"]))
         self.configure(7)
 
     def configure(self, count):
@@ -241,6 +260,18 @@ class ConversionsTests(unittest.TestCase):
         self.assertEqual(len(self.requests()), 6)
         self.assertEqual(len(list((self.counter / "reports").glob("*.csv"))), 3)
 
+    def test_empty_reports(self):
+        self.env["FAKE_CURL_EMPTY"] = "1"
+        for grouped in (False, True):
+            with self.subTest(grouped=grouped):
+                self.log.unlink(missing_ok=True)
+                self.run_report(*(["--group", "day"] if grouped else []), "--no-cache")
+                self.assert_batches(grouped=grouped)
+                if grouped:
+                    self.assertEqual(self.read_csv(), [["Period"], *[[period] for period in PERIODS]])
+                else:
+                    self.assert_table(source_count=0)
+
     def test_cache_from_previous_single_request_format_is_ignored(self):
         goals = ",".join(map(str, self.goals))
         old_key = f"conv_12345_{PERIODS[0]}_{PERIODS[-1]}__{goals}___lastsign"
@@ -263,7 +294,8 @@ class ConversionsTests(unittest.TestCase):
         self.assertEqual(list((self.root / "tmp").iterdir()), [])
 
     def test_inconsistent_batches_do_not_publish_report(self):
-        for failure, args in (("sources", []), ("source_order", ["--group", "day"])):
+        for failure, args in (("sources", []), ("source_order", ["--group", "day"]),
+                              ("csv", []), ("header", ["--group", "day"])):
             with self.subTest(failure=failure):
                 self.log.unlink(missing_ok=True)
                 self.env["FAKE_CURL_FAILURE"] = failure

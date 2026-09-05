@@ -130,11 +130,6 @@ else
     REPORT_MODE="table"
 fi
 
-command -v uv >/dev/null 2>&1 || {
-    echo "Error: uv is required to combine conversion reports. Install it from https://docs.astral.sh/uv/." >&2
-    exit 1
-}
-
 echo "Fetching conversions for counter $COUNTER, goals: $GOAL_IDS..." >&2
 
 CONV_TMPDIR=$(mktemp -d "${METRIKA_TMPDIR}/metrika_conv.XXXXXX")
@@ -186,7 +181,7 @@ for _gid in $(printf '%s' "$GOAL_IDS" | tr ',' ' '); do
     BATCH_COUNT=$((BATCH_COUNT + 1))
     if [ "$BATCH_COUNT" -eq 6 ]; then
         fetch_batch
-        set -- "$@" --batch "$BATCH_FILE" "$BATCH_COUNT" "$BATCH_HELPERS"
+        set -- "$@" "$BATCH_FILE" "$BATCH_COUNT" "$BATCH_HELPERS"
         BATCH_COUNT=0
         BATCH_IDS=""
         BATCH_METRICS=""
@@ -194,10 +189,10 @@ for _gid in $(printf '%s' "$GOAL_IDS" | tr ',' ' '); do
 done
 if [ "$BATCH_COUNT" -gt 0 ]; then
     fetch_batch
-    set -- "$@" --batch "$BATCH_FILE" "$BATCH_COUNT" "$BATCH_HELPERS"
+    set -- "$@" "$BATCH_FILE" "$BATCH_COUNT" "$BATCH_HELPERS"
 fi
 
-uv run --script "$SCRIPT_DIR/merge_conversions.py" "$REPORT_MODE" "$CONV_TMPDIR/report.csv" "$@"
+LC_ALL=C awk -v mode="$REPORT_MODE" -f "$SCRIPT_DIR/merge_conversions.awk" "$@" > "$CONV_TMPDIR/report.csv"
 # Publish the cache only after every request and the merge have succeeded.
 _cache_tmp=$(mktemp "$COUNTER_DIR/reports/.conversions.XXXXXX")
 cp "$CONV_TMPDIR/report.csv" "$_cache_tmp" && mv -f "$_cache_tmp" "$CACHE_FILE" || {
