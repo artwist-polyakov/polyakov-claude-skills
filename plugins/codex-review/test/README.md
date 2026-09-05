@@ -400,8 +400,13 @@ Scenarios:
    `1`, changes nothing and names both ways forward.
 4. Both ways out work: `codex-state.sh reset` reopens the cycle at round 1 with
    the task name kept, and `init` opens a new one and archives the marker.
-5. Every round after the first names the task it continues and when the
-   previous round ran; the first round says nothing.
+5. Every round names its task: the first says `Task: <name>`, and a later one
+   says what it continues and when the previous round ran.
+6. A round that changes the phase still names the task it inherited and the
+   round that ran before the change, although the phase change zeroes the
+   counters and stamps the timestamp with the current time. This is the shape
+   an abandoned cycle takes: an old task reviewed a plan, a new one sends code
+   without opening a session of its own.
 
 Does **not** require the `codex` binary — a stub on `PATH` plays the reviewer
 and writes whatever `verdict-next` holds, a request for changes by default, so

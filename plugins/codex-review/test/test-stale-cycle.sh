@@ -247,17 +247,40 @@ else
 fi
 
 # ============================
-# Test 5: every round after the first says what it continues
+# Test 5: every round names the task it belongs to
 # ============================
-printf 'Test 5: a round names the task it is continuing\n'
+printf 'Test 5: a round names its task, and a later one names what it continues\n'
 
 r="$(review code --description-file "$REPO/desc.md")"
+assert_contains "the first round names the task" "Task: TASK-B" "$(msg_of "$r")"
 assert_lacks "the first round says nothing about continuing" "Continuing task" "$(msg_of "$r")"
 
 r="$(review code --description-file "$REPO/desc.md")"
 assert_contains "the second round says it is continuing" "Continuing task" "$(msg_of "$r")"
 assert_contains "it names the task" "TASK-B" "$(msg_of "$r")"
 assert_contains "it names the previous round" "previous round 20" "$(msg_of "$r")"
+
+# ============================
+# Test 6: a phase change does not swallow the task name
+# ============================
+printf 'Test 6: a round that changes phase still says what it continues\n'
+
+review init "TASK-C" >/dev/null
+review plan --plan-file "$REPO/desc.md" >/dev/null
+state_cmd set last_review_timestamp "2020-01-01T00:00:00Z" >/dev/null
+
+# The phase change zeroes the counters and stamps the timestamp with the
+# current time. A round that read either of them afterwards would announce
+# nothing, or announce itself as its own predecessor — and this is the shape an
+# abandoned cycle takes: an old task reviewed a plan, a new one sends code
+# without opening a session of its own.
+r="$(review code --description-file "$REPO/desc.md")"
+assert_contains "the phase change is reported" "Phase changed (plan → code)" "$(msg_of "$r")"
+assert_contains "the round still says it is continuing" "Continuing task" "$(msg_of "$r")"
+assert_contains "it names the task it inherited" "TASK-C" "$(msg_of "$r")"
+assert_contains "it names the round that ran before the change" \
+    "previous round 2020-01-01T00:00:00Z" "$(msg_of "$r")"
+assert_eq "the counter still started over" "1" "$(state_cmd get iteration)"
 
 printf '\nPASS: %d  FAIL: %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

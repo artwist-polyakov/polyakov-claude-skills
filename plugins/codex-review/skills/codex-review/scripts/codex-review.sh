@@ -698,6 +698,16 @@ cmd_review() {
         exit 1
     fi
 
+    # What the branch carried into this command, read before anything resets
+    # it: the phase change below zeroes the counters and stamps the timestamp
+    # with the current time, and the line that names the task is the only place
+    # a cycle left behind by an abandoned task becomes visible.
+    local prior_rounds prior_reviews prior_round_time prior_task
+    prior_rounds="$(read_state_number "iteration")"
+    prior_reviews="$(read_state_number "reviews_completed")"
+    prior_round_time="$(read_state_field "last_review_timestamp")"
+    prior_task="$(read_state_field "task_description")"
+
     # Reset iteration counter on phase change (e.g. plan → code)
     local previous_phase
     previous_phase="$(read_state_field "phase")"
@@ -770,14 +780,15 @@ cmd_review() {
     local prompt_file="${log_file%.log}.prompt.md"
     printf '%s' "$codex_prompt" > "$prompt_file"
 
-    # Every round after the first names the task it belongs to. A cycle left
-    # behind by an abandoned task is indistinguishable from one still in
-    # progress, so the round says out loud what it is continuing.
-    if [[ $current_iteration -ge 1 ]]; then
-        local continued_task previous_round
-        continued_task="$(read_state_field "task_description")"
-        previous_round="$(read_state_field "last_review_timestamp")"
-        echo "Continuing task: ${continued_task:-<unnamed>} (previous round ${previous_round:-unknown})." >&2
+    # Every round names the task it belongs to. A cycle left behind by an
+    # abandoned task is indistinguishable from one still in progress, and the
+    # name is what tells them apart, so it is printed unconditionally rather
+    # than on a rule about which rounds deserve it. A round that follows
+    # earlier ones on this branch also says when the last of them ran.
+    if [[ $prior_rounds -ge 1 || $prior_reviews -ge 1 ]]; then
+        echo "Continuing task: ${prior_task:-<unnamed>} (previous round ${prior_round_time:-unknown})." >&2
+    else
+        echo "Task: ${prior_task:-<unnamed>}." >&2
     fi
 
     echo "Sending $phase for review (iteration ${next_iteration}/${MAX_ITERATIONS})..." >&2
