@@ -182,6 +182,10 @@ check_codex_installed
 STATE_DIR="$(get_state_dir "$REVIEW_ROOT")"
 unset REVIEW_ROOT
 
+# Held for the whole command. Everything that follows reads the state, sends a
+# round and writes the result back, and that sequence has to be one run's alone.
+acquire_state_lock "codex-review.sh $COMMAND" || exit 1
+
 SESSION_ID="$(get_effective_session_id)"
 
 # --- Build the flags shared by every codex exec call ---
@@ -632,6 +636,10 @@ cmd_init() {
     echo "Creating Codex session..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
 
+    # Run in the foreground, and so under the branch lock this command holds:
+    # bash runs a trap for a signal received during a foreground command only
+    # after that command finishes, so an interrupted run gives the branch back
+    # when the reviewer has stopped writing to this state directory, not while.
     run_codex_exec \
         -o "$output_file" \
         - < "$prompt_file" > "$log_file" 2>&1 || {
@@ -794,6 +802,8 @@ cmd_review() {
     echo "Sending $phase for review (iteration ${next_iteration}/${MAX_ITERATIONS})..." >&2
     printf '\033[1;33m>>> Monitor: tail -f %s\033[0m\n' "$log_file" >&2
 
+    # Run in the foreground — see cmd_init for what that settles about the
+    # branch lock and signals.
     local exit_code=0
     run_codex_exec \
         -o "$output_file" \

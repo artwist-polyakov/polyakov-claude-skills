@@ -462,6 +462,181 @@ parse_verdict_file() {
     esac
 }
 
+# --- Branch lock ------------------------------------------------------------
+# A command that changes the review state of a branch holds this lock for its
+# whole run. Reading the iteration counter, sending the round and writing the
+# result back is one sequence: two of them interleaved read the same counter,
+# delete each other's verdict file and file their notes under one number.
+#
+# The claim is `mkdir` on a directory — atomic on every filesystem the plugin
+# runs on, and unlike `flock` it needs nothing a stock macOS lacks.
+#
+# A lock is never removed by anyone but the run that took it. Judging another
+# run dead means reading a pid, and a pid answers three ways, not two: running,
+# not running, and unknowable — another user's process and a process that has
+# ended look the same, and a lock left on a shared filesystem is a pid on a
+# machine this one cannot see. A lock left behind is therefore reported, with
+# what is known about its owner, and removed by a person.
+STATE_LOCK_DIR=""
+
+# The owner record this run published, held verbatim so that releasing can ask
+# whether the lock on disk is still the one this run made. Empty until the
+# record is published: until then the lock names nobody, and a lock that names
+# nobody may belong to a claim still in progress.
+STATE_LOCK_RECORD=""
+
+# Tries, a tenth of a second apart, to read the owner record of a lock someone
+# else just claimed. The record is published by a rename, so a reader sees all
+# of it or none; this only covers the gap between creating the directory and
+# that rename.
+STATE_LOCK_OWNER_TRIES=20
+
+state_lock_field() {
+    local field="$1" file="$2"
+    [[ -f "$file" ]] || return 0
+    sed -n "s/^${field}=//p" "$file" | head -1
+}
+
+# Waits for the owner record to appear, then prints the pid in it.
+state_lock_owner_pid() {
+    local file="$1"
+    local tries=0 pid=""
+    while [[ $tries -lt $STATE_LOCK_OWNER_TRIES ]]; do
+        pid="$(state_lock_field pid "$file")"
+        [[ -n "$pid" ]] && break
+        sleep 0.1 2>/dev/null || true
+        tries=$((tries + 1))
+    done
+    printf '%s' "$pid"
+}
+
+# What can be said about the owner of a lock: `running`, `gone`, or `unknown`
+# when the answer would be a guess — a lock from another machine, or a pid this
+# user cannot signal.
+state_lock_owner_state() {
+    local owner_file="$1" host="$2"
+    local pid
+    pid="$(state_lock_field pid "$owner_file")"
+    [[ "$pid" =~ ^[1-9][0-9]*$ ]] || { printf 'unknown'; return 0; }
+    [[ "$(state_lock_field host "$owner_file")" == "$host" ]] || { printf 'unknown'; return 0; }
+    if kill -0 "$pid" 2>/dev/null; then
+        printf 'running'
+        return 0
+    fi
+    # `kill -0` refuses a live process of another user exactly as it refuses a
+    # pid that is not there, so only a pid of this user can be called gone.
+    if [[ "$(state_lock_field uid "$owner_file")" == "$(id -u)" ]]; then
+        printf 'gone'
+    else
+        printf 'unknown'
+    fi
+}
+
+# Releases the lock this process took, and only while the lock on disk is still
+# the one it made. A lock removed by hand under a run that had already announced
+# itself, and claimed again in the meantime, belongs to whoever holds it now: it
+# may carry the new holder's record, or none yet while that holder is still
+# writing one. Neither is this run's to remove. Before this run's own record is
+# published it has told no one that it holds anything, so a lock naming nobody
+# is its own, and removing it is how a failed claim gives back what it made.
+release_state_lock() {
+    local dir="$STATE_LOCK_DIR"
+    [[ -n "$dir" ]] || return 0
+    STATE_LOCK_DIR=""
+    if [[ -n "$STATE_LOCK_RECORD" ]]; then
+        # The whole record, not the pid in it: a state directory on a shared
+        # filesystem is reached from more than one machine, and a pid says
+        # nothing on its own about which of them a claim came from.
+        local on_disk=""
+        if [[ -f "$dir/owner" ]]; then
+            # A record that cannot be read is not a record that matches. The
+            # lock stays, and saying which one it is beats an interrupted trap
+            # and an exit status nobody asked for.
+            if ! on_disk="$(<"$dir/owner")"; then
+                echo "ERROR: Failed to read the owner record of $dir. The lock was left in place; remove it by hand if no run is working on this branch." >&2
+                return 0
+            fi
+        fi
+        [[ "$on_disk" == "$STATE_LOCK_RECORD" ]] || return 0
+    else
+        local owner_pid
+        owner_pid="$(state_lock_field pid "$dir/owner")"
+        [[ -z "$owner_pid" || "$owner_pid" == "$$" ]] || return 0
+    fi
+    STATE_LOCK_RECORD=""
+    if ! rm -rf "$dir"; then
+        # The work of this command is done and recorded, so its exit status
+        # stands. What is left is the lock, and the next run says so.
+        echo "ERROR: Failed to remove the review lock $dir. Remove it by hand before the next run on this branch." >&2
+    fi
+}
+
+acquire_state_lock() {
+    local what="$1"
+    ensure_state_dir
+    local lock_dir="$STATE_DIR/.lock"
+    local owner_file="$lock_dir/owner"
+    local host
+    host="$(uname -n 2>/dev/null || echo "unknown host")"
+
+    if mkdir "$lock_dir" 2>/dev/null; then
+        STATE_LOCK_DIR="$lock_dir"
+        trap release_state_lock EXIT
+        trap 'release_state_lock; exit 130' INT
+        trap 'release_state_lock; exit 143' TERM
+
+        # The record is written whole and published by a rename: a reader finds
+        # all of it or nothing. A claim that cannot say who holds it is no
+        # claim — it would leave a lock nobody can account for.
+        local record tmp_file="$lock_dir/.owner.tmp"
+        record="$(printf 'pid=%s\nuid=%s\nhost=%s\ncommand=%s\nstarted=%s\n' \
+            "$$" "$(id -u)" "$host" "$what" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")")"
+        if ! printf '%s' "$record" > "$tmp_file" || ! mv "$tmp_file" "$owner_file"; then
+            rm -f "$tmp_file"
+            STATE_LOCK_DIR=""
+            echo "ERROR: Failed to record the owner of $lock_dir." >&2
+            if rm -rf "$lock_dir"; then
+                echo "Nothing was changed." >&2
+            else
+                echo "  The half-made lock is still there. Remove $lock_dir by hand before the next run on this branch." >&2
+                echo "Nothing else was changed." >&2
+            fi
+            return 1
+        fi
+        STATE_LOCK_RECORD="$record"
+        return 0
+    fi
+
+    if [[ ! -d "$lock_dir" ]]; then
+        echo "ERROR: Failed to create $lock_dir. Nothing was changed." >&2
+        return 1
+    fi
+
+    state_lock_owner_pid "$owner_file" >/dev/null
+    local owner_pid owner_host owner_cmd owner_started owner_state
+    owner_pid="$(state_lock_field pid "$owner_file")"
+    owner_host="$(state_lock_field host "$owner_file")"
+    owner_cmd="$(state_lock_field command "$owner_file")"
+    owner_started="$(state_lock_field started "$owner_file")"
+    owner_state="$(state_lock_owner_state "$owner_file" "$host")"
+
+    echo "ERROR: the review state of this branch is in use by another run." >&2
+    echo "  Holder: ${owner_cmd:-an unrecorded command} (pid ${owner_pid:-unknown} on ${owner_host:-an unrecorded host}, since ${owner_started:-unknown})" >&2
+    case "$owner_state" in
+        running)
+            echo "  That process is still running. Wait for it to finish." >&2
+            ;;
+        gone)
+            echo "  That process is no longer running. If no other command is working on this branch, remove $lock_dir and try again." >&2
+            ;;
+        *)
+            echo "  Whether that process is still running cannot be told from here. If no other command is working on this branch, remove $lock_dir and try again." >&2
+            ;;
+    esac
+    echo "Nothing was changed." >&2
+    return 1
+}
+
 # --- Move artifacts into an archive directory ---
 # A pattern that matches nothing is normal: not every session leaves notes or
 # replies. A move that fails is not — the file stays behind under a name the

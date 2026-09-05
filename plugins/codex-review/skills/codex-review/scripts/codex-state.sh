@@ -33,6 +33,7 @@ cmd_show() {
 }
 
 cmd_reset() {
+    acquire_state_lock "codex-state.sh reset" || exit 1
     if [[ "${1:-}" == "--full" ]]; then
         archive_previous_session
         mkdir -p "$STATE_DIR/notes"
@@ -95,6 +96,10 @@ cmd_set() {
             exit 1
             ;;
     esac
+
+    # Taken after the name is checked: a field that does not exist is answered
+    # the same way whether or not another run holds the branch.
+    acquire_state_lock "codex-state.sh set $field" || exit 1
 
     # The whole file is rewritten from its current values with the one field
     # replaced. Patching the stored text in place could only reach the fields
