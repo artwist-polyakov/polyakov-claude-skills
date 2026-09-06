@@ -491,6 +491,14 @@ assert_not_contains "$TEST_TMP/out" "<html>not-json</html>"
 MOCK_STATUS=401 ZOOMKIT_API_TOKEN="expired-secret" run_zoomkit token > "$TEST_TMP/out" 2>&1 || true
 assert_contains "$TEST_TMP/out" "ключ ZoomKit API не найден или недействителен"
 assert_contains "$TEST_TMP/out" "https://zoomkit.ru/profile/api"
+assert_contains "$TEST_TMP/out" "Замените значение ZOOMKIT_API_TOKEN"
+assert_contains "$TEST_TMP/out" "Повторно пополнять баланс только из-за ошибки авторизации не нужно"
+if grep -F -- "500 руб." "$TEST_TMP/out" >/dev/null 2>&1; then
+    fail "HTTP 401 ошибочно предлагает стартовое пополнение"
+fi
+if grep -F -- "https://zoomkit.ru/register" "$TEST_TMP/out" >/dev/null 2>&1; then
+    fail "HTTP 401 ошибочно предлагает повторную регистрацию"
+fi
 assert_not_contains "$TEST_TMP/out" "expired-secret"
 
 # HTTP 429 показывает момент снятия ограничения.

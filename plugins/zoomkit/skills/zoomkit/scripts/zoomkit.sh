@@ -85,13 +85,29 @@ show_connection_steps() {
 EOF
 }
 
-show_auth_steps() {
-    show_connection_steps >&2
+show_auth_recovery_steps() {
+    cat >&2 <<EOF
+Восстановление доступа:
+  1. Войдите в существующую учётную запись: https://zoomkit.ru/login
+  2. Откройте раздел ключей и выпустите замену недействительному ключу:
+     $PROFILE_API_URL
+  3. Замените значение ZOOMKIT_API_TOKEN в постоянном файле навыка:
+     $SKILL_DIR/config/.env
+     chmod 600 "$SKILL_DIR/config/.env"
+     Если ключ был временно задан в окружении, обновите или удалите эту
+     переменную, чтобы она не перекрывала значение из файла.
+  4. Повторите проверку:
+     cd "$SKILL_DIR"
+     sh scripts/zoomkit.sh token
+
+Повторно пополнять баланс только из-за ошибки авторизации не нужно.
+Ключ не отправляйте в чат.
+EOF
 }
 
 show_auth_help() {
     printf '%s\n' "Ошибка: ключ ZoomKit API не найден или недействителен." >&2
-    show_auth_steps
+    show_auth_recovery_steps
 }
 
 show_getting_started() {
