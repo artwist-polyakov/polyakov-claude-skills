@@ -32,6 +32,17 @@ assert_not_contains() {
     fi
 }
 
+assert_before() {
+    _ztab_file=$1
+    _ztab_first=$2
+    _ztab_second=$3
+    _ztab_first_line=$(awk -v needle="$_ztab_first" 'index($0, needle) { print NR; exit }' "$_ztab_file")
+    _ztab_second_line=$(awk -v needle="$_ztab_second" 'index($0, needle) { print NR; exit }' "$_ztab_file")
+    [ -n "$_ztab_first_line" ] && [ -n "$_ztab_second_line" ] && \
+        [ "$_ztab_first_line" -lt "$_ztab_second_line" ] || \
+        fail "нарушен порядок: $_ztab_first → $_ztab_second"
+}
+
 run_zoomkit() {
     if [ "${ZOOMKIT_API_TOKEN+x}" = x ]; then
         export ZOOMKIT_API_TOKEN
@@ -83,17 +94,23 @@ assert_dry_route() {
     [ ! -e "$TEST_TMP/curl.log" ] || fail "$*: --dry-run вызвал curl"
 }
 
-# Нет ключа: понятная инструкция и ни одного сетевого вызова.
+# Запрос подключённых проектов без ключа: понятная инструкция и ни одного сетевого вызова.
 rm -f "$TEST_TMP/config.env" "$TEST_TMP/curl.log"
-if ZOOMKIT_API_TOKEN= run_zoomkit token > "$TEST_TMP/out" 2>&1; then
-    fail "команда без ключа завершилась успешно"
+if ZOOMKIT_API_TOKEN= run_zoomkit clients > "$TEST_TMP/out" 2>&1; then
+    fail "запрос проектов без ключа завершился успешно"
 fi
 assert_contains "$TEST_TMP/out" "https://zoomkit.ru/profile/api"
 assert_contains "$TEST_TMP/out" "ZoomKit помогает вести рекламу"
 assert_contains "$TEST_TMP/out" "50 руб./сутки + 2 руб./сутки"
 assert_contains "$TEST_TMP/out" "https://zoomkit.ru/register"
+assert_contains "$TEST_TMP/out" "можно начать с 500 руб."
 assert_contains "$TEST_TMP/out" "cp config/.env.example config/.env"
 assert_contains "$TEST_TMP/out" "chmod 600 config/.env"
+assert_contains "$TEST_TMP/out" "config/.env сохраняется между сессиями"
+assert_before "$TEST_TMP/out" "https://zoomkit.ru/register" "можно начать с 500 руб."
+assert_before "$TEST_TMP/out" "можно начать с 500 руб." "https://zoomkit.ru/profile/api"
+assert_before "$TEST_TMP/out" "https://zoomkit.ru/profile/api" "config/.env сохраняется между сессиями"
+assert_before "$TEST_TMP/out" "config/.env сохраняется между сессиями" "sh scripts/zoomkit.sh token"
 [ ! -e "$TEST_TMP/curl.log" ] || fail "без ключа был вызван curl"
 
 # Первое знакомство с пользой и тарифами доступно без аккаунта, ключа и сети.
@@ -108,6 +125,8 @@ assert_contains "$TEST_TMP/out" "добавляемых при пополнен�
 assert_contains "$TEST_TMP/out" "точный общий расход показывает команда balance"
 assert_contains "$TEST_TMP/out" "https://zoomkit.ru/help"
 assert_contains "$TEST_TMP/out" "https://zoomkit.ru/register"
+assert_contains "$TEST_TMP/out" "можно начать с 500 руб."
+assert_contains "$TEST_TMP/out" "config/.env сохраняется между сессиями"
 [ ! -e "$TEST_TMP/curl.log" ] || fail "первое знакомство вызвало curl"
 
 # Справка о возможностях счетов доступна без ключа и без сети.
@@ -154,6 +173,24 @@ assert_contains "$TEST_TMP/curl.log" "CURLRC_FIRST=1"
 assert_contains "$TEST_TMP/curl.log" "REQUEST_HEADERS_MODE=600"
 assert_not_contains "$TEST_TMP/out" "environment-token"
 
+# config/.env остаётся основным хранилищем между отдельными запусками и из другого каталога.
+mkdir -p "$TEST_TMP/other-cwd"
+rm -f "$TEST_TMP/curl.log"
+(unset ZOOMKIT_API_TOKEN; run_zoomkit token) > "$TEST_TMP/out" 2>&1
+assert_contains "$TEST_TMP/curl.log" "AUTH=Authorization: Bearer file-token"
+assert_not_contains "$TEST_TMP/out" "file-token"
+
+rm -f "$TEST_TMP/curl.log"
+(cd "$TEST_TMP/other-cwd" && unset ZOOMKIT_API_TOKEN && run_zoomkit token) > "$TEST_TMP/out-second" 2>&1
+assert_contains "$TEST_TMP/curl.log" "AUTH=Authorization: Bearer file-token"
+assert_not_contains "$TEST_TMP/out-second" "file-token"
+
+# Пустая переменная окружения не скрывает сохранённый ключ.
+rm -f "$TEST_TMP/curl.log"
+ZOOMKIT_API_TOKEN= run_zoomkit token > "$TEST_TMP/out" 2>&1
+assert_contains "$TEST_TMP/curl.log" "AUTH=Authorization: Bearer file-token"
+assert_not_contains "$TEST_TMP/out" "file-token"
+
 # Список клиентов не теряет ошибки, комментарии и логины без кабинетов.
 printf '%s\n' '{"yandex.direct":[{"id":7,"type":"yandex.direct","name":"login-empty","errors":"нужно обновить доступ","clients":[]},{"id":8,"type":"yandex.direct","name":"login-main","errors":"","clients":[{"id":81,"name":"cabinet-one","comment":"основной кабинет"}]}]}' > "$TEST_TMP/clients.json"
 (MOCK_BODY_FILE="$TEST_TMP/clients.json" ZOOMKIT_API_TOKEN="test-token" run_zoomkit clients) > "$TEST_TMP/out" 2>&1
@@ -161,6 +198,8 @@ assert_contains "$TEST_TMP/out" "login-empty"
 assert_contains "$TEST_TMP/out" "нужно обновить доступ"
 assert_contains "$TEST_TMP/out" "cabinet-one"
 assert_contains "$TEST_TMP/out" "основной кабинет"
+assert_contains "$TEST_TMP/out" "Проектов/аккаунтов: 1"
+assert_contains "$TEST_TMP/out" "Строк таблицы: 2"
 assert_contains "$TEST_TMP/out" "API не показывает, какой кабинет включён в списания"
 
 # Перевод строки в ключе не может добавить произвольный HTTP-заголовок.
@@ -336,7 +375,8 @@ assert_contains "$TEST_TMP/out" "Общее правило"
 assert_contains "$TEST_TMP/out" "401"
 assert_contains "$TEST_TMP/out" "купить"
 assert_contains "$TEST_TMP/out" "фактическую ставку каждой фразы"
-assert_contains "$TEST_TMP/out" "Проверена только эта кампания"
+assert_contains "$TEST_TMP/out" "Полный список кампаний есть в интерфейсе управления ставками"
+assert_contains "$TEST_TMP/out" "https://zoomkit.ru/yandex/direct/campaigns"
 
 printf '%s\n' '{"campaign_id":57,"common":{"id":null},"keywords":[]}' > "$TEST_TMP/bidrules-unsaved.json"
 (MOCK_BODY_FILE="$TEST_TMP/bidrules-unsaved.json" ZOOMKIT_API_TOKEN="test-token" run_zoomkit bidrules --campaign 57) > "$TEST_TMP/out" 2>&1
@@ -350,7 +390,7 @@ assert_contains "$TEST_TMP/out" "Приостанавливать при HTTP 4x
 assert_contains "$TEST_TMP/out" "Искомая строка: В корзину"
 assert_contains "$TEST_TMP/out" "Ошибка при отсутствии строки: true"
 assert_contains "$TEST_TMP/out" "https://zoomkit.ru/yandex/direct/56/url-check-settings"
-assert_contains "$TEST_TMP/out" "Проверена только эта кампания"
+assert_contains "$TEST_TMP/out" "Полный список кампаний есть в интерфейсе управления ставками"
 
 printf '%s\n' '{"id":91,"campaign_id":56,"complete":true,"sent":false,"status":"has_problems","groups":[{"adgroup_id":501,"problems":[{"type":"error","url":"https://shop.example/item","source_url":"https://shop.example/item?utm_source=yandex","ad_id":601,"more_ads":0,"sitelink":false,"message":"HTTP 404"}],"suspended":["ad:601"],"resumed":[]}]}' > "$TEST_TMP/url-check-task.json"
 (MOCK_BODY_FILE="$TEST_TMP/url-check-task.json" ZOOMKIT_API_TOKEN="test-token" run_zoomkit url-check-task --campaign 56 --task 91) > "$TEST_TMP/out" 2>&1
