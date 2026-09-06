@@ -1,0 +1,12 @@
+{
+  "phrases": [
+    "хостел",
+    "квартир"
+  ],
+  "exact": false,
+  "search_enabled": true,
+  "search_traffic_volume": 100,
+  "search_increase_percent": 5,
+  "search_max_bid": 150,
+  "search_max_bid_from_price": false
+}
