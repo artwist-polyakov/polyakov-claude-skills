@@ -20,6 +20,7 @@
   - [yandex-search-api](#yandex-search-api) — парсинг выдачи Яндекса
   - [yandex-metrika](#yandex-metrika) — аналитика Yandex Metrika
   - [yandex-webmaster](#yandex-webmaster) — управление сайтами в Яндекс.Вебмастере
+  - [zoomkit](#zoomkit) — баланс, счета, отчёты и настройки Яндекс.Директа через ZoomKit API
   - [telegraph-publisher](#telegraph-publisher) — публикация в Telegraph
   - [crawl4ai-seo](#crawl4ai-seo) — SEO-краулер сайтов
   - [telegram-channel-parser](#telegram-channel-parser) — парсинг Telegram-каналов
@@ -52,6 +53,7 @@
 /plugin install codex-review
 /plugin install fal-ai-image
 /plugin install yandex-webmaster
+/plugin install zoomkit
 /plugin install telegraph-publisher
 /plugin install crawl4ai-seo
 /plugin install telegram-channel-parser
@@ -306,6 +308,36 @@ SSH подключение к удалённым серверам по ключ�
 
 ---
 
+### [zoomkit](plugins/zoomkit/skills/zoomkit)
+
+Знакомство с ZoomKit, подключение и работа с официальным API: расчёты, отчёты статистики и настройки Яндекс.Директа.
+
+- Объяснение пользы, опубликованных тарифов и условий, при которых сервис оправдывает расходы
+- Проверка ключа и предупреждение о скором окончании срока
+- Баланс сервиса и список уже выставленных счетов с отбором по состоянию
+- Двухшаговые отчёты рекламной статистики с ожиданием готовности
+- Правила ставок и подробные результаты проверки ссылок Яндекс.Директа
+- Честная граница аудита: API не перечисляет кампании и не отключает кабинеты от списаний
+- Предварительный просмотр и обязательный `--confirm` для изменений
+- Понятная инструкция по подключению при отсутствии ключа
+- Явная защита от несуществующих методов: API 1.8.0 не умеет выставлять счета и создавать ссылки на оплату
+
+**Триггеры (RU):**
+- "проверь баланс ZoomKit"
+- "покажи счета ZoomKit"
+- "сделай отчёт ZoomKit"
+- "что умеет ZoomKit и сколько стоит"
+- "найди кампании без проверки ссылок"
+- "проверь правила ставок ZoomKit"
+
+**Триггеры (EN):**
+- "zoomkit api"
+- "zoomkit balance"
+- "zoomkit invoices"
+- "zoomkit pricing"
+
+---
+
 ### [telegraph-publisher](plugins/telegraph-publisher/skills/telegraph-publisher)
 
 Публикация страниц в Telegraph с поддержкой медиа.
@@ -530,6 +562,7 @@ polyakov-claude-skills/
 │   ├── yandex-search-api/    # Плагин для Yandex Search API
 │   ├── yandex-metrika/       # Плагин для аналитики Yandex Metrika
 │   ├── yandex-webmaster/     # Плагин для Yandex Webmaster API
+│   ├── zoomkit/               # Плагин для ZoomKit API
 │   ├── telegraph-publisher/  # Плагин для публикации в Telegraph
 │   ├── crawl4ai-seo/         # Плагин для SEO-краулинга
 │   ├── telegram-channel-parser/ # Плагин для парсинга Telegram-каналов

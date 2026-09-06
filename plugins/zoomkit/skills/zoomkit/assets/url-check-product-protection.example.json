@@ -1,0 +1,13 @@
+{
+  "check_urls_enabled": true,
+  "suspend_urls_enabled": true,
+  "suspend_urls_if_301": false,
+  "suspend_urls_if_302": false,
+  "suspend_urls_if_303": false,
+  "suspend_urls_if_307": false,
+  "suspend_urls_if_400_499": true,
+  "suspend_urls_if_500_599": false,
+  "suspend_urls_if_other": false,
+  "suspend_urls_if_substring": true,
+  "suspend_urls_if_numeral": false
+}

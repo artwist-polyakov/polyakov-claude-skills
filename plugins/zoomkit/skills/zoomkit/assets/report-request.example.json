@@ -1,0 +1,8 @@
+{
+  "type": "CAMPAIGN_ADSET_REPORT",
+  "date_start": "2026-08-01",
+  "date_end": "2026-08-31",
+  "clients": [
+    "yandex.direct:1980813"
+  ]
+}

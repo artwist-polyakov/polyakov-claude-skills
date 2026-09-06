@@ -80,6 +80,12 @@
       "category": "productivity"
     },
     {
+      "name": "zoomkit",
+      "description": "ZoomKit: польза, тарифы, подключение, баланс, счета и управление рекламой через API",
+      "source": "./plugins/zoomkit",
+      "category": "productivity"
+    },
+    {
       "name": "crawl4ai-seo",
       "description": "SEO-краулер сайтов: инвентаризация, on-page аудит, перелинковка, навигационный аудит, анализ конкурентов",
       "source": "./plugins/crawl4ai-seo",

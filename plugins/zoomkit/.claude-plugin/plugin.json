@@ -1,0 +1,8 @@
+{
+  "name": "zoomkit",
+  "version": "1.0.0",
+  "description": "ZoomKit: польза, тарифы, подключение, баланс, счета и управление рекламой через API.",
+  "author": {
+    "name": "Polyakov"
+  }
+}
