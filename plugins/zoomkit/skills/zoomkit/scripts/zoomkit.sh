@@ -63,20 +63,51 @@ die() {
     exit "${2:-1}"
 }
 
-show_auth_steps() {
-    printf '%s\n' "1. Войдите в ZoomKit: https://zoomkit.ru/login" >&2
-    printf '%s\n' "2. Создайте ключ: $PROFILE_API_URL" >&2
-    printf '%s\n' "3. Выполните из каталога навыка:" >&2
-    printf '%s\n' "   cp config/.env.example config/.env" >&2
-    printf '%s\n' "   chmod 600 config/.env" >&2
-    printf '%s\n' "4. Запишите ключ в ZOOMKIT_API_TOKEN и повторите:" >&2
-    printf '%s\n' "   sh scripts/zoomkit.sh token" >&2
-    printf '%s\n' "Подробная инструкция: $SKILL_DIR/config/README.md" >&2
+show_connection_steps() {
+    cat <<EOF
+Порядок подключения:
+  1. Если учётной записи ещё нет, зарегистрируйтесь: $REGISTER_URL
+     Если она уже есть, войдите: https://zoomkit.ru/login
+  2. Пополните баланс в профиле: $PROFILE_URL
+     Для первого запуска можно начать с 500 руб. Это пример, а не заявленная
+     минимальная сумма. Перед оплатой проверьте итог с добавляемыми 6%.
+  3. После пополнения создайте ключ API: $PROFILE_API_URL
+  4. Сохраните ключ в штатном постоянном файле навыка:
+     cd "$SKILL_DIR"
+     [ -f config/.env ] || cp config/.env.example config/.env
+     chmod 600 config/.env
+     Затем замените your_api_token_here в ZOOMKIT_API_TOKEN.
+     config/.env сохраняется между сессиями; создавать его заново не нужно.
+  5. Проверьте подключение:
+     sh scripts/zoomkit.sh token
+
+Ключ не нужно отправлять в чат. Подробная инструкция: $SKILL_DIR/config/README.md
+EOF
+}
+
+show_auth_recovery_steps() {
+    cat >&2 <<EOF
+Восстановление доступа:
+  1. Войдите в существующую учётную запись: https://zoomkit.ru/login
+  2. Откройте раздел ключей и выпустите замену недействительному ключу:
+     $PROFILE_API_URL
+  3. Замените значение ZOOMKIT_API_TOKEN в постоянном файле навыка:
+     $SKILL_DIR/config/.env
+     chmod 600 "$SKILL_DIR/config/.env"
+     Если ключ был временно задан в окружении, обновите или удалите эту
+     переменную, чтобы она не перекрывала значение из файла.
+  4. Повторите проверку:
+     cd "$SKILL_DIR"
+     sh scripts/zoomkit.sh token
+
+Повторно пополнять баланс только из-за ошибки авторизации не нужно.
+Ключ не отправляйте в чат.
+EOF
 }
 
 show_auth_help() {
     printf '%s\n' "Ошибка: ключ ZoomKit API не найден или недействителен." >&2
-    show_auth_steps
+    show_auth_recovery_steps
 }
 
 show_getting_started() {
@@ -105,18 +136,14 @@ ZoomKit помогает вести рекламу без постоянной �
 После подключения точный общий расход показывает команда balance.
 Перед расчётом проверьте актуальные цены: $HELP_URL
 
-Регистрация: $REGISTER_URL
-После регистрации создайте ключ API: $PROFILE_API_URL
-Ключ не нужно отправлять в чат.
 EOF
+    show_connection_steps
 }
 
 show_missing_token_help() {
     printf '%s\n' "Ошибка: ключ ZoomKit API не найден." >&2
-    printf '\n%s\n' "Если аккаунта ещё нет:" >&2
+    printf '\n' >&2
     show_getting_started >&2
-    printf '\n%s\n' "Если аккаунт уже есть, подключите ключ:" >&2
-    show_auth_steps
 }
 
 show_billing_capabilities() {
@@ -185,7 +212,7 @@ load_settings() {
         done < "$CONFIG_FILE"
     fi
 
-    if [ "$_zls_env_token_set" = x ]; then
+    if [ "$_zls_env_token_set" = x ] && [ -n "$_zls_env_token" ]; then
         ZOOMKIT_API_TOKEN=$_zls_env_token
     fi
     if [ "$_zls_env_base_set" = x ]; then
@@ -447,6 +474,8 @@ render_response() {
         clients)
             jq -r --argjson limit "$LIMIT" '
                 def clean: tostring | gsub("[\\r\\n\\t]"; " ");
+                [to_entries[] | .value[]] as $integrations |
+                [$integrations[] | (.clients // [])[]] as $projects |
                 [to_entries[] | .key as $type | .value[] | . as $integration |
                     if (($integration.clients // []) | length) == 0 then
                         [$type, ($integration.id // "—"), ($integration.name // "—"),
@@ -457,8 +486,10 @@ render_response() {
                          ($integration.errors // "—" | clean), (.id // "—"),
                          (.name // "—"), (.comment // "—" | clean)]
                     end] as $rows |
-                "Строк кабинетов: \($rows | length)",
-                (["Тип", "ID логина", "Логин", "Ошибка", "ID кабинета", "Кабинет", "Комментарий"] | @tsv),
+                "Интеграций: \($integrations | length)",
+                "Проектов/аккаунтов: \($projects | length)",
+                "Строк таблицы: \($rows | length)",
+                (["Тип", "ID интеграции", "Логин", "Ошибка", "ID проекта/аккаунта", "Проект/аккаунт", "Комментарий"] | @tsv),
                 ($rows[: $limit][] | @tsv),
                 (if ($rows | length) > $limit then
                     "Показаны первые \($limit); полный список находится в файле."
@@ -525,7 +556,7 @@ render_response() {
                      (.search_traffic_volume | shown), (.search_increase_percent | shown),
                      (.search_max_bid | shown), (.search_max_bid_from_price | shown)] | @tsv),
                 "API показывает параметры правил, но не фактическую ставку каждой фразы.",
-                "Проверена только эта кампания: API не умеет перечислять все кампании кабинета."
+                "Через публичный API проверена только эта кампания. Полный список кампаний есть в интерфейсе управления ставками: https://zoomkit.ru/yandex/direct/campaigns"
             ' "$_zrr_file"
             ;;
         url-check-settings)
@@ -546,7 +577,7 @@ render_response() {
                 "Искомая строка: \((.text_settings // {}).check_urls_substring | shown)",
                 "Ошибка при отсутствии строки: \((.text_settings // {}).check_urls_substring_must_present | shown)",
                 "Текстовые настройки меняются вручную: \(.settings_url // "адрес не возвращён")",
-                "Проверена только эта кампания: API не умеет перечислять все кампании кабинета."
+                "Через публичный API проверена только эта кампания. Полный список кампаний есть в интерфейсе управления ставками: https://zoomkit.ru/yandex/direct/campaigns"
             ' "$_zrr_file"
             ;;
         url-check-tasks)
