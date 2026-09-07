@@ -81,7 +81,7 @@
     },
     {
       "name": "zoomkit",
-      "description": "ZoomKit: польза, тарифы, подключение, баланс, счета и управление рекламой через API",
+      "description": "ZoomKit: подключение, проекты, кампании, ставки и проверка рекламных ссылок",
       "source": "./plugins/zoomkit",
       "category": "productivity"
     },
