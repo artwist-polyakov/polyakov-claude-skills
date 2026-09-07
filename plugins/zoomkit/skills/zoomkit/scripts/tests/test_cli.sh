@@ -381,12 +381,31 @@ assert_dry_route GET /token token
 assert_dry_route GET /billing/balance balance
 assert_dry_route GET /billing/invoices invoices
 assert_dry_route GET /stats/clients clients
+assert_dry_route GET /yandex/direct/clients/34/campaigns campaigns --client 34
 assert_dry_route GET /stats/reports reports
 assert_dry_route GET /stats/reports/12 report --id 12
 assert_dry_route GET /yandex/direct/campaigns/56/bidrules bidrules --campaign 56
 assert_dry_route GET /yandex/direct/campaigns/56/url-check-settings url-check-settings --campaign 56
 assert_dry_route GET /yandex/direct/campaigns/56/url-check-tasks url-check-tasks --campaign 56
 assert_dry_route GET /yandex/direct/campaigns/56/url-check-tasks/91 url-check-task --campaign 56 --task 91
+
+# Список кампаний показывает свежесть, состояние и пригодность для управления ставками.
+printf '%s\n' '{"client_id":34,"login":"agency-login","updated_at":"2026-09-07T09:15:00Z","campaigns":[{"id":56,"name":"Архивная кампания","type":"TEXT_CAMPAIGN","state":"ARCHIVED","status":"ACCEPTED","currency":"RUB","can_set_bids":false},{"id":57,"name":"Рабочая кампания","type":"UNIFIED_CAMPAIGN","state":"ON","status":"ACCEPTED","currency":"RUB","can_set_bids":true}],"hints":["Список может отставать от Яндекс.Директа"]}' > "$TEST_TMP/campaigns.json"
+(MOCK_BODY_FILE="$TEST_TMP/campaigns.json" ZOOMKIT_API_TOKEN="test-token" run_zoomkit campaigns --client 34 --limit 1) > "$TEST_TMP/out" 2>&1
+assert_contains "$TEST_TMP/out" "Кабинет: 34"
+assert_contains "$TEST_TMP/out" "Логин: agency-login"
+assert_contains "$TEST_TMP/out" "Последняя сверка: 2026-09-07T09:15:00Z"
+assert_contains "$TEST_TMP/out" "Кампаний: 2"
+assert_contains "$TEST_TMP/out" "Архивная кампания"
+assert_contains "$TEST_TMP/out" "ARCHIVED"
+assert_contains "$TEST_TMP/out" "false"
+assert_contains "$TEST_TMP/out" "Показаны первые 1"
+assert_contains "$TEST_TMP/out" "Список может отставать от Яндекс.Директа"
+if grep -F -- "Рабочая кампания" "$TEST_TMP/out" >/dev/null 2>&1; then
+    fail "ограничение числа кампаний не применилось"
+fi
+jq -e '.campaigns | length == 2 and .[1].can_set_bids == true' "$TEST_TMP/cache/latest-campaigns.json" >/dev/null || \
+    fail "полный список кампаний не сохранён"
 
 # Краткий вывод показывает настройки правил ставок, строковые правила и найденные проблемы.
 printf '%s\n' '{"campaign_id":56,"search_strategy":"HIGHEST_POSITION","network_strategy":"SERVING_OFF","warnings":["проверочное предупреждение"],"common":{"id":401,"match":null,"search_enabled":true,"search_traffic_volume":100,"search_increase_percent":5,"search_max_bid":150,"search_max_bid_from_price":false},"keywords":[{"id":402,"match":"купить","search_enabled":true,"search_traffic_volume":95,"search_increase_percent":7,"search_max_bid":120,"search_max_bid_from_price":true}]}' > "$TEST_TMP/bidrules.json"
@@ -395,8 +414,7 @@ assert_contains "$TEST_TMP/out" "Общее правило"
 assert_contains "$TEST_TMP/out" "401"
 assert_contains "$TEST_TMP/out" "купить"
 assert_contains "$TEST_TMP/out" "фактическую ставку каждой фразы"
-assert_contains "$TEST_TMP/out" "Полный список кампаний есть в интерфейсе управления ставками"
-assert_contains "$TEST_TMP/out" "https://zoomkit.ru/yandex/direct/campaigns"
+assert_contains "$TEST_TMP/out" "Для аудита кабинета получите список командой campaigns --client ID"
 
 printf '%s\n' '{"campaign_id":57,"common":{"id":null},"keywords":[]}' > "$TEST_TMP/bidrules-unsaved.json"
 (MOCK_BODY_FILE="$TEST_TMP/bidrules-unsaved.json" ZOOMKIT_API_TOKEN="test-token" run_zoomkit bidrules --campaign 57) > "$TEST_TMP/out" 2>&1
@@ -410,7 +428,7 @@ assert_contains "$TEST_TMP/out" "Приостанавливать при HTTP 4x
 assert_contains "$TEST_TMP/out" "Искомая строка: В корзину"
 assert_contains "$TEST_TMP/out" "Ошибка при отсутствии строки: true"
 assert_contains "$TEST_TMP/out" "https://zoomkit.ru/yandex/direct/56/url-check-settings"
-assert_contains "$TEST_TMP/out" "Полный список кампаний есть в интерфейсе управления ставками"
+assert_contains "$TEST_TMP/out" "Для аудита кабинета получите список командой campaigns --client ID"
 
 printf '%s\n' '{"id":91,"campaign_id":56,"complete":true,"sent":false,"status":"has_problems","groups":[{"adgroup_id":501,"problems":[{"type":"error","url":"https://shop.example/item","source_url":"https://shop.example/item?utm_source=yandex","ad_id":601,"more_ads":0,"sitelink":false,"message":"HTTP 404"}],"suspended":["ad:601"],"resumed":[]}]}' > "$TEST_TMP/url-check-task.json"
 (MOCK_BODY_FILE="$TEST_TMP/url-check-task.json" ZOOMKIT_API_TOKEN="test-token" run_zoomkit url-check-task --campaign 56 --task 91) > "$TEST_TMP/out" 2>&1

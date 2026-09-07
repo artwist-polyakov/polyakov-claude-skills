@@ -1,5 +1,5 @@
 #!/bin/sh
-# Единый клиент официального ZoomKit API 1.8.0.
+# Единый клиент официального ZoomKit API 1.9.0.
 
 set -e
 
@@ -26,6 +26,7 @@ ZoomKit API
   balance
   invoices [--status wait|paid|cancelled] [--limit N]
   clients
+  campaigns --client ID [--limit N]
   reports
   report --id ID
   report-wait --id ID [--interval СЕК] [--timeout СЕК] [--output ФАЙЛ]
@@ -148,7 +149,7 @@ show_missing_token_help() {
 
 show_billing_capabilities() {
     cat <<EOF
-ZoomKit API 1.8.0 по счетам:
+ZoomKit API 1.9.0 по счетам:
   доступно:    чтение баланса и списка уже выставленных счетов;
   недоступно:  создание счета, передача реквизитов, печатная форма,
                создание или получение ссылки на оплату.
@@ -509,6 +510,27 @@ render_response() {
             ' "$_zrr_file"
             printf '%s\n' "API не показывает, какой кабинет включён в списания, и не умеет его отключать."
             ;;
+        campaigns)
+            jq -r --argjson limit "$LIMIT" '
+                def shown: if . == null then "—" else tostring end;
+                def clean: shown | gsub("[\\r\\n\\t]"; " ");
+                (.campaigns // []) as $campaigns |
+                (.hints // []) as $hints |
+                "Кабинет: \(.client_id // "—")",
+                "Логин: \(.login // "—" | clean)",
+                "Последняя сверка: \(if .updated_at == null then "не выполнялась" else (.updated_at | clean) end)",
+                "Кампаний: \($campaigns | length)",
+                (["ID", "Название", "Тип", "Состояние", "Модерация", "Валюта", "Можно управлять ставками"] | @tsv),
+                ($campaigns[: $limit][] |
+                    [(.id | shown), (.name | clean), (.type | clean), (.state | clean),
+                     (.status | clean), (.currency | clean), (.can_set_bids | shown)] | @tsv),
+                (if ($campaigns | length) > $limit then
+                    "Показаны первые \($limit); полный список находится в файле."
+                 else empty end),
+                "Подсказки ZoomKit: \($hints | length)",
+                ($hints[] | "- " + clean)
+            ' "$_zrr_file"
+            ;;
         reports)
             jq -r --argjson limit "$LIMIT" '
                 "Отчётов: \(length)",
@@ -568,7 +590,7 @@ render_response() {
                      (.search_traffic_volume | shown), (.search_increase_percent | shown),
                      (.search_max_bid | shown), (.search_max_bid_from_price | shown)] | @tsv),
                 "API показывает параметры правил, но не фактическую ставку каждой фразы.",
-                "Через публичный API проверена только эта кампания. Полный список кампаний есть в интерфейсе управления ставками: https://zoomkit.ru/yandex/direct/campaigns"
+                "Для аудита кабинета получите список командой campaigns --client ID."
             ' "$_zrr_file"
             ;;
         url-check-settings)
@@ -589,7 +611,7 @@ render_response() {
                 "Искомая строка: \((.text_settings // {}).check_urls_substring | shown)",
                 "Ошибка при отсутствии строки: \((.text_settings // {}).check_urls_substring_must_present | shown)",
                 "Текстовые настройки меняются вручную: \(.settings_url // "адрес не возвращён")",
-                "Через публичный API проверена только эта кампания. Полный список кампаний есть в интерфейсе управления ставками: https://zoomkit.ru/yandex/direct/campaigns"
+                "Для аудита кабинета получите список командой campaigns --client ID."
             ' "$_zrr_file"
             ;;
         url-check-tasks)
@@ -681,7 +703,7 @@ fi
 
 case "$COMMAND" in
     invoice-create|invoices-create|payment-link|payment-link-create|invoice-download)
-        printf '%s\n' "Ошибка: официальный ZoomKit API 1.8.0 не поддерживает эту операцию." >&2
+        printf '%s\n' "Ошибка: официальный ZoomKit API 1.9.0 не поддерживает эту операцию." >&2
         printf '%s\n' "Доступны только balance и invoices; выставление и оплата выполняются в $PROFILE_URL" >&2
         exit 4
         ;;
@@ -806,6 +828,11 @@ case "$COMMAND" in
     balance) METHOD=GET; API_PATH="/billing/balance" ;;
     invoices) METHOD=GET; API_PATH="/billing/invoices" ;;
     clients) METHOD=GET; API_PATH="/stats/clients" ;;
+    campaigns)
+        validate_positive_integer "$CLIENT_ID" "--client"
+        METHOD=GET
+        API_PATH="/yandex/direct/clients/$CLIENT_ID/campaigns"
+        ;;
     reports) METHOD=GET; API_PATH="/stats/reports" ;;
     report)
         validate_positive_integer "$RESOURCE_ID" "--id"
