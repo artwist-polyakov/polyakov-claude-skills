@@ -192,15 +192,35 @@ assert_contains "$TEST_TMP/curl.log" "AUTH=Authorization: Bearer file-token"
 assert_not_contains "$TEST_TMP/out" "file-token"
 
 # Список клиентов не теряет ошибки, комментарии и логины без кабинетов.
-printf '%s\n' '{"yandex.direct":[{"id":7,"type":"yandex.direct","name":"login-empty","errors":"нужно обновить доступ","clients":[]},{"id":8,"type":"yandex.direct","name":"login-main","errors":"","clients":[{"id":81,"name":"cabinet-one","comment":"основной кабинет"}]}]}' > "$TEST_TMP/clients.json"
+printf '%s\n' '{"yandex.direct":[{"id":7,"type":"yandex.direct","name":"login-empty","errors":"нужно обновить доступ","clients":[]},{"id":8,"type":"yandex.direct","name":"login-main","errors":"","clients":[{"id":81,"name":"cabinet-one","comment":"основной кабинет"},{"id":82,"name":"porg-example","comment":""}]}]}' > "$TEST_TMP/clients.json"
 (MOCK_BODY_FILE="$TEST_TMP/clients.json" ZOOMKIT_API_TOKEN="test-token" run_zoomkit clients) > "$TEST_TMP/out" 2>&1
 assert_contains "$TEST_TMP/out" "login-empty"
 assert_contains "$TEST_TMP/out" "нужно обновить доступ"
 assert_contains "$TEST_TMP/out" "cabinet-one"
 assert_contains "$TEST_TMP/out" "основной кабинет"
-assert_contains "$TEST_TMP/out" "Проектов/аккаунтов: 1"
-assert_contains "$TEST_TMP/out" "Строк таблицы: 2"
+assert_contains "$TEST_TMP/out" "porg-example"
+assert_contains "$TEST_TMP/out" "Проектов/аккаунтов: 2"
+assert_contains "$TEST_TMP/out" "Строк таблицы: 3"
+assert_contains "$TEST_TMP/out" "В Яндекс.Директе без комментария: 1; из них porg-*: 1"
+assert_contains "$TEST_TMP/out" "https://zoomkit.ru/yandex/direct"
+assert_contains "$TEST_TMP/out" "Клиенты и дневной расход"
+assert_contains "$TEST_TMP/out" "заполните «Комментарий» для всех непонятных аккаунтов"
+assert_contains "$TEST_TMP/out" "затем повторите clients"
 assert_contains "$TEST_TMP/out" "API не показывает, какой кабинет включён в списания"
+
+# Если все кабинеты понятно подписаны, лишняя ручная инструкция не выводится.
+printf '%s\n' '{"yandex.direct":[{"id":8,"type":"yandex.direct","name":"login-main","errors":"","clients":[{"id":81,"name":"cabinet-one","comment":"основной кабинет"}]}]}' > "$TEST_TMP/clients-labeled.json"
+(MOCK_BODY_FILE="$TEST_TMP/clients-labeled.json" ZOOMKIT_API_TOKEN="test-token" run_zoomkit clients) > "$TEST_TMP/out" 2>&1
+if grep -F -- "Клиенты и дневной расход" "$TEST_TMP/out" >/dev/null 2>&1; then
+    fail "инструкция по заполнению комментариев показана для подписанных кабинетов"
+fi
+
+# Пустой комментарий другой рекламной системы не ведёт в настройки Яндекс.Директа.
+printf '%s\n' '{"google.ads":[{"id":9,"type":"google.ads","name":"google-login","errors":"","clients":[{"id":91,"name":"porg-not-yandex","comment":""}]}]}' > "$TEST_TMP/clients-google.json"
+(MOCK_BODY_FILE="$TEST_TMP/clients-google.json" ZOOMKIT_API_TOKEN="test-token" run_zoomkit clients) > "$TEST_TMP/out" 2>&1
+if grep -F -- "Клиенты и дневной расход" "$TEST_TMP/out" >/dev/null 2>&1; then
+    fail "пустой комментарий Google Ads ошибочно ведёт в настройки Яндекс.Директа"
+fi
 
 # Перевод строки в ключе не может добавить произвольный HTTP-заголовок.
 TOKEN_WITH_NEWLINE=$(printf 'test-token\nX-Injected: value')

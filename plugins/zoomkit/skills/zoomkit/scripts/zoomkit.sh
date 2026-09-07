@@ -476,6 +476,13 @@ render_response() {
                 def clean: tostring | gsub("[\\r\\n\\t]"; " ");
                 [to_entries[] | .value[]] as $integrations |
                 [$integrations[] | (.clients // [])[]] as $projects |
+                [to_entries[] | select(.key == "yandex.direct") | .value[] |
+                    (.clients // [])[] |
+                    select(((.comment // "") | tostring | gsub("\\s"; "")) == "")
+                ] as $without_comments |
+                [$without_comments[] |
+                    select(((.name // "") | tostring | test("^porg-"; "i")))
+                ] as $agency_without_comments |
                 [to_entries[] | .key as $type | .value[] | . as $integration |
                     if (($integration.clients // []) | length) == 0 then
                         [$type, ($integration.id // "—"), ($integration.name // "—"),
@@ -493,6 +500,11 @@ render_response() {
                 ($rows[: $limit][] | @tsv),
                 (if ($rows | length) > $limit then
                     "Показаны первые \($limit); полный список находится в файле."
+                 else empty end),
+                (if ($without_comments | length) > 0 then
+                    "В Яндекс.Директе без комментария: \($without_comments | length); из них porg-*: \($agency_without_comments | length).",
+                    "Если нужный кабинет не найден, но он подключён, не угадывайте соответствие по техническому имени.",
+                    "Откройте личный кабинет: https://zoomkit.ru/yandex/direct → «Клиенты и дневной расход» и заполните «Комментарий» для всех непонятных аккаунтов, особенно porg-*; затем повторите clients."
                  else empty end)
             ' "$_zrr_file"
             printf '%s\n' "API не показывает, какой кабинет включён в списания, и не умеет его отключать."
