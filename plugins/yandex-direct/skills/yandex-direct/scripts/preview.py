@@ -17,8 +17,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 import cache as cache_module  # noqa: E402
 import combinatorial  # noqa: E402
 import incoming  # noqa: E402
+import objects  # noqa: E402
+import preview_media  # noqa: E402
+import preview_source  # noqa: E402
 import rendering  # noqa: E402
+import ads as ads_command  # noqa: E402
+from accounts import Accounts, resolve_account  # noqa: E402
 from config import DirectFailure, excerpt, preload_secrets, redact  # noqa: E402
+from direct import Client  # noqa: E402
 from responsive import Kit  # noqa: E402
 from writer import Limits  # noqa: E402
 
@@ -126,6 +132,75 @@ def templated(kit: Kit) -> bool:
     return any("#" in one for one in list(kit.titles) + list(kit.texts))
 
 
+def source_ad(args):
+    """Чтение существующего объявления; выгрузка не требует подключения к API."""
+    if args.from_json:
+        record, related = preview_source.read_export(args.from_json, args.ad)
+        ad = preview_source.ad_from_record(record, related)
+        ad.notes.insert(0, "Данные из сохранённой выгрузки; актуальность в кабинете не проверялась.")
+    else:
+        client = Client.from_env(profile=args.env, warn=warn)
+        accounts = Accounts.load(client, warn=warn)
+        login = resolve_account(accounts, client, args.account)
+        cache = cache_module.Cache.from_args(args, account=login, warn=warn)
+        entry = ads_command.read_ads(cache, client, accounts, login,
+                                     objects.ads_params(ad_ids=[args.ad]))
+        found = [one for one in entry.data if one.get("Id") == args.ad]
+        if len(found) != 1:
+            raise DirectFailure(f"Объявление {args.ad} в кабинете {login} не найдено.")
+        record = found[0]
+        limits = Limits.load()
+
+        def read(service, params):
+            need = limits.units_cost(service, "get")
+            return client.get_all(service, params, account=login,
+                use_operator_units=lambda: accounts.use_operator_units(login, need=need))
+
+        ad = preview_source.ad_from_record(record, read=read)
+        ad.notes.insert(0, f"Кабинет {login}. Объявление "
+                        + ("из кэша; --no-cache обновит данные." if entry.hit else "прочитано из API."))
+    args.out = str(Path(args.out) / f"ad-{record['Id']}")
+    return ad, (f"Объявление {record['Id']} · кампания {record.get('CampaignId', '—')} · "
+                f"{record.get('Status', 'статус не указан')} · {record.get('State', 'состояние не указано')}")
+
+
+def material(args) -> tuple:
+    """Один путь сборки данных для матрицы и отдельной пары."""
+    original = None
+    if args.ad is not None or args.from_json:
+        original, heading = source_ad(args)
+        brief = {"titles": original.kit.titles, "texts": original.kit.texts,
+                 "href": original.kit.href, "display_url_path": original.kit.display_url_path,
+                 "images": original.kit.images, "callouts": original.callouts,
+                 "sitelinks": [{"title": one.title, "description": one.description,
+                                "href": one.href} for one in original.sitelinks],
+                 "vcard": original.vcard, "price": original.price, "note": heading}
+    else:
+        brief = read_brief(args.brief) if args.brief else {}
+    ad = ad_of(brief, args)
+    if original is not None:
+        ad.notes = list(original.notes)
+        if any((args.title, args.text, args.image, args.image_url, args.sitelink,
+                args.callout, args.href, args.display_url_path, args.vcard, args.price)):
+            ad.notes.append("Поля из аргументов заменены только в предпросмотре; кабинет не изменён.")
+    media = list(original.media) if original is not None else []
+    if args.image:
+        media = [one for one in media if one["kind"] != "image" or one["id"] in args.image]
+    known = {one["id"] for one in media if one["kind"] == "image"}
+    media += [{"id": identity, "kind": "image", "url": None, "label": "Изображение"}
+              for identity in ad.kit.images if identity not in known]
+    if args.image_url:
+        media = [one for one in media if one["kind"] != "image"]
+        media += [{"id": f"image-{index}", "kind": "image", "url": url,
+                   "label": f"Изображение {index}"}
+                  for index, url in enumerate(args.image_url, 1)]
+        ad.kit.images = [one["id"] for one in media if one["kind"] == "image"]
+    ad.media = preview_media.embed_media(media, load=not args.no_images)
+    ad.notes += [f"{one['label']} ({one['id']}): {one['error']}"
+                 for one in ad.media if one.get("error")]
+    return ad, args.heading or brief.get("note") or ad.kit.summary()
+
+
 # --------------------------------------------------------------------------
 # Отрисовка
 # --------------------------------------------------------------------------
@@ -161,12 +236,10 @@ def write_page(path: Path, page: str) -> Path:
 
 def draw(args, pairs, tag: str) -> tuple:
     """Нарисовать выбранные плейсменты. Возвращает пару «файлы, замечания»."""
-    brief = read_brief(args.brief) if args.brief else {}
-    ad = ad_of(brief, args)
+    ad, heading = material(args)
     limits = Limits.load()
     out = Path(args.out)
-    heading = args.heading or brief.get("note") or ad.kit.summary()
-    made, notes, by_place = [], [], {}
+    made, notes, by_place = [], list(ad.notes), {}
     if templated(ad.kit):
         notes.append(
             "в комплекте есть шаблон `#…#`: пара складывается на показе после "
@@ -255,6 +328,8 @@ def report(args, made, notes) -> int:
                        ensure_ascii=False))
         return 0
     lines = [f"Нарисовано мест показа: {len(made)}, тема «{args.theme}»."]
+    lines += [f"{rendering.load(name).title}: {path}"
+              for name, path in zip(chosen(args), made)]
     lines += [f"  · {one}" for one in notes[:20]]
     if len(notes) > 20:
         lines.append(f"  · ещё замечаний: {len(notes) - 20} — целиком `--json`")
@@ -288,6 +363,16 @@ def add_common(parser, *, leaf: bool) -> None:
 def add_material(step) -> None:
     step.add_argument("--brief", metavar="ФАЙЛ",
                       help=combinatorial.brief_help(BRIEF_READ))
+    step.add_argument("--ad", type=int, metavar="ID",
+                      help="прочитать объявление из кабинета или выбрать его в --from-json")
+    step.add_argument("--from-json", metavar="ФАЙЛ",
+                      help="полная JSON-выгрузка ads.py; без обращения к API Директа")
+    step.add_argument("--account", metavar="ЛОГИН", help="кабинет для --ad")
+    step.add_argument("--env", choices=("production", "test_cabinet"),
+                      help="профиль подключения для --ad")
+    cache_module.add_arguments(step)
+    step.add_argument("--no-images", action="store_true",
+                      help="не загружать изображения и миниатюры, оставить подписи")
     step.add_argument("--title", action="append",
                       help="заголовок; повторяется. Заменяет взятые из брифа")
     step.add_argument("--text", action="append", help="текст; повторяется")
@@ -296,6 +381,8 @@ def add_material(step) -> None:
                       help="быстрая ссылка; повторяется")
     step.add_argument("--image", action="append", metavar="ХЕШ",
                       help="хеш изображения; повторяется")
+    step.add_argument("--image-url", action="append", metavar="HTTPS_URL",
+                      help="загрузить и встроить изображение; повторяется, заменяет изображения источника")
     step.add_argument("--callout", action="append", metavar="ТЕКСТ",
                       help="уточнение; повторяется")
     step.add_argument("--vcard", metavar="СТРОКА",
@@ -352,9 +439,15 @@ def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.action != "placements" and not any(
-            (args.brief, args.title, args.text)):
-        parser.error("не сказано, что рисовать: назовите `--brief` либо "
-                     "`--title` с `--text`")
+            (args.brief, args.title, args.text, args.ad, args.from_json)):
+        parser.error("назовите --ad ID, --from-json ФАЙЛ, --brief либо --title с --text")
+    if args.action != "placements":
+        if args.ad is not None and args.ad < 1:
+            parser.error("--ad: нужен положительный ID объявления")
+        if args.brief and (args.ad is not None or args.from_json):
+            parser.error("--brief нельзя совмещать с --ad или --from-json")
+        if args.image and args.image_url:
+            parser.error("используйте --image либо --image-url")
     try:
         return run(args)
     except DirectFailure as failure:
