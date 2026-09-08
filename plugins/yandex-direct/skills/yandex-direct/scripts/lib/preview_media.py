@@ -15,7 +15,7 @@ MAX_SECONDS = 15
 MAX_REDIRECTS = 5
 # Прозрачный DNS-прокси окружения может выдавать служебные IP для внешних узлов.
 # Исключение действует только для известного CDN изображений Директа и при TLS.
-DNS_PROXY_CDN_HOSTS = frozenset({"avatars.mds.yandex.net"})
+DNS_PROXY_CDN_HOSTS = frozenset({"avatars.mds.yandex.net", "direct.yandex.ru"})
 DNS_PROXY_RANGE = ipaddress.ip_network("198.18.0.0/15")
 
 
@@ -32,6 +32,13 @@ def _normalize(url):
         url = "https:" + url
     try:
         parts = urlsplit(url)
+        # Ads.get может вернуть новую картинку по HTTP, хотя AdImages.get
+        # отдаёт этот же официальный адрес по HTTPS. Наружу HTTP не отправляем.
+        if (parts.scheme == "http" and parts.hostname == "direct.yandex.ru"
+                and parts.path.startswith("/images/direct/")
+                and parts.port in (None, 80)
+                and parts.username is None and parts.password is None):
+            parts = parts._replace(scheme="https", netloc="direct.yandex.ru")
         valid = (parts.scheme == "https" and parts.hostname and
                  parts.username is None and parts.password is None and
                  parts.port in (None, 443))
