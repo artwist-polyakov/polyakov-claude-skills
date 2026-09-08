@@ -102,16 +102,29 @@ class Sitelink:
 class Ad:
     """Объявление глазами человека: комплект плюс всё, что покажется рядом."""
 
-    __slots__ = ("kit", "sitelinks", "callouts", "vcard", "price", "domain")
+    __slots__ = ("kit", "sitelinks", "callouts", "vcard", "price", "domain",
+                 "media", "notes")
 
     def __init__(self, kit, *, sitelinks=(), callouts=(), vcard=None,
-                 price=None):
+                 price=None, media=(), notes=()):
         self.kit = kit
         self.sitelinks = list(sitelinks)
         self.callouts = [str(one) for one in callouts]
         self.vcard = None if vcard is None else str(vcard)
         self.price = None if price is None else str(price)
         self.domain = domain_of(kit.href)
+        self.media = list(media)
+        self.notes = [str(one) for one in notes]
+
+    @property
+    def media_classes(self) -> dict:
+        """Индекс текущего комплекта, в том числе присвоенного после создания."""
+        classes = {}
+        for one in self.media:
+            src = one.get("src")
+            if _embedded_image(src) and src not in classes:
+                classes[src] = f"media-asset-{len(classes) + 1}"
+        return classes
 
 
 def domain_of(href) -> str:
@@ -342,18 +355,99 @@ def callout_total(limits: Limits, placement: Placement) -> tuple:
     return rule.get(placement.callouts), placement.callouts
 
 
-def _image(kit) -> str:
-    """Подпись места изображения. Само оно не рисуется — и это не пробел.
+_RASTER_DATA = re.compile(
+    r"data:image/(?:png|jpeg|gif|webp);base64,"
+    r"(?=[A-Za-z0-9+/])(?:[A-Za-z0-9+/]{4})*"
+    r"(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")
 
-    Скачать его значило бы сходить наружу, а встроить скачанное — положить в
-    файл мегабайты и потерять переносимость. Рисуется место и подпись с хешем:
-    состав объявления видно, а картинку человек и так знает."""
-    hashes = kit.images if isinstance(kit.images, list) else []
-    if not hashes:
-        return "изображение не задано"
-    if len(hashes) == 1:
-        return f"изображение {_said(hashes[0])}"
-    return f"изображений {len(hashes)}, первое {_said(hashes[0])}"
+
+def _embedded_image(src) -> bool:
+    """Только подготовленные растровые картинки, без внешних адресов и SVG."""
+    return isinstance(src, str) and _RASTER_DATA.fullmatch(src) is not None
+
+
+def _media_image(ad: Ad, one) -> str:
+    """Картинка с общей CSS-записью: байты не повторяются в каждой карточке."""
+    image_class = ad.media_classes.get(one.get("src"))
+    if not image_class:
+        return ""
+    label = html.escape(str(one.get("label") or one.get("id") or
+                            "Изображение"), quote=True)
+    return (f'<span class="embedded-image {image_class}" role="img" '
+            f'aria-label="{label}"></span>')
+
+
+def _image(ad: Ad) -> str:
+    """Первое доступное изображение. Видео картинкой объявления не заменяется."""
+    for one in ad.media:
+        if one.get("kind") == "image" and one.get("src") in ad.media_classes:
+            return (_media_image(ad, one)
+                    + f'<span class="image-caption">Изображение '
+                      f'{_said(one.get("id", ""))}</span>')
+    hashes = ad.kit.images if isinstance(ad.kit.images, list) else []
+    supplied = hashes or [one for one in ad.media
+                          if one.get("kind") == "image"]
+    said = ("Изображение не загружено"
+            if supplied else "Изображение не задано")
+    if hashes:
+        said += ": " + ", ".join(_said(one) for one in hashes)
+    return f'<span class="image-placeholder">{said}</span>'
+
+
+def media_html(ad: Ad) -> str:
+    """Обзор всех исходных изображений и миниатюр, отдельно от матрицы текстов."""
+    items = []
+    seen = {}
+    for one in ad.media:
+        video = one.get("kind") == "video"
+        picture = _media_image(ad, one)
+        label = one.get("label") or ("Видео" if video else "Изображение")
+        error = one.get("error")
+        duplicate = ""
+        digest = one.get("digest")
+        if picture and digest:
+            previous = seen.setdefault(digest, len(items) + 1)
+            if previous <= len(items):
+                duplicate = (f"Совпадает с изображением №{previous}. "
+                             "Совпадение миниатюр не означает одинаковые ролики."
+                             if video else f"Изображение повторяет №{previous}.")
+        if not picture and not error:
+            error = ("Миниатюра не загружена" if video
+                     else "Изображение не загружено")
+        view = picture or '<span class="image-placeholder">Нет изображения</span>'
+        items.append(
+            '<figure class="media-item"><div class="media-picture">'
+            + view + '</div><figcaption>'
+            + f'<strong>№{len(items) + 1}. {_said(label)}</strong>'
+            + f'<span class="media-id">ID: {_said(one.get("id", ""))}</span>'
+            + ('<span class="media-warning">Миниатюра видео — ролик целиком '
+               'не проверен</span>' if video else '')
+            + (f'<span class="media-error">{_said(error)}</span>' if error else '')
+            + (f'<span class="media-id">{_said(duplicate)}</span>'
+               if duplicate else '')
+            + '</figcaption></figure>')
+    if not items:
+        return ""
+    return ('<section class="media-section" aria-label="Медиакомплект">'
+            '<h2>Медиакомплект</h2><p class="section-note">Все переданные '
+            'изображения и миниатюры видео. Пропорции сохранены; кадрирование '
+            'при показе может отличаться.</p><div class="media-grid">'
+            + "\n".join(items) + '</div></section>')
+
+
+def format_legend(placement: Placement) -> str:
+    if not placement.shows("text"):
+        said = ('<strong>Основной текст здесь не показывается.</strong> '
+                'Одинаковые заголовки объединены в одну карточку.')
+    else:
+        said = ('Показаны сочетания заголовков и основных текстов: '
+                'строки — заголовки, столбцы — тексты.')
+    said += (' В карточке используется первое доступное изображение '
+             'из медиакомплекта.' if placement.shows("image") else
+             ' Изображения в карточках этого формата не показываются.')
+    return ('<aside class="format-legend"><h2>Как читать этот формат</h2><p>'
+            + said + '</p><p>Предварительный вид: площадка может изменить '
+            'компоновку, кадрирование и набор расширений.</p></aside>')
 
 
 # Откуда берётся состав и как он зовётся человеку. Таблица рядом с пределами,
@@ -404,8 +498,8 @@ def card(placement: Placement, ad: Ad, title: str, text: str, *,
     if not ad.domain:
         # Ссылки нет — и подставлять на её место правдоподобный домен нельзя:
         # человек согласовал бы цель, которой не просил.
-        notes.append("ссылка объявления не задана — Директ такое объявление "
-                     "не примет")
+        notes.append("ссылка объявления не передана в макет; проверьте цель "
+                     "перехода, в том числе привязанную организацию или визитку")
 
     sitelink_titles = [piece(limits, SITELINK_FIELD, one.title,
                              "быстрая ссылка") for one in ad.sitelinks]
@@ -467,7 +561,7 @@ def card(placement: Placement, ad: Ad, title: str, text: str, *,
                             for one in line),
         "vcard": _said(ad.vcard or ""),
         "price": _said(ad.price or ""),
-        "image": _image(kit),
+        "image": _image(ad),
     }
     unknown = [one for one in placement.slots if one not in values]
     if unknown:
@@ -509,10 +603,12 @@ def matrix_html(placement: Placement, ad: Ad, pairs, *, theme: str = "auto",
             "проверенной.")
     footer = list(footer)
     skipped = {}
+    title_groups = {}
     if not placement.shows("text"):
         seen = {}
         for one in pairs:
-            seen.setdefault(one.title_place, one)
+            seen.setdefault(one.title, one)
+            title_groups.setdefault(one.title, set()).add(one.title_place)
         kept = list(seen.values())
         if len(kept) < len(pairs):
             drawn_places = {one.text_place for one in kept}
@@ -549,7 +645,9 @@ def matrix_html(placement: Placement, ad: Ad, pairs, *, theme: str = "auto",
         grid.append('<div class="corner"></div>')
         grid += [f'<div class="head">текст {one}</div>' for one in texts]
     for title in titles:
-        grid.append(f'<div class="rowlabel">загл. {title}</div>')
+        places = (_places(sorted(title_groups[at[(title, None)].title]))
+                  if not shows_text else str(title))
+        grid.append(f'<div class="rowlabel">загл. {places}</div>')
         for text in texts:
             body = cells.get((title, text), "")
             grid.append(f'<div class="cell">{body}</div>')
@@ -566,6 +664,15 @@ def matrix_html(placement: Placement, ad: Ad, pairs, *, theme: str = "auto",
         "theme": "" if theme == "auto" else f' data-theme="{theme}"',
         "heading": _said(heading or placement.title),
         "subtitle": _said(said),
+        "legend": format_legend(placement),
+        "limitations": ('<aside class="limitations"><h2>Ограничения '
+                        'комплектности</h2><ul>'
+                        + ''.join(f'<li>{_said(one)}</li>' for one in ad.notes)
+                        + '</ul></aside>') if ad.notes else '',
+        "media": media_html(ad),
+        "media_styles": "\n".join(
+            f'.{name} {{ background-image: url("{src}"); }}'
+            for src, name in ad.media_classes.items()),
         "matrix": "\n".join(grid),
         "footer": "\n".join(f"<p>{_said(one)}</p>" for one in footer),
     }
@@ -631,7 +738,7 @@ def _places(numbers) -> str:
 # --------------------------------------------------------------------------
 
 # Элементы, которые тянут содержимое извне по самому своему смыслу.
-_OUTSIDE_TAGS = {"img", "script", "iframe", "object", "embed", "link",
+_OUTSIDE_TAGS = {"script", "iframe", "object", "embed", "link",
                  "source", "video", "audio", "picture", "svg", "use", "a"}
 
 # Атрибуты, значение которых — адрес. `href` в этом перечне не по ошибке:
@@ -644,8 +751,12 @@ _ADDRESS_ATTRIBUTES = {"href", "src", "srcset", "data", "poster",
 _OUTSIDE_STYLE = (
     (re.compile(r"@import\b", re.I), "@import в стилях"),
     (re.compile(r"@font-face\b", re.I), "@font-face"),
-    (re.compile(r"url\(\s*['\"]?(?!#|data:)", re.I), "url() наружу"),
+    (re.compile(r"url\(\s*['\"]?(?!#)", re.I), "url() в стилях"),
 )
+
+# Отрисовка добавляет только такую форму url(); остальные адреса по-прежнему
+# запрещены. SVG, произвольные data: и внешние ресурсы сюда не подходят.
+_STYLE_IMAGE = re.compile(r'url\("' + _RASTER_DATA.pattern + r'"\)')
 
 
 class _Scan(HTMLParser):
@@ -659,11 +770,19 @@ class _Scan(HTMLParser):
     def handle_starttag(self, tag, attrs):
         if tag in _OUTSIDE_TAGS:
             self.found.append(f"элемент <{tag}>")
+        if tag == "img":
+            sources = [value for name, value in attrs if name == "src"]
+            if len(sources) != 1 or not _embedded_image(sources[0]):
+                self.found.append("элемент <img> без встроенной растровой картинки")
         self._style = tag == "style"
         for name, value in attrs:
             said, value = (name or "").lower(), value or ""
             if said in _ADDRESS_ATTRIBUTES:
-                self.found.append(f"{said} наружу: {excerpt(value, 60)}")
+                if not (tag == "img" and said == "src"
+                        and _embedded_image(value)):
+                    self.found.append(f"{said} наружу: {excerpt(value, 60)}")
+            elif said.startswith("on"):
+                self.found.append(f"обработчик {said}")
             elif said == "style":
                 self._look(value, "в атрибуте style")
 
@@ -675,6 +794,7 @@ class _Scan(HTMLParser):
             self._look(data, "в <style>")
 
     def _look(self, said: str, where: str):
+        said = _STYLE_IMAGE.sub("none", said)
         for pattern, name in _OUTSIDE_STYLE:
             if pattern.search(said):
                 self.found.append(f"{name} {where}")
@@ -693,7 +813,9 @@ def external_references(page: str) -> list:
 
     Поэтому содержимое текстовых узлов не проверяется вовсе — по нему нельзя
     сходить наружу, — а проверяются имена элементов, значения атрибутов и
-    содержимое `<style>`."""
+    содержимое `<style>`. Единственное разрешённое содержимое `src` —
+    встроенная растровая картинка у `<img>`. В CSS разрешены те же растровые
+    данные, чтобы хранить изображение один раз на все карточки."""
     scan = _Scan()
     scan.feed(page)
     scan.close()
