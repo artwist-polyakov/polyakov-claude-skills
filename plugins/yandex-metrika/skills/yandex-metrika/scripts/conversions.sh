@@ -39,6 +39,18 @@ ATTRIBUTION="${ATTRIBUTION:-lastsign}"
 COUNTER_DIR=$(cache_dir_for_counter "$COUNTER")
 CONFIG_JSON="$COUNTER_DIR/config.json"
 
+if [ -n "$LIMIT" ]; then
+    _max_limit=100000
+    [ -z "$GROUP" ] || _max_limit=30
+    case "$LIMIT" in
+        *[!0-9]*) echo "Error: --limit must be an integer." >&2; exit 1 ;;
+    esac
+    if ! [ "$LIMIT" -ge 1 ] 2>/dev/null || ! [ "$LIMIT" -le "$_max_limit" ] 2>/dev/null; then
+        echo "Error: --limit must be between 1 and $_max_limit sources." >&2
+        exit 1
+    fi
+fi
+
 # Determine goal IDs
 if [ -n "$GOALS" ]; then
     # Manual override
@@ -86,18 +98,6 @@ fi
 DIMENSIONS="ym:s:${ATTRIBUTION}TrafficSource"
 FIRST_GOAL="${GOAL_IDS%%,*}"
 SORT="-ym:s:goal${FIRST_GOAL}visits,$DIMENSIONS"
-
-if [ -n "$LIMIT" ]; then
-    _max_limit=100000
-    [ -z "$GROUP" ] || _max_limit=30
-    case "$LIMIT" in
-        *[!0-9]*) echo "Error: --limit must be an integer." >&2; exit 1 ;;
-    esac
-    if ! [ "$LIMIT" -ge 1 ] 2>/dev/null || ! [ "$LIMIT" -le "$_max_limit" ] 2>/dev/null; then
-        echo "Error: --limit must be between 1 and $_max_limit sources." >&2
-        exit 1
-    fi
-fi
 
 # New version: includes zero-conversion sources and respects all request options.
 _params_str="conv_v2_${COUNTER}_${DATE1}_${DATE2}_${GROUP}_${GOAL_IDS}_${FILTERS}_${ATTRIBUTION}_${LIMIT}"

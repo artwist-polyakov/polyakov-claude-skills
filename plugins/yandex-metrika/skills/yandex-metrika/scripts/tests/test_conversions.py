@@ -334,10 +334,12 @@ class ConversionsTests(unittest.TestCase):
 
     def test_limits_rejected_before_network(self):
         for args in (("--limit", "0"), ("--limit", "-1"), ("--limit", "nope"),
-                     ("--limit", "100001"), ("--group", "day", "--limit", "31")):
+                     ("--limit", "100001"), ("--group", "day", "--limit", "31"),
+                     ("--all-goals", "--limit", "0")):
             with self.subTest(args=args):
+                self.log.unlink(missing_ok=True)
                 self.run_report(*args, success=False)
-                self.assertEqual(self.requests(), [])
+                self.assertEqual(self.all_requests(), [])
 
 
 if __name__ == "__main__":
