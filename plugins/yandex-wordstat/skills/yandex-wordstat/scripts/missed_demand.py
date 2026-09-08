@@ -29,6 +29,8 @@ STOP_WORDS = frozenset([
     "без", "при", "под", "над", "между", "через", "об", "перед",
 ])
 
+WORDSTAT_PHRASE_MAX_LENGTH = 400
+
 # Characters forbidden in slot variants (OR-syntax operators and leading modifiers)
 # Hyphen inside words is OK (б/у, санкт-петербург)
 FORBIDDEN_CHARS_RE = re.compile(r'[|()"]')
@@ -331,7 +333,7 @@ class SlotMerger:
             "additional_patterns": additional_patterns,
         }
 
-    def finalize(self, max_query_length=4096):
+    def finalize(self, max_query_length=WORDSTAT_PHRASE_MAX_LENGTH):
         """Finalize merged slots: deduplicate, remove subsets, build query."""
         self._remove_subsets()
 
@@ -645,7 +647,15 @@ def main():
     # build-query
     p_build = sub.add_parser("build-query", help="Build OR-query from slots")
     p_build.add_argument("slots_json", help="JSON string with slots")
-    p_build.add_argument("--max-query-length", type=int, default=4096, help="Max query length (default: 4096)")
+    p_build.add_argument(
+        "--max-query-length",
+        type=int,
+        default=WORDSTAT_PHRASE_MAX_LENGTH,
+        help=(
+            "Максимальная длина базовой OR-схемы "
+            f"(по умолчанию: {WORDSTAT_PHRASE_MAX_LENGTH})"
+        ),
+    )
 
     # merge-slots
     p_merge = sub.add_parser(
@@ -653,8 +663,13 @@ def main():
         help="Merge batch segmentation results (stdin JSON)",
     )
     p_merge.add_argument(
-        "--max-query-length", type=int, default=4096,
-        help="Max query length (default: 4096)",
+        "--max-query-length",
+        type=int,
+        default=WORDSTAT_PHRASE_MAX_LENGTH,
+        help=(
+            "Максимальная длина базовой OR-схемы "
+            f"(по умолчанию: {WORDSTAT_PHRASE_MAX_LENGTH})"
+        ),
     )
 
     # query-total

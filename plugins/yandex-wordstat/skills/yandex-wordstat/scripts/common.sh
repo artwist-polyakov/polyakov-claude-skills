@@ -414,7 +414,7 @@ _iam_token_get() {
 # Translate script parameters to a cloud request body.
 # Args: $1 = method (topRequests|dynamics|regions), $2 = parameters as JSON
 # Output: cloud-shape JSON on stdout.
-# Exits 1 with die_with_help on dynamics preflight failure.
+# Exits non-zero when local request validation fails.
 _xlate_request() {
     _method="$1"
     _params="$2"
@@ -425,6 +425,19 @@ import json, os, re, sys
 method = os.environ["_METHOD"]
 params = json.loads(os.environ["_PARAMS"])
 folder = os.environ["_FOLDER"]
+
+PHRASE_MAX_LENGTH = 400
+phrase = params.get("phrase")
+if (
+    method in ("topRequests", "dynamics", "regions")
+    and isinstance(phrase, str)
+    and len(phrase) > PHRASE_MAX_LENGTH
+):
+    print(
+        f"PHRASE_TOO_LONG:{len(phrase)}:{PHRASE_MAX_LENGTH}",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 DEVICE_MAP = {
     "all": "DEVICE_ALL",
@@ -623,10 +636,21 @@ _cloud_request() {
     _params="$2"
 
     # 1. Translate request
-    _xlate_out=$(_xlate_request "$_method" "$_params" 2>&1)
-    _xlate_rc=$?
+    _xlate_rc=0
+    _xlate_out=$(_xlate_request "$_method" "$_params" 2>&1) || _xlate_rc=$?
     if [ "$_xlate_rc" != "0" ]; then
         case "$_xlate_out" in
+            *PHRASE_TOO_LONG:*)
+                _lengths=${_xlate_out##*PHRASE_TOO_LONG:}
+                _actual_length=${_lengths%%:*}
+                _max_length=${_lengths#*:}
+                {
+                    printf '[wordstat] Облачный Wordstat: длина фразы — %s, допустимо не более %s символов.\n' \
+                        "$_actual_length" "$_max_length"
+                    printf 'Сократите фразу; для OR-запроса сначала уберите необязательные кампанийные минус-фразы либо разделите анализ на несколько запросов.\n'
+                } >&2
+                exit 1
+                ;;
             *PREFLIGHT_FAIL:*)
                 _ops=${_xlate_out#*PREFLIGHT_FAIL:}
                 die_with_help \

@@ -102,8 +102,8 @@ echo "Backend: $WORDSTAT_BACKEND"
 echo ""
 echo "Fetching data..."
 
-# common.sh writes normalized JSON to stdout.
-wordstat_request "topRequests" "$PARAMS" | tr -d '\n\r' > "$TMPFILE"
+# common.sh writes compact normalized JSON to stdout.
+wordstat_request "topRequests" "$PARAMS" > "$TMPFILE"
 
 # Check for error
 if grep -q '"error"' "$TMPFILE"; then
