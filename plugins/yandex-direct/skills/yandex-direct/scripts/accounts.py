@@ -29,6 +29,7 @@ from accounts import (  # noqa: E402  — путь импорта задаётс
 from cache import add_arguments  # noqa: E402
 from config import DirectFailure, preload_secrets, redact, short  # noqa: E402
 from direct import Client, thousands  # noqa: E402
+from ui_links import account_url  # noqa: E402
 
 SHOWN = 10
 SHOWN_MATCHES = 12
@@ -55,7 +56,7 @@ def row(cabinet, mark: str = "") -> str:
     balance = cabinet.money(currency=False) or "—"
     archived = " · архивный" if cabinet.archived else ""
     return (f"  {cabinet.login:<28} {name[:32]:<32} {cabinet.currency:<4} "
-            f"{balance:>12}{archived}{mark}")
+            f"{balance:>12}{archived}{mark} · {account_url(cabinet.login)}")
 
 
 def show_cabinet(cabinet) -> str:
@@ -67,6 +68,7 @@ def show_cabinet(cabinet) -> str:
         parts.append(f"баланс {balance}")
     if cabinet.archived:
         parts.append("архивный")
+    parts.append(account_url(cabinet.login))
     return " · ".join(part for part in parts if part)
 
 
@@ -115,6 +117,10 @@ def report_matches(accounts: Accounts, query: str, found: list, archived: bool) 
         say("Неоднозначно — уточните запрос или назовите логин точно.")
 
 
+def cabinet_json(cabinet) -> dict:
+    return dict(cabinet.as_dict(), account_url=account_url(cabinet.login))
+
+
 def as_json(accounts: Accounts, found=None) -> dict:
     """Машиночитаемый ответ. Перечня кабинетов в нём нет без запроса.
 
@@ -130,14 +136,14 @@ def as_json(accounts: Accounts, found=None) -> dict:
         "owner": accounts.owner,
         "checked_at": accounts.checked_at,
         "balances_read": accounts.balances_read,
-        "active": None if current is None else current.as_dict(),
+        "active": None if current is None else cabinet_json(current),
         "cache": accounts.cache_path(),
         "total": len(accounts.cabinets),
     }
     if found is not None:
         body["matches_total"] = len(found)
         body["matches"] = [
-            dict(match.cabinet.as_dict(), matched=match.field, exact=match.exact)
+            dict(cabinet_json(match.cabinet), matched=match.field, exact=match.exact)
             for match in found[:JSON_MATCHES]
         ]
     return body

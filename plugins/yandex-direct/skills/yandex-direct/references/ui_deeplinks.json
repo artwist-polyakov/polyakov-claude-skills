@@ -2,11 +2,12 @@
   "version": "1",
   "checked_at": "2026-08-24",
   "source": "https://yandex.ru/support/direct/ru/",
-  "about": "Карта действий и экранов Директа. Для confirmed есть подтверждённая ссылка, для navigation — последовательность переходов от известного экрана. Обзор: UI_MAP.md.",
+  "about": "Карта действий и экранов Директа. confirmed — ссылка из справки, user_provided — формат от пользователя, navigation — переходы от известного экрана. Обзор: UI_MAP.md.",
   "conventions": {
     "confidence": {
       "confirmed": "URL встречается в справке Яндекса; поле source указывает страницу-источник",
-      "navigation": "устойчивого URL у экрана нет или он не подтверждён справкой; вести пользователя по шагам из поля path от экрана anchor"
+      "navigation": "устойчивого URL у экрана нет или он не подтверждён справкой; вести пользователя по шагам из поля path от экрана anchor",
+      "user_provided": "Формат ссылки предоставлен пользователем; логин кабинета и ID подставляются из выбранных объектов."
     },
     "why_not_guessed": "Любой путь на direct.yandex.ru отдаёт 302 на passport.yandex.ru с retpath, включая заведомо несуществующий. Проверить угаданный адрес без авторизации невозможно, поэтому невыясненные экраны описаны навигацией, а не выдуманной ссылкой.",
     "tracking_params": "Из адресов вырезаны рекламные метки сессии (ysclid, utm_*). Метка ysclid частью адреса не является и протухает — в хендофф она попадать не должна.",
@@ -40,7 +41,29 @@
       "confidence": "confirmed",
       "interface": "both",
       "source": "https://yandex.ru/support/direct/ru/new-interface/guide",
-      "note": "Основная рабочая страница. По умолчанию показаны активные кампании с оплатой за клики; медийные и архивные видны после смены фильтра."
+      "note": "Шаблон открывает выбранный кабинет: последние 30 дней, кампании с оплатой за клики и показы, кроме архивных. Это параметры экрана, не настройки кампаний и не период анализа агента.",
+      "url_template": "https://direct.yandex.ru/dna/grid/campaigns?ulogin={login}&filter-reset=true&stat-preset=last30Days&dim-filter=CPC_AND_CPM&status-filter=ALL_EXCEPT_ARCHIVED",
+      "template_source": "Пример адреса, предоставленный пользователем."
+    },
+    {
+      "id": "campaign_groups",
+      "title": "Группы выбранной кампании",
+      "url": "https://direct.yandex.ru/dna/grid/groups",
+      "url_template": "https://direct.yandex.ru/dna/grid/groups?ulogin={login}&campaigns-ids={campaign_id}",
+      "confidence": "user_provided",
+      "interface": "both",
+      "source": "Пример адреса, предоставленный пользователем.",
+      "note": "Логин принадлежит клиентскому кабинету, ID — кампании. Имя группы или кампании в URL не передаётся."
+    },
+    {
+      "id": "campaign_edit",
+      "title": "Настройки выбранной кампании",
+      "url": "https://direct.yandex.ru/dna/campaigns-edit",
+      "url_template": "https://direct.yandex.ru/dna/campaigns-edit?ulogin={login}&campaigns-ids={campaign_id}",
+      "confidence": "user_provided",
+      "interface": "both",
+      "source": "Пример адреса, предоставленный пользователем.",
+      "note": "Открывает настройки существующей кампании, не форму создания новой."
     },
     {
       "id": "campaign_create",

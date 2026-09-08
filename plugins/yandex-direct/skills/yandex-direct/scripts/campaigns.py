@@ -41,6 +41,7 @@ from config import (  # noqa: E402
 )
 from direct import Client, thousands  # noqa: E402
 from errors import TransportFailure, required  # noqa: E402
+from ui_links import account_url, campaign_url  # noqa: E402
 
 # --------------------------------------------------------------------------
 # Перечни Директа
@@ -529,7 +530,7 @@ def why(record: dict) -> str:
     return STATE_RU.get(state, f"состояние {state}")
 
 
-def row_of(record: dict) -> dict:
+def row_of(record: dict, account=None) -> dict:
     """Плоская строка кампании: то, что уходит в TSV, в `--csv` и в `--json`.
 
     Плоская намеренно: по индексу ищут через `grep`, а вложенный объект в
@@ -542,7 +543,7 @@ def row_of(record: dict) -> dict:
     statistics = statistics if isinstance(statistics, dict) else {}
     budget = record.get("DailyBudget")
     budget = budget if isinstance(budget, dict) else {}
-    return {
+    row = {
         "id": record.get("Id"),
         "name": record.get("Name") or "",
         "type": record.get("Type") or "",
@@ -572,6 +573,10 @@ def row_of(record: dict) -> dict:
         "clicks": statistics.get("Clicks"),
         "impressions": statistics.get("Impressions"),
     }
+    if account is not None:
+        row["url"] = campaign_url(account, row["id"])
+        row["edit_url"] = campaign_url(account, row["id"], edit=True)
+    return row
 
 
 # Колонки TSV-индекса. Латиницей, как в индексе кабинетов: по нему ищут
@@ -974,7 +979,7 @@ def campaign_line(record: dict) -> str:
 
 def report_list(login: str, entry, balance, found: list, total: int,
                 spent: int, export=None) -> None:
-    lines = [account_line(login, entry, balance)]
+    lines = [account_line(login, entry, balance), f"Открыть кабинет: {account_url(login)}"]
     tally = counted(found)
     shown_of = "" if len(found) == total else f" из {total}"
     lines.append(f"Кампаний {len(found)}{shown_of} · {tally_text(tally)}")
@@ -982,10 +987,14 @@ def report_list(login: str, entry, balance, found: list, total: int,
                                for item in found):
         lines.append("Остаток общего счёта не прочитан — расход показан без него.")
     lines.append("")
-    for record in found[:SHOWN]:
+    # На кампанию теперь две строки; оставляем место для итогов и пути к файлу,
+    # чтобы ограничение outline не отрезало ссылку от последней кампании.
+    shown = 10
+    for record in found[:shown]:
         lines.append(campaign_line(record))
-    if len(found) > SHOWN:
-        lines.append(f"  … ещё {plural(len(found) - SHOWN, 'кампания', 'кампании', 'кампаний')}"
+        lines.append(f"  Открыть кампанию: {campaign_url(login, record['Id'])}")
+    if len(found) > shown:
+        lines.append(f"  … ещё {plural(len(found) - shown, 'кампания', 'кампании', 'кампаний')}"
                      f" — в файле ниже или через grep по TSV рядом с ним")
     unmanageable = sorted({unmanageable_reason(item) for item in found
                            if not manageable(item)})
@@ -997,9 +1006,9 @@ def report_list(login: str, entry, balance, found: list, total: int,
     outline(lines, path=entry.path, total=entry.count)
 
 
-def card_lines(record: dict, balance, regions) -> list:
+def card_lines(record: dict, balance, regions, account=None) -> list:
     """Полная карточка одной кампании."""
-    row = row_of(record)
+    row = row_of(record, account=account)
     currency = row["currency"]
     # Пояснение Директа печатается, только когда добавляет что-то к разбору:
     # у черновика оно дословно повторяет `why`, и строка «черновик · Черновик»
@@ -1011,6 +1020,10 @@ def card_lines(record: dict, balance, regions) -> list:
         f"{row['id']} · {row['name']}",
         f"{row['type_ru']} · {row['why']}" + (f" · {clarification}" if clarification else ""),
     ]
+    if account is not None:
+        lines[1:1] = [f"Открыть кабинет: {account_url(account)}",
+                      f"Открыть кампанию: {row['url']}",
+                      f"Настройки: {row['edit_url']}"]
     if not row["manageable"]:
         lines.append(f"Управление недоступно — {unmanageable_reason(record)}.")
     absent = missing_field_set(record)
@@ -1169,8 +1182,9 @@ def store_card(cache: Cache, record: dict, regions, balance):
     return cache.write(f"campaign-{record.get('Id')}", "structure", payload)
 
 
-def report_card(record: dict, entry, balance, regions, spent: int, export=None) -> None:
-    lines = card_lines(record, balance, regions)
+def report_card(record: dict, entry, balance, regions, spent: int, export=None,
+                account=None) -> None:
+    lines = card_lines(record, balance, regions, account=account)
     if spent:
         lines.append(f"Чтение стоило {units_said(spent)}.")
     lines.extend(export_line(export))
@@ -1181,6 +1195,7 @@ def as_json(login: str, entry, balance, found: list, total: int,
             record=None, regions=None, card=None) -> dict:
     body = {
         "account": login,
+        "account_url": account_url(login),
         "from_cache": entry.hit,
         "cache": None if entry.path is None else short(entry.path),
         "total": total,
@@ -1189,16 +1204,16 @@ def as_json(login: str, entry, balance, found: list, total: int,
         "shared_account": balance,
     }
     if record is not None:
-        body["campaign"] = card_json(record, regions)
+        body["campaign"] = card_json(record, regions, account=login)
         body["card"] = None if card is None or card.path is None else short(card.path)
         return body
-    body["campaigns"] = [row_of(item) for item in found[:JSON_LIMIT]]
+    body["campaigns"] = [row_of(item, account=login) for item in found[:JSON_LIMIT]]
     return body
 
 
-def card_json(record: dict, regions) -> dict:
+def card_json(record: dict, regions, account=None) -> dict:
     """Карточка машиночитаемо: нормализованная шапка и сырые настройки."""
-    body = dict(row_of(record))
+    body = dict(row_of(record, account=account))
     body["strategy"] = strategy_of(record)
     body["goals"] = goals_of(record)
     body["settings"] = settings_of(record)
@@ -1254,7 +1269,7 @@ def sweep(client, accounts: Accounts, args) -> dict:
         rows.append({"login": cabinet.login, "name": cabinet.name,
                      "total": entry.count, "matched": len(found),
                      "states": counted(found), "from_cache": entry.hit})
-        records.extend(dict(row_of(record), account=cabinet.login)
+        records.extend(dict(row_of(record, account=cabinet.login), account=cabinet.login)
                        for record in found)
     return {"cabinets": rows, "failures": failures, "campaigns": records,
             "walked": len(living)}
@@ -1446,7 +1461,7 @@ def main(argv=None) -> int:
                         card),
                 ensure_ascii=False))
         elif record is not None:
-            report_card(record, card, balance, regions, spent, args.csv)
+            report_card(record, card, balance, regions, spent, args.csv, account=login)
         else:
             report_list(login, entry, balance, found, entry.count, spent, args.csv)
     except Ambiguous as failure:

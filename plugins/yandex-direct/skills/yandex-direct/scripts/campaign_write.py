@@ -25,6 +25,7 @@ from accounts import Accounts, resolve_account  # noqa: E402
 from config import DirectFailure, excerpt, preload_secrets, redact  # noqa: E402
 from direct import Client  # noqa: E402
 from preferences import Preferences  # noqa: E402
+from ui_links import account_url, campaign_url  # noqa: E402
 from writer import (  # noqa: E402
     WHOLE_ACCOUNT, Limits, Operation, Task, Writer, showing, unrun)
 
@@ -2154,20 +2155,39 @@ def run(args) -> int:
     report = engine.run(Task(title, operations))
     if pending and remembered is not None:
         markup_command.remember_after(report, remembered, pending, args)
-    return report_out(report, args, shown=bool(seen))
+    return report_out(report, args, shown=bool(seen), account=account)
 
 
-def report_out(report, args, *, shown: bool) -> int:
+def report_out(report, args, *, shown: bool, account=None) -> int:
     """Отчёт команды: один прогон, одна печать."""
+    links = []
+    if account:
+        identifiers = (report.accepted if args.action == "create"
+                       else [args.campaign])
+        # При неустановленном результате Writer может оставить имя объекта.
+        # ID созданной кампании приходит от API целым числом, имя им не станет.
+        if args.action == "create":
+            identifiers = [one for one in identifiers if type(one) is int and one > 0]
+        links = [{"id": identifier,
+                  "url": campaign_url(account, identifier),
+                  "edit_url": campaign_url(account, identifier, edit=True)}
+                 for identifier in dict.fromkeys(identifiers)]
     if args.json:
-        say(json.dumps(report.machine(), ensure_ascii=False))
+        result = report.machine()
+        if account:
+            result.update(account_url=account_url(account), campaign_links=links)
+        say(json.dumps(result, ensure_ascii=False))
     else:
         lines = report.lines()
         if shown:
             # Предпросмотр человек уже видел — в отчёте остаётся то, чем он
             # кончился: проверка, отказы, расхождения и сводка.
             lines = lines[len(report.preview):]
-        cache_module.outline(lines, path=report.journal)
+        destinations = [f"Кабинет: {account_url(account)}"] if account else []
+        for link in links:
+            destinations += [f"Открыть кампанию {link['id']}: {link['url']}",
+                             f"Настройки: {link['edit_url']}"]
+        cache_module.outline(destinations + lines, path=report.journal)
     return 0 if report.ok else 1
 
 
