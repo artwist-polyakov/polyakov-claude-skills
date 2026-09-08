@@ -44,13 +44,9 @@ if [ -n "$GOALS" ]; then
     # Manual override
     GOAL_IDS="$GOALS"
 elif [ -n "$ALL_GOALS" ]; then
-    # All goals from cache
-    if [ -f "$COUNTER_DIR/goals.tsv" ]; then
-        GOAL_IDS=$(cut -f1 "$COUNTER_DIR/goals.tsv" | tr '\n' ',' | sed 's/,$//')
-    else
-        echo "Error: No cached goals. Run: goals.sh --counter $COUNTER" >&2
-        exit 1
-    fi
+    # Refresh first: in this mode the list defines the report itself.
+    sh "$SCRIPT_DIR/goals.sh" --counter "$COUNTER" --no-cache >/dev/null
+    GOAL_IDS=$(cut -f1 "$COUNTER_DIR/goals.tsv" | tr '\n' ',' | sed 's/,$//')
 else
     # Default: conversion goals from config
     if [ -f "$CONFIG_JSON" ] && grep -q "conversion_goals" "$CONFIG_JSON" 2>/dev/null; then
