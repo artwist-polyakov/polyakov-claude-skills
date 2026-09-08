@@ -660,7 +660,7 @@ def make_parser(reference) -> Parser:
     parser.add_argument("--goals", metavar="СПИСОК",
                         help="идентификаторы целей Метрики через запятую")
     parser.add_argument("--attribution", metavar="СПИСОК",
-                        help="модели атрибуции через запятую")
+                        help="модели атрибуции через запятую; по умолчанию AUTO")
     parser.add_argument("--vat", choices=("YES", "NO"), type=str.upper,
                         help="учитывать НДС; по умолчанию из справочника")
     parser.add_argument("--order-by", metavar="ПОЛЕ:ПОРЯДОК",
