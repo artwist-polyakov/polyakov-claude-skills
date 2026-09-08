@@ -75,17 +75,26 @@ def fake_curl(args):
                 url = arg
             index += 1
     log = Path(os.environ["FAKE_CURL_LOG"])
-    requests = log.read_text().splitlines() if log.exists() else []
-    number = len(requests) + 1
+    requests = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+    path = urlsplit(url).path
+    report_number = 1 + sum(request["path"].startswith("/stat/") for request in requests)
     with log.open("a") as stream:
-        stream.write(json.dumps({"path": urlsplit(url).path, "params": params}) + "\n")
+        stream.write(json.dumps({"path": path, "params": params}) + "\n")
+    headers.write_text("HTTP/1.1 200 OK\r\n\r\n")
+    if path.startswith("/management/"):
+        goals = [int(goal) for goal in os.environ["FAKE_MGMT_GOALS"].split(",") if goal]
+        print(json.dumps({"goals": [
+            {"id": goal, "name": f"Goal {goal}", "type": "action"} for goal in goals
+        ]}), end="")
+        return 0
+    if not path.startswith("/stat/"):
+        raise AssertionError(f"Unexpected API path: {path}")
     failure = os.environ.get("FAKE_CURL_FAILURE")
-    if failure == "http" and number == 2:
+    if failure == "http" and report_number == 2:
         headers.write_text("HTTP/1.1 500 Internal Server Error\r\n\r\n")
         output.write_text("Synthetic API failure")
         return 0
-    headers.write_text("HTTP/1.1 200 OK\r\n\r\n")
-    if failure == "csv" and number == 2:
+    if failure == "csv" and report_number == 2:
         output.write_text('\ufeff"unterminated\r\n', encoding="utf-8")
         return 0
     if failure == "header":
@@ -98,27 +107,27 @@ def fake_curl(args):
     # Model Metrika's suppression of rows where all requested metrics are zero.
     sources = [source for source in sources
                if any(float(metric_value(metric, source)) for metric in metrics)]
-    if number == 2 and failure == "sources":
+    if report_number == 2 and failure == "sources":
         sources.pop()
-    if number == 2 and failure == "source_order":
+    if report_number == 2 and failure == "source_order":
         sources.reverse()
     if os.environ.get("FAKE_CURL_EMPTY"):
         sources = []
     with output.open("w", encoding="utf-8-sig", newline="") as stream:
         # Equivalent CSV quoting must not affect source or period matching.
-        writer = csv.writer(stream, quoting=csv.QUOTE_ALL if number % 2 == 0 else csv.QUOTE_MINIMAL)
+        writer = csv.writer(stream, quoting=csv.QUOTE_ALL if report_number % 2 == 0 else csv.QUOTE_MINIMAL)
         if grouped:
             writer.writerow(["Period"] + [f"{SOURCES[source]} ({metric_label(metric, True)})"
                                           for metric in metrics for source in sources])
             periods = list(range(len(PERIODS)))
-            if number % 2 == 0:
+            if report_number % 2 == 0:
                 periods.reverse()
             for period in periods:
                 writer.writerow([PERIODS[period]] + [metric_value(metric, source, period)
                                                      for metric in metrics for source in sources])
         else:
             writer.writerow(["Traffic source"] + [metric_label(metric) for metric in metrics])
-            if number % 2 == 0:
+            if report_number % 2 == 0:
                 sources.reverse()
             for source in sources:
                 writer.writerow([SOURCES[source]] + [metric_value(metric, source) for metric in metrics])
@@ -132,7 +141,7 @@ class ConversionsTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.scripts = self.root / "scripts"
         self.scripts.mkdir()
-        for name in ("common.sh", "conversions.sh", "merge_conversions.awk"):
+        for name in ("common.sh", "conversions.sh", "goals.sh", "merge_conversions.awk"):
             shutil.copy2(SCRIPTS / name, self.scripts / name)
         config = self.root / "config"
         config.mkdir()
@@ -164,6 +173,7 @@ class ConversionsTests(unittest.TestCase):
 
     def configure(self, count):
         self.goals = list(range(101, 101 + count))
+        self.env["FAKE_MGMT_GOALS"] = ",".join(map(str, self.goals))
         (self.counter / "goals.tsv").write_text("".join(f"{goal}\tGoal {goal}\n" for goal in self.goals))
         (self.counter / "config.json").write_text(json.dumps({
             "conversion_goals": [{"id": goal, "name": f"Goal {goal}"} for goal in self.goals]
@@ -180,8 +190,11 @@ class ConversionsTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stdout)
         return result
 
-    def requests(self):
+    def all_requests(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
+
+    def requests(self):
+        return [request for request in self.all_requests() if request["path"].startswith("/stat/")]
 
     def read_csv(self):
         with self.output.open(encoding="utf-8-sig", newline="") as stream:
@@ -223,6 +236,22 @@ class ConversionsTests(unittest.TestCase):
                     self.run_report(*args, "--no-cache")
                     self.assert_batches()
                     self.assert_table()
+
+    def test_all_goals_refreshes_stale_cache(self):
+        self.configure(2)
+        (self.counter / "goals.tsv").write_text("101\tGoal 101\n999\tRemoved goal\n")
+
+        self.run_report("--all-goals")
+
+        self.assertEqual([request["path"] for request in self.all_requests()], [
+            "/management/v1/counter/12345/goals",
+            "/stat/v1/data.csv",
+        ])
+        self.assert_batches()
+        self.assert_table()
+        cached_ids = [line.split("\t", 1)[0]
+                      for line in (self.counter / "goals.tsv").read_text().splitlines()]
+        self.assertEqual(cached_ids, ["101", "102"])
 
     def test_bytime_preserves_periods_and_metric_source_order(self):
         for group, limit in (("day", None), ("week", 2), ("month", 1)):
@@ -305,10 +334,12 @@ class ConversionsTests(unittest.TestCase):
 
     def test_limits_rejected_before_network(self):
         for args in (("--limit", "0"), ("--limit", "-1"), ("--limit", "nope"),
-                     ("--limit", "100001"), ("--group", "day", "--limit", "31")):
+                     ("--limit", "100001"), ("--group", "day", "--limit", "31"),
+                     ("--all-goals", "--limit", "0")):
             with self.subTest(args=args):
+                self.log.unlink(missing_ok=True)
                 self.run_report(*args, success=False)
-                self.assertEqual(self.requests(), [])
+                self.assertEqual(self.all_requests(), [])
 
 
 if __name__ == "__main__":

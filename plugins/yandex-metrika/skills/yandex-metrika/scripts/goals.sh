@@ -43,7 +43,8 @@ fi
 echo "Fetching goals for counter $COUNTER..." >&2
 
 TMPFILE="${METRIKA_TMPDIR}/metrika_goals_$$.json"
-trap 'rm -f "$TMPFILE"' EXIT
+CACHE_TSV_TMP=$(mktemp "$COUNTER_DIR/.goals.XXXXXX")
+trap 'rm -f "$TMPFILE" "$CACHE_TSV_TMP"' EXIT
 
 metrika_mgmt_get "/management/v1/counter/$COUNTER/goals" > "$TMPFILE"
 
@@ -61,7 +62,8 @@ cp "$TMPFILE" "$CACHE_JSON"
             printf '%s\t%s\t%s\n' "$_id" "$_name" "$_type"
         fi
     done
-} > "$CACHE_TSV"
+} > "$CACHE_TSV_TMP"
+mv -f "$CACHE_TSV_TMP" "$CACHE_TSV"
 
 # Output
 echo "Goals for counter $COUNTER:"
