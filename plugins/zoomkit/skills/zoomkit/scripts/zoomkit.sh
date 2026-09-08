@@ -382,7 +382,7 @@ body_checksum() {
 print_error_excerpt() {
     [ -s "$BODY_TMP" ] || return 0
     printf '%s\n' "Ответ сервиса (не более 2000 байт):" >&2
-    dd if="$BODY_TMP" bs=2000 count=1 2>/dev/null >&2 || true
+    dd if="$BODY_TMP" bs=2000 count=1 >&2 2>/dev/null || true
     printf '\n' >&2
 }
 
