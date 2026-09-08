@@ -20,6 +20,7 @@ import policy as policies
 import protocol
 from config import SKILL_DIR, DirectFailure, excerpt, redact, short
 from errors import optional, required
+from payload import compact_payload
 
 JOURNAL_DIR = SKILL_DIR / "journal"
 JOURNAL_FILE = "audit-log.jsonl"
@@ -404,7 +405,7 @@ class AuditLog:
 
     def record(self, entry: dict) -> None:
         """Одна строка журнала. Отказ поднимается, а не проглатывается."""
-        entry = dict(entry)
+        entry = compact_payload(entry)
         entry.setdefault("at", _now())
         entry.setdefault("account", self.account)
         try:

@@ -191,6 +191,14 @@ ROAS не учитывает себестоимость и прочие расх
 дополнения учитывай в выводе. Команды, сравнение до/после и границы проверки —
 [references/PREVIEW.md](references/PREVIEW.md).
 
+Для записи новой картинки в кабинет покажи пользователю сам файл и проверь
+его содержание. Загрузи файл через `images.py upload`, затем передай полученный
+`AdImageHash` в `--image` команды `ads_write.py ad create` или `ad update`.
+Адрес картинки для предпросмотра и хеш загруженной картинки для объявления —
+разные значения. После записи проверь хеш именно в целевом объявлении.
+Команды и ограничения —
+[загрузка изображений](references/CHANGES.md#загрузка-изображений).
+
 ## Команды и справочники
 
 Все команды находятся в `scripts/`. Каждая имеет свой набор параметров:
@@ -201,6 +209,7 @@ ROAS не учитывает себестоимость и прочие расх
 | Кабинет и доступ | `accounts.py`, `whoami.py` | [CLIENT_LOGIN.md](references/CLIENT_LOGIN.md), [API_ACCESS.md](config/API_ACCESS.md) |
 | Кампании и группы | `campaigns.py`, `adgroups.py` | [PLAYBOOK.md](references/PLAYBOOK.md) |
 | Объявления и фразы | `ads.py`, `keywords.py` | [API_OBJECTS.md](references/API_OBJECTS.md) |
+| Загрузка и проверка изображений | `images.py` | [CHANGES.md](references/CHANGES.md#загрузка-изображений) |
 | Статистика, цели и сравнения | `report.py` | [REPORTS.md](references/REPORTS.md) |
 | Выгрузка настроек и структуры | `campaign_dump.py` | Поля и отсутствующие части перечислены в результате |
 | Комплекты объявлений | `audit_combinatorial.py`, `ads_generate.py`, `preview.py` | [COMBINATORIAL_COPY.md](references/COMBINATORIAL_COPY.md), [AD_CONTENT.md](references/AD_CONTENT.md), [PREVIEW.md](references/PREVIEW.md) |

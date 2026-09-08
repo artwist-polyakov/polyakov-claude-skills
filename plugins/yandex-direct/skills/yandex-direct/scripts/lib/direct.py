@@ -23,6 +23,7 @@ from config import (
     short,
 )
 from errors import ItemIssue, TransportFailure, optional, read_issues, required
+from payload import compact_payload
 
 # Журнал вызовов. Каталог `logs/` исключён из git на любом уровне вложенности,
 # поэтому тела запросов и логины кабинетов в репозиторий не попадут.
@@ -341,6 +342,12 @@ class Journal:
             return
         entry = {key: value for key, value in entry.items() if value is not None}
         if "body" in entry:
+            try:
+                body = json.loads(entry["body"])
+            except (ValueError, TypeError):
+                body = None
+            if isinstance(body, (dict, list)):
+                entry["body"] = json.dumps(compact_payload(body), ensure_ascii=False)
             entry["body"] = excerpt(entry["body"], self.body_limit)
         try:
             self.directory.mkdir(parents=True, exist_ok=True)

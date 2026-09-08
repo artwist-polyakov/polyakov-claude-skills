@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 
 from config import DirectFailure
+from payload import compact_payload
 
 
 class Change:
@@ -45,8 +46,10 @@ class Change:
         who = f"{where}{self.object_id}" if self.object_id is not None else where.strip()
         shown = self.title or (title or "")
         name = f" «{shown}»" if shown else ""
+        before = compact_payload({self.field: self.before})[self.field]
+        after = compact_payload({self.field: self.after})[self.field]
         return (f"{who}{name} · {self.what}: "
-                f"{_shown(self.before)} → {_shown(self.after)}").strip()
+                f"{_shown(before)} → {_shown(after)}").strip()
 
     def __repr__(self) -> str:
         return f"<Change {self.describe()}>"
