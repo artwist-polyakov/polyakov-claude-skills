@@ -544,4 +544,14 @@ MOCK_STATUS=429 MOCK_RATE_RESET=1800000000 ZOOMKIT_API_TOKEN="test-token" run_zo
 assert_contains "$TEST_TMP/out" "HTTP 429"
 assert_contains "$TEST_TMP/out" "1800000000"
 
+# Тело ошибки сервиса остаётся видимым для диагностики.
+printf '%s\n' '{"message":"Server Error"}' > "$TEST_TMP/server-error.json"
+if MOCK_STATUS=500 MOCK_BODY_FILE="$TEST_TMP/server-error.json" ZOOMKIT_API_TOKEN="test-token" \
+    run_zoomkit balance > "$TEST_TMP/stdout" 2> "$TEST_TMP/stderr"; then
+    fail "HTTP 500 завершился успешно"
+fi
+[ ! -s "$TEST_TMP/stdout" ] || fail "тело HTTP 500 попало в стандартный вывод"
+assert_contains "$TEST_TMP/stderr" "HTTP 500"
+assert_contains "$TEST_TMP/stderr" '{"message":"Server Error"}'
+
 printf '%s\n' "PASS"
