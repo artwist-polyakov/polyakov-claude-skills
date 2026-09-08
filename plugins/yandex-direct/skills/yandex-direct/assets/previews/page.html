@@ -1,0 +1,171 @@
+<!doctype html>
+<!--
+  Шаблон страницы превью. Не готовая страница: места, куда встают данные,
+  помечены двойными фигурными скобками, а карточки мест показа лежат ниже
+  шаблонами <template> и в готовый файл не попадают.
+
+  Заполняет skills/yandex-direct/scripts/lib/rendering.py. Правило подстановки
+  одно и простое: строка, в которой стоит {{имя}}, выбрасывается целиком, если
+  значение пусто. Поэтому один элемент — одна строка.
+
+  Оформление живёт здесь, а не в Python: ширину карточки, цвета и то, какое
+  место показа что скрывает, правят в этом файле. Что и почему рисуется именно
+  так — skills/yandex-direct/references/PREVIEW.md.
+-->
+<html lang="ru"{{theme}}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{heading}}</title>
+<style>
+:root {
+  --page: #f2f3f5; --card: #ffffff; --line: #e0e2e7;
+  --ink: #1a1a1a; --dim: #606a76; --link: #0b57d0;
+  --money: #0f7b2f; --place: #e8eaee;
+  --cutbg: #fdeaea; --cut: #b3261e;
+  --font: Arial, "Liberation Sans", "Helvetica Neue", Helvetica,
+          "DejaVu Sans", "Segoe UI", sans-serif;
+}
+/* Тёмная палитра объявляется дважды: медиазапросом — для файла, отданного как
+   есть, и атрибутом — для `--theme dark`, который нужен там, где запрос не
+   работает вовсе. Светлая стоит вне запроса: отрисовщик, который запросов не
+   понимает, получает её, а не пустоту. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #15161a; --card: #1f2126; --line: #33363d;
+    --ink: #e6e7ea; --dim: #a2abb8; --link: #8ab4f8;
+    --money: #6dd58c; --place: #2a2d34;
+    --cutbg: #3a1f1f; --cut: #f2b8b5;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #15161a; --card: #1f2126; --line: #33363d;
+  --ink: #e6e7ea; --dim: #a2abb8; --link: #8ab4f8;
+  --money: #6dd58c; --place: #2a2d34;
+  --cutbg: #3a1f1f; --cut: #f2b8b5;
+}
+
+body {
+  margin: 0; padding: 20px;
+  background: var(--page); color: var(--ink);
+  font-family: var(--font); font-size: 14px; line-height: 1.35;
+}
+h1 { margin: 0; font-size: 19px; }
+.subtitle, .page-foot p { margin: 4px 0 0; color: var(--dim); font-size: 12px; }
+.page-foot { margin-top: 18px; max-width: 900px; }
+
+/* Матрица: слева колонка подписей, дальше по столбцу на текст. Ширина
+   карточки приходит переменной --width от места показа. */
+.matrix {
+  display: grid; gap: 18px; margin-top: 18px;
+  grid-template-columns: 56px repeat(var(--columns), var(--width));
+  align-items: start; justify-content: start;
+}
+.head, .rowlabel { color: var(--dim); font-size: 12px; }
+.rowlabel { padding-top: 14px; }
+
+/* Перенос внутри слова объявлен раньше, чем скрытие лишнего: неразрывный
+   кусок в двести символов браузер по умолчанию не переносит, и `overflow`
+   срезал бы ровно то зачёркнутое, ради показа которого превью и существует. */
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 14px 18px 16px; overflow: hidden;
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.card > * { margin: 0; }
+.card > * + * { margin-top: 6px; }
+.label, .link, .callouts, .vcard { color: var(--dim); font-size: 12px; }
+.title { color: var(--link); font-size: 19px; font-weight: 400; margin-top: 8px; }
+.text { font-size: 14px; }
+.price { color: var(--money); font-size: 16px; }
+
+.sitelinks {
+  list-style: none; display: flex; gap: 12px; padding: 0;
+  margin-top: 10px; flex-wrap: wrap;
+}
+.sitelinks li { flex: 1 1 0; min-width: 92px; }
+.sitelink { color: var(--link); font-size: 13px; }
+.sitetext { display: block; color: var(--dim); font-size: 12px; }
+.callout + .callout::before { content: " · "; }
+
+/* Место изображения. Само изображение не скачивается и не встраивается —
+   рисуется место и подпись с хешем. */
+.image {
+  background: var(--place); border: 1px dashed var(--line); border-radius: 8px;
+  color: var(--dim); font-size: 11px;
+  min-height: 160px; display: flex; align-items: center; padding: 8px;
+}
+
+/* Отрезанное поле: Директ его не примет, и видно это должно быть сразу. */
+.cut { color: var(--cut); background: var(--cutbg); text-decoration: line-through; }
+
+/* Мобильное место показа: быстрые ссылки идут строкой с горизонтальной
+   прокруткой — так их показывает Директ (справка «Быстрые ссылки»), — а
+   описания в этом формате не показываются вовсе. */
+.mobile .sitelinks { flex-wrap: nowrap; overflow-x: auto; }
+.mobile .sitelinks li { flex: 0 0 auto; }
+.mobile .sitetext, .network .sitetext { display: none; }
+.network .sitelinks { flex-wrap: wrap; }
+.network .sitelinks li { flex: 0 0 auto; }
+.gallery .image { min-height: 176px; }
+</style>
+</head>
+<body>
+<header>
+<h1>{{heading}}</h1>
+<p class="subtitle">{{subtitle}}</p>
+</header>
+{{matrix}}
+<footer class="page-foot">{{footer}}</footer>
+
+<template data-placement="search_desktop" data-title="Поиск на десктопе"
+          data-width="640px" data-callouts="desktop">
+<article class="card desktop">
+<p class="label">{{label}}</p>
+<p class="link">{{link}}</p>
+<h2 class="title">{{title}}</h2>
+<p class="text">{{text}}</p>
+<ul class="sitelinks">{{sitelinks}}</ul>
+<p class="callouts">{{callouts}}</p>
+<p class="vcard">{{vcard}}</p>
+</article>
+</template>
+
+<template data-placement="search_mobile" data-title="Поиск на мобильном"
+          data-width="360px" data-callouts="mobile">
+<article class="card mobile">
+<p class="label">{{label}}</p>
+<p class="link">{{link}}</p>
+<h2 class="title">{{title}}</h2>
+<p class="text">{{text}}</p>
+<ul class="sitelinks">{{sitelinks}}</ul>
+<p class="callouts">{{callouts}}</p>
+<p class="vcard">{{vcard}}</p>
+</article>
+</template>
+
+<template data-placement="network" data-title="Блок в сетях"
+          data-width="400px" data-callouts="desktop">
+<article class="card network">
+<div class="image">{{image}}</div>
+<p class="label">{{label}}</p>
+<h2 class="title">{{title}}</h2>
+<p class="text">{{text}}</p>
+<p class="link">{{link}}</p>
+<ul class="sitelinks">{{sitelinks}}</ul>
+<p class="callouts">{{callouts}}</p>
+</article>
+</template>
+
+<template data-placement="product_gallery" data-title="Товарная галерея"
+          data-width="260px" data-callouts="none">
+<article class="card gallery">
+<div class="image">{{image}}</div>
+<p class="price">{{price}}</p>
+<h2 class="title">{{title}}</h2>
+<p class="link">{{link}}</p>
+<p class="label">{{label}}</p>
+</article>
+</template>
+</body>
+</html>

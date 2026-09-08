@@ -1,0 +1,2910 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-08-24",
+  "sources": [
+    {
+      "title": "Справочник API v5 (полная выгрузка)",
+      "url": "https://yandex.ru/dev/direct/doc/ru/llms-full.txt"
+    },
+    {
+      "title": "О справочнике",
+      "url": "https://yandex.ru/dev/direct/doc/ru/concepts/about"
+    },
+    {
+      "title": "Ограничения, баллы",
+      "url": "https://yandex.ru/dev/direct/doc/ru/concepts/units"
+    },
+    {
+      "title": "История изменений",
+      "url": "https://yandex.ru/dev/direct/doc/ru/changelog"
+    },
+    {
+      "title": "Методы API версии 4 и Live 4",
+      "url": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/_AllMethods"
+    }
+  ],
+  "hosts": {
+    "production": "api.direct.yandex.com",
+    "sandbox": "api-sandbox.direct.yandex.com",
+    "v4_documented": "api.direct.yandex.ru"
+  },
+  "endpoints": {
+    "v501_json": "https://api.direct.yandex.com/json/v501/{service}",
+    "v501_soap": "https://api.direct.yandex.com/v501/{service}",
+    "v501_wsdl": "https://api.direct.yandex.com/v501/{service}?wsdl",
+    "v5_json": "https://api.direct.yandex.com/json/v5/{service}",
+    "v4_json": "https://api.direct.yandex.ru/v4/json/",
+    "live_v4_json": "https://api.direct.yandex.ru/live/v4/json/",
+    "reports_json": "https://api.direct.yandex.com/json/v501/reports",
+    "reports_xml": "https://api.direct.yandex.com/v501/reports",
+    "reports_xsd": "https://api.direct.yandex.com/v501/reports.xsd",
+    "sandbox_json": "https://api-sandbox.direct.yandex.com/json/v5/{service}",
+    "sandbox_soap": "https://api-sandbox.direct.yandex.com/v5/{service}",
+    "sandbox_wsdl": "https://api-sandbox.direct.yandex.com/v5/{service}?wsdl",
+    "sandbox_v4_json": "https://api-sandbox.direct.yandex.ru/v4/json/"
+  },
+  "sandbox": {
+    "documented": [
+      {
+        "url": "https://api-sandbox.direct.yandex.com/json/v5/{service}",
+        "source": "https://yandex.ru/dev/direct/doc/en/concepts/sandbox",
+        "note": "Раздел есть только в английской документации версии 5; префикс v5, не v501."
+      },
+      {
+        "url": "https://api-sandbox.direct.yandex.com/v5/{service}",
+        "source": "https://yandex.ru/dev/direct/doc/en/concepts/sandbox",
+        "note": "SOAP; тот же префикс v5."
+      },
+      {
+        "url": "https://api-sandbox.direct.yandex.ru/v4/json/",
+        "source": "https://yandex.ru/dev/direct/doc/dg-v4/ru/concepts/quick-start",
+        "note": "Единственное место, где документирован хост .ru — быстрый старт руководства версии 4."
+      }
+    ],
+    "observed_only": [
+      {
+        "url": "https://api-sandbox.direct.yandex.com/json/v501/{service}"
+      },
+      {
+        "url": "https://api-sandbox.direct.yandex.ru/json/v5/{service}"
+      },
+      {
+        "url": "https://api-sandbox.direct.yandex.ru/json/v501/{service}"
+      },
+      {
+        "url": "https://api-sandbox.direct.yandex.com/v4/json/"
+      },
+      {
+        "url": "https://api-sandbox.direct.yandex.com/live/v4/json/"
+      },
+      {
+        "url": "https://api-sandbox.direct.yandex.ru/live/v4/json/"
+      }
+    ],
+    "ru_page_v4": "https://yandex.ru/dev/direct/doc/dg-v4/ru/concepts/sandbox — русская страница песочницы есть, но адреса не приводит",
+    "note": "Скилл использует настоящий API v501. Адреса песочницы сохранены как справочные; возможность её подключения нужно проверять отдельно. Ответ адреса не доказывает полную совместимость."
+  },
+  "units": {
+    "error_method_call": 20,
+    "error_method_call_note": "Ошибки сервера не тарифицируются как обычный ошибочный вызов. Для оценки отказа уровня запроса используйте limits.json: api.units.error_call_flat и error_call_over_call; фактический расход проверяйте по заголовкам ответа.",
+    "error_operation": 20,
+    "error_operation_note": "Поэлементные ошибки оплачиваются отдельно от стоимости вызова; предупреждения ошибками не считаются. Формула и стоимость метода находятся в limits.json. Успешные элементы смешанного запроса тарифицируются как записанные объекты.",
+    "note": "Баллы успешных вызовов указаны у методов. Пул версии 4 отделён от v5. Подробности ошибок и исчерпания: ERRORS_AND_LIMITS.md."
+  },
+  "services": [
+    {
+      "name": "AdExtensions",
+      "purpose": "Сервис предназначен для выполнения операций с расширениями к объявлениям. В настоящее время доступен один тип расширения — уточнение.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/adextensions/adextensions",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создает расширения.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 5,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/adextensions/add"
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет расширения.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/adextensions/delete"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает расширения, отвечающие заданным критериям.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 5,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/adextensions/get"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "AdGroups",
+      "purpose": "Сервис предназначен для выполнения операций с группами объявлений.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/adgroups/adgroups",
+      "v501_note": "Для работы с группой в Единой перфоманс-кампании",
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создает группы объявлений.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": "Для работы с Единой перфоманс-группой",
+          "units": {
+            "per_call": 20,
+            "per_object": 20,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/adgroups/add"
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет группы объявлений.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/adgroups/delete"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает параметры групп, отвечающих заданным критериям.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": "Для работы с Единой перфоманс-группой",
+          "units": {
+            "per_call": 15,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/adgroups/get"
+        },
+        {
+          "name": "update",
+          "purpose": "Изменяет параметры групп объявлений.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": "Для работы с Единой перфоманс-группой",
+          "units": {
+            "per_call": 20,
+            "per_object": 20,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/adgroups/update"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "AdImages",
+      "purpose": "Сервис предназначен для выполнения операций с изображениями.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/adimages/adimages",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Выполняет синхронную загрузку изображений в виде бинарных данных.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 20,
+            "per_object": 20,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/adimages/add"
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет изображения.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/adimages/delete"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает изображения, отвечающие заданным критериям.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/adimages/get"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "Ads",
+      "purpose": "Сервис предназначен для выполнения операций с объявлениями.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/ads/ads",
+      "v501_note": "Для работы с товарными объявлениями",
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создает объявления.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": "Для работы с товарными объявлениями",
+          "units": {
+            "per_call": 20,
+            "per_object": 20,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/ads/add"
+        },
+        {
+          "name": "archive",
+          "purpose": "Архивирует объявления.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/ads/archive"
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет объявления.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/ads/delete"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает параметры объявлений, отвечающих заданным критериям.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": "Для работы с товарными объявлениями",
+          "units": {
+            "per_call": 15,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/ads/get"
+        },
+        {
+          "name": "moderate",
+          "purpose": "Отправляет объявления на модерацию.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/ads/moderate"
+        },
+        {
+          "name": "resume",
+          "purpose": "Возобновляет показы объявлений, ранее остановленных владельцем.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/ads/resume"
+        },
+        {
+          "name": "suspend",
+          "purpose": "Останавливает показы объявления.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/ads/suspend"
+        },
+        {
+          "name": "unarchive",
+          "purpose": "Разархивирует объявления.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 40,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/ads/unarchive"
+        },
+        {
+          "name": "update",
+          "purpose": "Изменяет параметры объявлений.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": "Для работы с товарными объявлениями",
+          "units": {
+            "per_call": 20,
+            "per_object": 20,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/ads/update"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "AdVideos",
+      "purpose": "Сервис предназначен для выполнения операций с видео.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/advideos/advideos",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Выполняет синхронную загрузку видео по ссылкам URL или в виде бинарных данных. В одном вызове метода можно использовать не более 10 ссылок или 1 видео в бинарном формате.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": null,
+          "doc": "https://yandex.ru/dev/direct/doc/ru/advideos/add"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает статус обработки загруженных видео.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": null,
+          "doc": "https://yandex.ru/dev/direct/doc/ru/advideos/get"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "AgencyClients",
+      "purpose": "Сервис предназначен для агентств и позволяет управлять клиентами агентства.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/agencyclients/agencyclients",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Регистрирует новых рекламодателей — клиентов агентства, а также пользователей — главных представителей рекламодателя.",
+          "status": "unsupported",
+          "status_since": "2025-06-16",
+          "status_note": "Метод не поддерживается. Вместо него используется addPassportOrganization.",
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/agencyclients/add"
+        },
+        {
+          "name": "addPassportOrganization",
+          "purpose": "Создает бизнес-аккаунт организации.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": null,
+          "doc": "https://yandex.ru/dev/direct/doc/ru/agencyclients/addPassportOrganization"
+        },
+        {
+          "name": "addPassportOrganizationMember",
+          "purpose": "Добавляет нового участника в организацию в Яндекс ID.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": null,
+          "doc": "https://yandex.ru/dev/direct/doc/ru/agencyclients/addPassportOrganizationMember"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает список рекламодателей — клиентов агентства, их параметры и настройки главных представителей рекламодателя.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/agencyclients/get"
+        },
+        {
+          "name": "update",
+          "purpose": "Изменяет параметры рекламодателей — клиентов агентства, а также настройки пользователей — главных представителей рекламодателя.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/agencyclients/update"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "AudienceTargets",
+      "purpose": "Сервис предназначен для выполнения операций с условиями нацеливания на аудиторию.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/audiencetargets/audiencetargets",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создает условия нацеливания на аудиторию, назначает ставки и приоритеты для создаваемых условий нацеливания.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 2,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/audiencetargets/add"
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет условия нацеливания на аудиторию.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 2,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/audiencetargets/delete"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает параметры условий нацеливания на аудиторию.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 1,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/audiencetargets/get"
+        },
+        {
+          "name": "resume",
+          "purpose": "Возобновляет показы по ранее остановленным условиям нацеливания на аудиторию.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 2,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/audiencetargets/resume"
+        },
+        {
+          "name": "setBids",
+          "purpose": "Назначает ставки и приоритеты для условий нацеливания на аудиторию.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 2,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/audiencetargets/setBids"
+        },
+        {
+          "name": "suspend",
+          "purpose": "Останавливает показы по условиям нацеливания на аудиторию.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 2,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/audiencetargets/suspend"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "Bids",
+      "purpose": "Сервис предназначен для назначения ставок ключевым фразам и автотаргетингам.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/bids/bids",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "get",
+          "purpose": "Возвращает ставки для ключевых фраз и автотаргетингов, отвечающих заданным критериям, а также данные, полезные при подборе ставок: данные аукциона по позициям показа на поиске и ставки для охвата различных долей аудитории в сетях.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": null,
+            "per_object_note": "3 балла за каждые 2000 фраз"
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/bids/get"
+        },
+        {
+          "name": "set",
+          "purpose": "Назначает фиксированные ставки для ключевых фраз и автотаргетингов.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 25,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/bids/set"
+        },
+        {
+          "name": "setAuto",
+          "purpose": "Конструктор ставок — рассчитывает ставки для фраз по заданному алгоритму.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 25,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/bids/setAuto"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "Businesses",
+      "purpose": "Сервис позволяет получить профили организаций бизнеса.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/businesses/businesses",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "get",
+          "purpose": "Возвращает данные профилей организаций пользователя на Яндексе.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/businesses/get"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "BidModifiers",
+      "purpose": "Сервис предназначен для управления корректировками ставок.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/bidmodifiers/bidmodifiers",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создает корректировки ставок.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/bidmodifiers/add"
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет корректировки ставок.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/bidmodifiers/delete"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает параметры корректировок, отвечающих заданным критериям.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 1,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/bidmodifiers/get"
+        },
+        {
+          "name": "set",
+          "purpose": "Изменяет значения коэффициентов в корректировках ставок.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 2,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/bidmodifiers/set"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "Campaigns",
+      "purpose": "Сервис предназначен для выполнения операций с кампаниями.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/campaigns/campaigns",
+      "v501_note": "Для работы с Единой перфоманс-кампанией",
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создает кампании.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": "Для работы с Единой перфоманс-кампанией",
+          "units": {
+            "per_call": 10,
+            "per_object": 5,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/campaigns/add"
+        },
+        {
+          "name": "archive",
+          "purpose": "Архивирует кампании.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 5,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/campaigns/archive"
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет кампании.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 2,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/campaigns/delete"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает параметры кампаний, отвечающих заданным критериям.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": "Для работы с Единой перфоманс-кампанией",
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/campaigns/get"
+        },
+        {
+          "name": "resume",
+          "purpose": "Возобновляет показы на уровне кампании.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 5,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/campaigns/resume"
+        },
+        {
+          "name": "suspend",
+          "purpose": "Останавливает показы на уровне кампании.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 5,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/campaigns/suspend"
+        },
+        {
+          "name": "unarchive",
+          "purpose": "Разархивирует кампании.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 5,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/campaigns/unarchive"
+        },
+        {
+          "name": "update",
+          "purpose": "Изменяет параметры кампаний.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": "Для работы с Единой перфоманс-кампанией",
+          "units": {
+            "per_call": 10,
+            "per_object": 3,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/campaigns/update"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "Changes",
+      "purpose": "Сервис предназначен для проверки наличия изменений.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/changes/changes",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "checkDictionaries",
+          "purpose": "Сообщает о наличии изменений в справочнике регионов, часовых поясов и интересов к категориям мобильных приложений. Также используется для получения текущего серверного времени.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/changes/checkDictionaries"
+        },
+        {
+          "name": "checkCampaigns",
+          "purpose": "Сообщает о наличии изменений в кампаниях клиента начиная с указанной даты.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/changes/checkCampaigns"
+        },
+        {
+          "name": "check",
+          "purpose": "Сообщает о наличии изменений в кампаниях, группах и объявлениях клиента начиная с указанной даты.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/changes/check"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "Clients",
+      "purpose": "Сервис предназначен для управления параметрами рекламодателя и настройками пользователя — представителя рекламодателя, а также для получения параметров агентства и настроек пользователя — представителя агентства.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/clients/clients",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "get",
+          "purpose": "Возвращает параметры рекламодателя и настройки пользователя — представителя рекламодателя либо параметры агентства и настройки пользователя — представителя агентства.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/clients/get"
+        },
+        {
+          "name": "update",
+          "purpose": "Изменяет параметры рекламодателя и настройки пользователя — представителя рекламодателя.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/clients/update"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "Creatives",
+      "purpose": "Сервис предназначен для выполнения операций с креативами.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/creatives/creatives",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создает креативы для видеодополнений по id видео, полученным в сервисе AdVideos.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": null,
+          "doc": "https://yandex.ru/dev/direct/doc/ru/creatives/add"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает параметры креативов, отвечающих заданным критериям.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/creatives/get"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "Dictionaries",
+      "purpose": "Сервис предназначен для получения справочных данных: регионов, часовых поясов, курсов валют, станций метрополитена, ограничений на значения параметров и др.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/dictionaries/dictionaries",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "get",
+          "purpose": "Возвращает справочные данные: регионы, часовые пояса, курсы валют, список станций метрополитена, ограничения на значения параметров, внешние сети (SSP), сегменты Крипты для нацеливания по профилю пользователя и др.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 1,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/dictionaries/get"
+        },
+        {
+          "name": "getGeoRegions",
+          "purpose": "Возвращает список регионов, доступных для таргетинга.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": null,
+          "doc": "https://yandex.ru/dev/direct/doc/ru/dictionaries/getGeoRegions"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "Feeds",
+      "purpose": "Сервис предназначен для выполнения операций с фидами.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/feeds/feeds",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создает фиды.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 20,
+            "per_object": 20,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/feeds/add"
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет фиды.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/feeds/delete"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает параметры фидов, отвечающих заданным критериям.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/feeds/get"
+        },
+        {
+          "name": "update",
+          "purpose": "Изменяет параметры фида.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 20,
+            "per_object": 20,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/feeds/update"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "KeywordBids",
+      "purpose": "Сервис предназначен для назначения ставок ключевым фразам и автотаргетингам и для получения данных, полезных при назначении ставок.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/keywordbids/keywordbids",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "get",
+          "purpose": "Возвращает ставки для ключевых фраз и автотаргетингов, отвечающих заданным критериям, а также данные торгов: ставки и списываемые цены для различных объемов трафика на поиске и ставки для охвата различных долей аудитории в сетях.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": null,
+            "per_object_note": "3 балла за каждые 2000 фраз"
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/keywordbids/get"
+        },
+        {
+          "name": "set",
+          "purpose": "Назначает фиксированные ставки для ключевых фраз и автотаргетингов.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 25,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/keywordbids/set"
+        },
+        {
+          "name": "setAuto",
+          "purpose": "Назначает для фраз ставки на поиске в зависимости от желаемого объема трафика или ставки в сетях в зависимости от желаемой частоты показа (доли аудитории).",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 25,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/keywordbids/setAuto"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "Keywords",
+      "purpose": "Сервис предназначен для выполнения операций с ключевыми фразами и автотаргетингами.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/keywords/keywords",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создает ключевые фразы и автотаргетинги.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 20,
+            "per_object": 2,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/keywords/add"
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет ключевые фразы и автотаргетинги.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/keywords/delete"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает параметры ключевых фраз или автотаргетингов, отвечающих заданным критериям: значения подстановочных переменных, статус и состояние, статистику показов и кликов и ставки.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": null,
+            "per_object_note": "3 балла за каждые 2000 фраз, если запрошен хотя бы один из параметров `Productivity`, `StatisticsSearch`, `StatisticsNetwork`. 1 балл за каждые 2000 фраз — в противном случае"
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/keywords/get"
+        },
+        {
+          "name": "resume",
+          "purpose": "Возобновляет показы по ранее остановленным ключевым фразам и автотаргетингам.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/keywords/resume"
+        },
+        {
+          "name": "suspend",
+          "purpose": "Останавливает показы по ключевым фразам и автотаргетингам.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/keywords/suspend"
+        },
+        {
+          "name": "update",
+          "purpose": "Изменяет параметры ключевых фраз и автотаргетингов.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 20,
+            "per_object": 2,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/keywords/update"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "KeywordsResearch",
+      "purpose": "Сервис предназначен для предварительной обработки и исследования ключевых фраз.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/keywordsresearch/keywordsresearch",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "deduplicate",
+          "purpose": "Выполняет предварительную обработку массива ключевых фраз.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/keywordsresearch/deduplicate"
+        },
+        {
+          "name": "hasSearchVolume",
+          "purpose": "Для заданных ключевых фраз и регионов формирует предварительный прогноз наличия показов по этим фразам в разбивке по типам устройств. Используется при подборе ключевых фраз.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 1,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/keywordsresearch/hasSearchVolume"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "Leads",
+      "purpose": "Сервис позволяет получить данные, введенные пользователями в формы на Турбо-страницах.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/leads/leads",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "get",
+          "purpose": "Возвращает данные, введенные пользователями в формы на Турбо-страницах и лендингах Директа.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 1,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/leads/get"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "NegativeKeywordSharedSets",
+      "purpose": "Сервис предназначен для выполнения операций с наборами минус-фраз.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/negativekeywordsharedsets/negativekeywordsharedsets",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создает наборы минус-фраз.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 20,
+            "per_object": 20,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/negativekeywordsharedsets/add"
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет наборы минус-фраз.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/negativekeywordsharedsets/delete"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает наборы минус-фраз.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/negativekeywordsharedsets/get"
+        },
+        {
+          "name": "update",
+          "purpose": "Изменяет наборы минус-фраз.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 20,
+            "per_object": 20,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/negativekeywordsharedsets/update"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "RetargetingLists",
+      "purpose": "Сервис предназначен для выполнения операций с условиями ретаргетинга и подбора аудитории.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/retargetinglists/retargetinglists",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создает условия ретаргетинга и подбора аудитории.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 2,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/retargetinglists/add"
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет условия ретаргетинга и подбора аудитории.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 2,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/retargetinglists/delete"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает условия ретаргетинга и подбора аудитории.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 1,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/retargetinglists/get"
+        },
+        {
+          "name": "update",
+          "purpose": "Изменяет параметры условий ретаргетинга и подбора аудитории.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 2,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/retargetinglists/update"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "Sitelinks",
+      "purpose": "Сервис предназначен для выполнения операций с наборами быстрых ссылок.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/sitelinks/sitelinks",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создает наборы быстрых ссылок.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 20,
+            "per_object": 20,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/sitelinks/add"
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет наборы быстрых ссылок.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 10,
+            "per_object": 0,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/sitelinks/delete"
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает наборы быстрых ссылок, отвечающие заданным критериям.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/sitelinks/get"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "Strategies",
+      "purpose": "Сервис предназначен для выполнения операций с пакетными стратегиями.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/strategies/strategies",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создает пакетную стратегию.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": null,
+          "doc": "https://yandex.ru/dev/direct/doc/ru/strategies/add"
+        },
+        {
+          "name": "archive",
+          "purpose": "Архивирует стратегию.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": null,
+          "doc": "https://yandex.ru/dev/direct/doc/ru/strategies/archive"
+        },
+        {
+          "name": "get",
+          "purpose": "Получает информацию о пакетной стратегии.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": null,
+          "doc": "https://yandex.ru/dev/direct/doc/ru/strategies/get"
+        },
+        {
+          "name": "unarchive",
+          "purpose": "Разархивирует пакетную стратегию.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": null,
+          "doc": "https://yandex.ru/dev/direct/doc/ru/strategies/unarchive"
+        },
+        {
+          "name": "update",
+          "purpose": "Обновляет пакетную стратегию.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": null,
+          "doc": "https://yandex.ru/dev/direct/doc/ru/strategies/update"
+        }
+      ],
+      "units_table_only_methods": []
+    },
+    {
+      "name": "TurboPages",
+      "purpose": "Сервис позволяет получить параметры Турбо-страниц.",
+      "documented_version": "v501",
+      "doc": "https://yandex.ru/dev/direct/doc/ru/turbopages/turbopages",
+      "v501_note": null,
+      "methods": [
+        {
+          "name": "get",
+          "purpose": "Возвращает параметры Турбо-страниц.",
+          "status": "active",
+          "status_since": null,
+          "status_note": null,
+          "v501_note": null,
+          "units": {
+            "per_call": 15,
+            "per_object": 1,
+            "per_object_note": null
+          },
+          "doc": "https://yandex.ru/dev/direct/doc/ru/turbopages/get"
+        }
+      ],
+      "units_table_only_methods": []
+    }
+  ],
+  "withdrawn_from_reference": [
+    {
+      "name": "DynamicTextAdTargets",
+      "documented_version": "v501",
+      "versions_observed": [
+        "v5",
+        "v501"
+      ],
+      "endpoint_responds": true,
+      "wsdl": "https://api.direct.yandex.com/v501/dynamictextadtargets?wsdl",
+      "purpose": "Условия нацеливания для динамических объявлений.",
+      "purpose_source": "https://yandex.ru/dev/direct/doc/ru/best-practice/launch-campaign",
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создаёт условия нацеливания для группы динамических объявлений.",
+          "purpose_source": "руководство, best-practice/launch-campaign",
+          "units": {
+            "per_call": 20,
+            "per_object": 5,
+            "per_object_note": null
+          }
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет условия нацеливания.",
+          "purpose_source": "WSDL, операция delete",
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          }
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает условия нацеливания, отвечающие заданным критериям.",
+          "purpose_source": "WSDL, операция get и тип WebpageGetItem",
+          "units": {
+            "per_call": 15,
+            "per_object": 1,
+            "per_object_note": null
+          }
+        },
+        {
+          "name": "resume",
+          "purpose": "Возобновляет показы по ранее остановленным условиям нацеливания.",
+          "purpose_source": "руководство, best-practice/launch-campaign",
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          }
+        },
+        {
+          "name": "setBids",
+          "purpose": "Назначает ставки условиям нацеливания.",
+          "purpose_source": "WSDL, тип SetBidsItem",
+          "units": {
+            "per_call": 25,
+            "per_object": 0,
+            "per_object_note": null
+          }
+        },
+        {
+          "name": "suspend",
+          "purpose": "Останавливает показы по отдельным условиям нацеливания.",
+          "purpose_source": "руководство, best-practice/launch-campaign",
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          }
+        }
+      ],
+      "note": "Страницы сервиса в справочнике нет. Перечень методов взят из таблицы баллов и сходится метод в метод с WSDL, который эндпоинт отдаёт до сих пор. WSDL же даёт и схему: типы, поля, перечисления. Чего он не даёт — смысла полей, ограничений на значения и поведения в краевых случаях; это было только в справочнике."
+    },
+    {
+      "name": "SmartAdTargets",
+      "documented_version": "v501",
+      "versions_observed": [
+        "v5",
+        "v501"
+      ],
+      "endpoint_responds": true,
+      "wsdl": "https://api.direct.yandex.com/v501/smartadtargets?wsdl",
+      "purpose": "Фильтры — условия нацеливания для смарт-баннеров.",
+      "purpose_source": "https://yandex.ru/dev/direct/doc/ru/best-practice/smart-ads",
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Добавляет в группу фильтры — условия нацеливания для смарт-баннеров; фильтру можно назначить ставку и приоритет.",
+          "purpose_source": "руководство, best-practice/smart-ads",
+          "units": {
+            "per_call": 20,
+            "per_object": 5,
+            "per_object_note": null
+          }
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет фильтры.",
+          "purpose_source": "WSDL, операция delete",
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          }
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает фильтры, отвечающие заданным критериям.",
+          "purpose_source": "WSDL, операция get и тип SmartAdTargetGetItem",
+          "units": {
+            "per_call": 15,
+            "per_object": 1,
+            "per_object_note": null
+          }
+        },
+        {
+          "name": "resume",
+          "purpose": "Возобновляет показы по ранее остановленным фильтрам.",
+          "purpose_source": "WSDL, операция resume",
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          }
+        },
+        {
+          "name": "setBids",
+          "purpose": "Назначает ставки фильтрам.",
+          "purpose_source": "WSDL, тип SetBidsItem",
+          "units": {
+            "per_call": 10,
+            "per_object": 0,
+            "per_object_note": null
+          }
+        },
+        {
+          "name": "suspend",
+          "purpose": "Останавливает показы по фильтрам.",
+          "purpose_source": "WSDL, операция suspend",
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          }
+        },
+        {
+          "name": "update",
+          "purpose": "Изменяет параметры фильтров.",
+          "purpose_source": "WSDL, тип SmartAdTargetUpdateItem",
+          "units": {
+            "per_call": 10,
+            "per_object": 1,
+            "per_object_note": null
+          }
+        }
+      ],
+      "note": "Страницы сервиса в справочнике нет. Перечень методов взят из таблицы баллов и сходится метод в метод с WSDL, который эндпоинт отдаёт до сих пор. WSDL же даёт и схему: типы, поля, перечисления. Чего он не даёт — смысла полей, ограничений на значения и поведения в краевых случаях; это было только в справочнике."
+    },
+    {
+      "name": "VCards",
+      "documented_version": "v501",
+      "versions_observed": [
+        "v5",
+        "v501"
+      ],
+      "endpoint_responds": true,
+      "wsdl": "https://api.direct.yandex.com/v501/vcards?wsdl",
+      "purpose": "Виртуальные визитки: контакты организации, показываемые вместе с объявлением.",
+      "purpose_source": "https://yandex.ru/dev/direct/doc/ru/concepts/contact-info",
+      "methods": [
+        {
+          "name": "add",
+          "purpose": "Создаёт визитки. Привязка визитки к объявлению делается отдельно, через Ads.add или Ads.update.",
+          "purpose_source": "справочник, concepts/methods",
+          "units": {
+            "per_call": 20,
+            "per_object": 20,
+            "per_object_note": null
+          }
+        },
+        {
+          "name": "delete",
+          "purpose": "Удаляет визитки.",
+          "purpose_source": "WSDL, операция delete",
+          "units": {
+            "per_call": 10,
+            "per_object": 0,
+            "per_object_note": null
+          }
+        },
+        {
+          "name": "get",
+          "purpose": "Возвращает визитки, отвечающие заданным критериям.",
+          "purpose_source": "справочник, concepts/methods; тип VCardGetItem в WSDL",
+          "units": {
+            "per_call": 15,
+            "per_object": 1,
+            "per_object_note": null
+          }
+        }
+      ],
+      "note": "Страницы сервиса в справочнике нет. Перечень методов взят из таблицы баллов и сходится метод в метод с WSDL, который эндпоинт отдаёт до сих пор. WSDL же даёт и схему: типы, поля, перечисления. Чего он не даёт — смысла полей, ограничений на значения и поведения в краевых случаях; это было только в справочнике."
+    }
+  ],
+  "reports": {
+    "name": "Reports",
+    "purpose": "Статистика по аккаунту: единственный источник цифр, включая кампании Мастера кампаний.",
+    "documented_version": "v501",
+    "doc": "https://yandex.ru/dev/direct/doc/ru/reports",
+    "calling_convention": "POST без поля `method` — телом запроса идёт сама спецификация отчёта `ReportDefinition`.",
+    "units": null,
+    "units_note": "Стоимость в баллах документация не называет: сервиса нет в таблице баллов. Вместо неё описаны частотные ограничения.",
+    "rate_limits": {
+      "requests_per_10s_per_user": 20,
+      "offline_reports_in_queue_per_user": 5,
+      "offline_report_lifetime_hours": 5
+    },
+    "report_types": [
+      "ACCOUNT_PERFORMANCE_REPORT",
+      "CAMPAIGN_PERFORMANCE_REPORT",
+      "ADGROUP_PERFORMANCE_REPORT",
+      "AD_PERFORMANCE_REPORT",
+      "CRITERIA_PERFORMANCE_REPORT",
+      "CUSTOM_REPORT",
+      "REACH_AND_FREQUENCY_PERFORMANCE_REPORT",
+      "SEARCH_QUERY_PERFORMANCE_REPORT"
+    ]
+  },
+  "legacy_v4": {
+    "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/_AllMethods",
+    "note": "Управление кампаниями, группами, объявлениями и ставками в версиях 4 и Live 4 отключено. Оставшееся делится надвое. Часть — то, к чему справочник версии 5 сам отсылает: прогноз бюджета и подбор фраз, метки, общий счёт, финансовые операции, GetRetargetingGoals, GetRubrics, GetStatGoals, сведения об API. Часть — то, у чего эквивалент в версии 5 есть, и брать надо его: регионы и часовые пояса отдаёт Dictionaries, изображения — AdImages и Ads. Колонка «Эквивалент в v5» показывает, к какой половине относится метод.",
+    "units_note": "У версии 4 отдельный суточный пул баллов. GetClientsUnits не заменяет заголовок Units версии 5; список платных методов у каждой версии свой.",
+    "transport_note": "Запрос четвёртой версии собран не так, как запрос версии 5, и провенанс у утверждений разный. Документировано: токен уходит в теле запроса, полем token, рядом с method, param и locale (https://yandex.ru/dev/direct/doc/dg-v4/ru/concepts/auth-token); ответ с ошибкой приходит плоским — error_code, error_str и error_detail в корне, а не в объекте error, поле с сообщением называется error_str, а не error_string, и данные успешного ответа лежат в data, а не в result (https://yandex.ru/dev/direct/doc/dg-v4/ru/concepts/JSON). Замерено 27.08.2026: про заголовок Authorization руководство не говорит ничего, а четвёртая версия его игнорирует и отвечает error_code 53 «Ошибка авторизации» — отказом, который читается как «токен истёк». Следует из этого для кода скилла: разбор версии 5 на плоском ответе не видит ошибки вовсе и отдаёт «успешный ответ без данных». Подробности — в API_MAP.md, раздел «Версии 4 и Live 4».",
+    "active": [
+      {
+        "area": "Общий счёт",
+        "methods": [
+          {
+            "name": "EnableSharedAccount",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Подключает клиенту общий счет и переносит на него средства со всех кампаний. Метод доступен только рекламным агентствам.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/live/EnableSharedAccount"
+          },
+          {
+            "name": "AccountManagement",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Управляет общим счетом.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": [
+              {
+                "name": "Deposit",
+                "purpose": "пополнение общего счёта из кредитного лимита агентства или из овердрафта рекламодателя",
+                "v5_equivalent": null
+              },
+              {
+                "name": "Invoice",
+                "purpose": "формирование счетов на оплату в формате HTML",
+                "v5_equivalent": null
+              },
+              {
+                "name": "TransferMoney",
+                "purpose": "перевод средств между общими счетами клиентов",
+                "v5_equivalent": null
+              },
+              {
+                "name": "Get",
+                "purpose": "получение информации об общих счетах",
+                "v5_equivalent": null
+              },
+              {
+                "name": "Update",
+                "purpose": "обновление настроек общих счетов",
+                "v5_equivalent": null
+              }
+            ],
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/live/AccountManagement"
+          }
+        ]
+      },
+      {
+        "area": "Финансовые операции",
+        "methods": [
+          {
+            "name": "CreateInvoice",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Формирует счет на оплату одной или нескольких кампаний в формате HTML. При вызове метода указывают одну или несколько кампаний и суммы к оплате, отражаемые в счете. Метод возвращает URL счета на оплату. Получить счет может пользователь, от лица которого вызван метод (пользователю необходимо авторизоваться в Яндексе).",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/CreateInvoice"
+          },
+          {
+            "name": "PayCampaigns",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Оплата кампании из кредитного лимита рекламного агентства или из овердрафта рекламодателя. Метод позволяет рекламным агентствам и прямым рекламодателям пополнять баланс с отсрочкой платежа.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/PayCampaigns"
+          },
+          {
+            "name": "TransferMoney",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Переводит средства между кампаниями. При вызове метода указывают одну или несколько кампаний, с которых списываются средства, и одну или несколько кампаний, на которые зачисляются средства. Общая сумма списываемых средств и общая сумма зачисляемых средств должны совпадать. При несовпадении возникает ошибка с кодом 353.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/TransferMoney"
+          },
+          {
+            "name": "GetCreditLimits",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Возвращает информацию о кредитах, предоставленных рекламному агентству для оплаты кампаний. Кредиты предоставляется по специальным договорам с рекламными агентствами. Оплата за счет кредита выполняется с помощью метода PayCampaigns.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/GetCreditLimits"
+          }
+        ]
+      },
+      {
+        "area": "Прогноз бюджета",
+        "methods": [
+          {
+            "name": "CreateNewForecast",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Запускает на сервере формирование прогноза показов, кликов и затрат. Метод возвращает идентификатор будущего отчета. По идентификатору можно узнать о готовности отчета (метод GetForecastList) и скачать отчет (метод GetForecast (Live)). Среднее время формирования отчета — до одной минуты.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/CreateNewForecast"
+          },
+          {
+            "name": "GetForecast",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Возвращает сформированный прогноз показов, кликов и затрат по его идентификатору.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/GetForecast"
+          },
+          {
+            "name": "GetForecastList",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Возвращает список сформированных и формируемых отчетов о прогнозируемом количестве показов и кликов, затратах на кампанию. Метод используют для проверки готовности прогноза с интересующим идентификатором. Также с помощью метода получают идентификаторы прогнозов, чтобы затем удалить прогнозы (метод DeleteForecastReport).",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/GetForecastList"
+          },
+          {
+            "name": "DeleteForecastReport",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Удаляет отчет о прогнозируемом количестве показов и кликов, затратах на кампанию. Удалять отчеты вручную необходимо, если достигнут лимит на количество сформированных отчетов (не более пяти) и требуется сформировать еще один. Также отчеты удаляются автоматически спустя пять часов после формирования.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/DeleteForecastReport"
+          }
+        ]
+      },
+      {
+        "area": "Подбор фраз и статистика запросов",
+        "methods": [
+          {
+            "name": "GetKeywordsSuggestion",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Возвращает подсказки к ключевым словам.",
+            "units": "3 балла за фразу",
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/GetKeywordsSuggestion"
+          },
+          {
+            "name": "CreateNewWordstatReport",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Запускает на сервере формирование отчета о статистике поисковых запросов. Метод возвращает идентификатор будущего отчета. По идентификатору можно узнать о готовности отчета (метод GetWordstatReportList) и скачать отчет (метод GetWordstatReport). Формирование отчета обычно занимает до одной минуты.",
+            "units": "10 баллов за фразу",
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/CreateNewWordstatReport"
+          },
+          {
+            "name": "GetWordstatReport",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Возвращает отчет о статистике поисковых запросов.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/GetWordstatReport"
+          },
+          {
+            "name": "GetWordstatReportList",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Возвращает список сформированных и формируемых отчетов о статистике поисковых запросов. Метод используют для проверки готовности отчета с интересующим идентификатором. Также с помощью метода получают идентификаторы отчетов, чтобы затем удалить отчеты (метод DeleteWordstatReport).",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/GetWordstatReportList"
+          },
+          {
+            "name": "DeleteWordstatReport",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Удаляет отчет о статистике поисковых запросов. Отчеты удаляются автоматически через 5 часов после формирования. Удалять отчеты вручную следует в случае, когда сформировано максимальное количество отчетов (пять) и нужно сформировать новый отчет.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/DeleteWordstatReport"
+          }
+        ]
+      },
+      {
+        "area": "Метки объявлений и кампаний",
+        "methods": [
+          {
+            "name": "GetBannersTags",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Возвращает идентификаторы меток, присвоенных объявлениям.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/live/GetBannersTags"
+          },
+          {
+            "name": "UpdateBannersTags",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Присваивает метки объявлениям. Метод присваивает указанные метки и убирает неуказанные, которые ранее присвоены объявлению. У объявления может быть не более 30 меток из списка меток кампании.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/live/UpdateBannersTags"
+          },
+          {
+            "name": "GetCampaignsTags",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Возвращает список меток для указанной кампании или нескольких кампаний.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/live/GetCampaignsTags"
+          },
+          {
+            "name": "UpdateCampaignsTags",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Формирует список меток для указанной кампании или списки для нескольких кампаний. Метод используется для добавления, изменения, удаления меток, доступных в рамках кампании. При добавлении меток им автоматически присваиваются уникальные идентификаторы, с помощью которых метки назначают объявлениям (см. UpdateBannersTags).",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/live/UpdateCampaignsTags"
+          }
+        ]
+      },
+      {
+        "area": "Ретаргетинг",
+        "methods": [
+          {
+            "name": "GetRetargetingGoals",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Возвращает идентификаторы доступных целей и сегментов. Прямой рекламодатель может получать цели и сегменты, доступные его представителям.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/live/GetRetargetingGoals"
+          }
+        ]
+      },
+      {
+        "area": "Баллы",
+        "methods": [
+          {
+            "name": "GetClientsUnits",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Возвращает количество баллов у пользователей.",
+            "units": null,
+            "v5_equivalent": "заголовок `Units` в ответе любого метода",
+            "v5_equivalent_note": "Замена неполная: метод возвращает остаток отдельного пула версии 4. Остаток версии 5 проверяется по заголовкам ответа и Clients.get.",
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/GetClientsUnits"
+          }
+        ]
+      },
+      {
+        "area": "Справочники",
+        "methods": [
+          {
+            "name": "GetRegions",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Возвращает список регионов, зарегистрированных в Яндекс Директе. Информация о регионах может потребоваться при анализе статистики кампании, при формировании отчета о прогнозируемом количестве показов и кликов (метод CreateNewForecast), при создании и редактировании объявлений.",
+            "units": null,
+            "v5_equivalent": "Dictionaries",
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/GetRegions"
+          },
+          {
+            "name": "GetStatGoals",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Возвращает сведения о целях Яндекс Метрики, которые доступны для кампании.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/GetStatGoals"
+          },
+          {
+            "name": "GetRubrics",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Возвращает список рубрик Яндекс Каталога. Информация о рубриках может потребоваться при анализе статистики кампании.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/GetRubrics"
+          },
+          {
+            "name": "GetTimeZones",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Возвращает список временных зон. Информация о временных зонах может понадобиться при редактировании кампании для установки временного таргетинга.",
+            "units": null,
+            "v5_equivalent": "Dictionaries",
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/GetTimeZones"
+          }
+        ]
+      },
+      {
+        "area": "Информация об API",
+        "methods": [
+          {
+            "name": "GetAvailableVersions",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Возвращает список версий API, поддерживаемых в настоящее время.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/GetAvailableVersions"
+          },
+          {
+            "name": "GetVersion",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Возвращает номер последней версии API.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/GetVersion"
+          },
+          {
+            "name": "PingAPI",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Проверяет доступность API и успешность авторизации пользователя.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/reference/PingAPI"
+          },
+          {
+            "name": "GetEventsLog",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Возвращает записи из журнала событий. Яндекс Директ автоматически регистрирует события, связанные с общими счетами, кампаниями и объявлениями, например результаты модерации, пополнение баланса и другое. Журнал событий ведется для каждого пользователя. Метод `GetEventsLog` возвращает записи из журнала событий за указанный период времени.",
+            "units": null,
+            "v5_equivalent": null,
+            "operations": null,
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/live/GetEventsLog"
+          }
+        ]
+      }
+    ],
+    "disabled": [
+      {
+        "area": "Кампании",
+        "methods": [
+          {
+            "name": "CreateOrUpdateCampaign",
+            "versions": [],
+            "purpose": "Создавал и изменял кампанию.",
+            "units": null,
+            "v5_equivalent": "Создание кампаний — сервис Campaigns, метод add; Редактирование кампаний — сервис Campaigns, метод update",
+            "v5_equivalent_note": null,
+            "page_missing": true
+          },
+          {
+            "name": "GetCampaignsList",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Возвращает список кампаний с краткими сведениями о них.",
+            "units": null,
+            "v5_equivalent": "Сервис Campaigns, метод get",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "GetCampaignsListFilter",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Возвращает список кампаний, соответствующих условиям отбора, с краткими сведениями о кампаниях.",
+            "units": null,
+            "v5_equivalent": "Сервис Campaigns, метод get",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "GetCampaignParams",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Возвращает параметры кампании.",
+            "units": null,
+            "v5_equivalent": "Сервис Campaigns, метод get",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "GetCampaignsParams",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Возвращает параметры кампаний.",
+            "units": null,
+            "v5_equivalent": "Сервис Campaigns, метод get",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "DeleteCampaign",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Удаляет кампанию.",
+            "units": null,
+            "v5_equivalent": "Сервис Campaigns, метод delete",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "ResumeCampaign",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Разрешает показ объявлений кампании.",
+            "units": null,
+            "v5_equivalent": "Сервис Campaigns, метод resume",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "StopCampaign",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Останавливает показ объявлений кампании.",
+            "units": null,
+            "v5_equivalent": "Сервис Campaigns, метод suspend",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "ArchiveCampaign",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Помещает кампанию в архив.",
+            "units": null,
+            "v5_equivalent": "Сервис Campaigns, метод archive",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "UnArchiveCampaign",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Извлекает кампанию из архива.",
+            "units": null,
+            "v5_equivalent": "Сервис Campaigns, метод unarchive",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          }
+        ]
+      },
+      {
+        "area": "Объявления и фразы",
+        "methods": [
+          {
+            "name": "CreateOrUpdateBanners",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Создает или изменяет группы объявлений, объявления и фразы.",
+            "units": "12 баллов за добавление объявления, 4 за редактирование, 2 за добавление фразы, 1 за редактирование",
+            "v5_equivalent": "Создание групп объявлений — сервис AdGroups, метод add; Редактирование групп объявлений — сервис AdGroups, метод update; Создание объявлений — сервис Ads, метод add; Редактирование объявлений — сервис Ads, метод update; Создание и редактирование ключевых фраз — сервис Keywords, метод add; Назначение ставок — сервис Bids, методы set и setAuto; Добавление визиток — сервис vCards, метод add, привязка визиток к объявлению — сервис Ads, методы add, update; Добавление набора быстрых ссылок — сервис Sitelinks, метод add, привязка набора быстрых ссылок к объявлению — сервис Ads, методы add, update",
+            "v5_equivalent_note": "Про фразы страница соответствия неверна: она шлёт и создание, и редактирование в `Keywords.add`, тогда как изменяет фразы `Keywords.update`. Редактирование — `Keywords.update`, см. D-11",
+            "page_missing": false
+          },
+          {
+            "name": "GetBanners",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Возвращает параметры групп объявлений, объявлений и фраз.",
+            "units": null,
+            "v5_equivalent": "Получение параметров групп объявлений — сервис AdGroups, метод get; Получение объявлений — сервис Ads, метод get; Получение ключевых фраз — сервис Keywords, метод get; Получение ставок — сервис Bids, метод get; Получение визитки — сервис vCards, метод get; Получение быстрых ссылок — сервис Sitelinks, метод get",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "GetBannerPhrases",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Возвращает информацию о фразах.",
+            "units": null,
+            "v5_equivalent": "Получение ключевых фраз — сервис Keywords, метод get; Получение ставок — сервис Bids, метод get",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "GetBannerPhrasesFilter",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Возвращает информацию о фразах и позволяет ограничить состав возвращаемых данных.",
+            "units": null,
+            "v5_equivalent": "Получение ключевых фраз — сервис Keywords, метод get; Получение ставок — сервис Bids, метод get",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "DeleteBanners",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Удаляет объявления.",
+            "units": null,
+            "v5_equivalent": "Сервис Ads, метод delete",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "Keyword",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Останавливает или возобновляет показы по ключевым фразам. Возвращает продуктивность ключевых фраз.",
+            "units": null,
+            "v5_equivalent": "Сервис Keywords, методы suspend, resume, get",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "ModerateBanners",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Отправляет на модерацию объявления в статусе “Черновик”.",
+            "units": null,
+            "v5_equivalent": "Сервис Ads, метод moderate",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "ResumeBanners",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Разрешает показ объявлений.",
+            "units": null,
+            "v5_equivalent": "Сервис Ads, метод resume",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "StopBanners",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Останавливает показ объявлений.",
+            "units": null,
+            "v5_equivalent": "Сервис Ads, метод suspend",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "ArchiveBanners",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Помещает объявления в архив.",
+            "units": null,
+            "v5_equivalent": "Сервис Ads, метод archive",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "UnArchiveBanners",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Извлекает объявления из архива.",
+            "units": null,
+            "v5_equivalent": "Сервис Ads, метод unarchive",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          }
+        ]
+      },
+      {
+        "area": "Ставки",
+        "methods": [
+          {
+            "name": "SetAutoPrice",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Задает или рассчитывает по алгоритму ставки для фраз.",
+            "units": null,
+            "v5_equivalent": "Сервис Bids, метод setAuto",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "UpdatePrices",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Задает ставки и/или приоритеты для указанных фраз.",
+            "units": null,
+            "v5_equivalent": "Сервис Bids, метод set",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          }
+        ]
+      },
+      {
+        "area": "Ретаргетинг",
+        "methods": [
+          {
+            "name": "RetargetingCondition",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Создает, изменяет, удаляет или возвращает условия ретаргетинга.",
+            "units": null,
+            "v5_equivalent": "Методы сервиса RetargetingLists",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "Retargeting",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Создает, изменяет, удаляет или возвращает параметры ретаргетингов для групп объявлений.",
+            "units": null,
+            "v5_equivalent": "Методы сервиса AudienceTargets",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          }
+        ]
+      },
+      {
+        "area": "Статистика",
+        "methods": [
+          {
+            "name": "GetBannersStat",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Возвращает статистику указанной кампании за период не более семи дней.",
+            "units": null,
+            "v5_equivalent": "Сервис Reports",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "GetSummaryStat",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Возвращает статистику по указанным кампаниям за каждый день выбранного периода.",
+            "units": null,
+            "v5_equivalent": "Сервис Reports",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "CreateNewReport",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Запускает на сервере формирование отчета о статистике кампании.",
+            "units": null,
+            "v5_equivalent": "Сервис Reports",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "DeleteReport",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Удаляет отчет о статистике кампании с сервера. Отчеты удаляются автоматически через 5 часов после формирования. Удалять отчеты вручную следует в случае, когда сформировано максимальное количество отчетов (пять) и нужно сформировать новый отчет.",
+            "units": null,
+            "v5_equivalent": "Сервис Reports",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "GetReportList",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Возвращает список сформированных и формируемых отчетов о статистике кампании. Метод используют для проверки готовности отчета с интересующим идентификатором. Также с помощью метода получают идентификатор отчета, чтобы затем удалить отчет с помощью метода DeleteReport.",
+            "units": null,
+            "v5_equivalent": "Сервис Reports",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "CreateOfflineReport",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Запускает на сервере формирование отчета о динамических текстовых объявлениях.",
+            "units": null,
+            "v5_equivalent": null,
+            "v5_equivalent_note": "на странице соответствия не назван",
+            "page_missing": false
+          },
+          {
+            "name": "DeleteOfflineReport",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Удаляет с сервера отчет о динамических текстовых объявлениях.",
+            "units": null,
+            "v5_equivalent": null,
+            "v5_equivalent_note": "на странице соответствия не назван",
+            "page_missing": false
+          },
+          {
+            "name": "GetOfflineReportList",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Возвращает список сформированных и формируемых отчетов о динамических текстовых объявлениях.",
+            "units": null,
+            "v5_equivalent": null,
+            "v5_equivalent_note": "на странице соответствия не назван",
+            "page_missing": false
+          }
+        ]
+      },
+      {
+        "area": "Баланс кампании",
+        "methods": [
+          {
+            "name": "GetBalance",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Сообщает баланс кампании и сумму, зачисленную за время существования кампании.",
+            "units": null,
+            "v5_equivalent": "Сервис Campaigns, метод get",
+            "v5_equivalent_note": "Замена неполная. При подключённом общем счёте `Campaigns.get` возвращает `SharedAccountFundsParam`, где всего два поля — `Refund` (всегда 0) и `Spend`; баланса там нет. `Balance` живёт только в `CampaignFundsParam`, то есть когда общий счёт не подключён. Баланс общего счёта берётся операцией `Get` метода `AccountManagement` версии Live 4 — так сказано и в примечании на самой странице соответствия",
+            "page_missing": false
+          }
+        ]
+      },
+      {
+        "area": "Клиенты",
+        "methods": [
+          {
+            "name": "GetSubClients",
+            "versions": [
+              "v4"
+            ],
+            "purpose": "Возвращает список субклиентов указанного пользователя. Для рекламного агентства возвращается список клиентов и представителей. Для прямого рекламодателя возвращается список представителей.",
+            "units": null,
+            "v5_equivalent": "Получение собственных параметров представителем рекламодателя — сервис Clients, метод get; Получение списка клиентов агентства представителем агентства — сервис AgencyClients, метод get",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "GetClientInfo",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Возвращает учетные записи в Яндекс Директе.",
+            "units": null,
+            "v5_equivalent": "Получение собственных параметров представителем рекламодателя или агентства — сервис Clients, метод get; Получение списка клиентов агентства представителем агентства — сервис AgencyClients, метод get",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "UpdateClientInfo",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Изменяет учетные записи в Яндекс Директе.",
+            "units": null,
+            "v5_equivalent": "Редактирование собственных параметров представителем рекламодателя — сервис Clients, метод update; Редактирование параметров клиентов агентства представителем агентства — сервис AgencyClients, метод update",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "CreateNewSubclient",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Регистрирует клиента рекламного агентства в Яндексе и создает учетную запись в Яндекс Директе.",
+            "units": null,
+            "v5_equivalent": "Сервис AgencyClients, метод add — но сам он с 16.06.2025 не поддерживается, вместо него addPassportOrganization; см. D-07",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          },
+          {
+            "name": "GetClientsList",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Возвращает учетные записи всех клиентов рекламного агентства.",
+            "units": null,
+            "v5_equivalent": "Сервис AgencyClients, метод get",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          }
+        ]
+      },
+      {
+        "area": "Прочее",
+        "methods": [
+          {
+            "name": "GetChanges",
+            "versions": [
+              "v4",
+              "live/v4"
+            ],
+            "purpose": "Проверяет наличие изменений в кампаниях, объявлениях и персональных данных клиентов, а также в справочнике регионов, справочнике временных зон, в Яндекс Каталоге.",
+            "units": null,
+            "v5_equivalent": "Сервис Changes",
+            "v5_equivalent_note": null,
+            "page_missing": false
+          }
+        ]
+      },
+      {
+        "area": "Изображения",
+        "methods": [
+          {
+            "name": "AdImage",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Работал с изображениями: загружает и удаляет изображения, возвращает список изображений и др.",
+            "units": "2 балла за загрузку изображения",
+            "v5_equivalent": "AdImages, но не целиком — см. операции",
+            "operations": [
+              {
+                "name": "Upload",
+                "purpose": "асинхронная загрузка изображений по списку URL; ответ содержит номера заданий",
+                "v5_equivalent": null
+              },
+              {
+                "name": "CheckUploadStatus",
+                "purpose": "получение списка заданий на загрузку для проверки статуса",
+                "v5_equivalent": null
+              },
+              {
+                "name": "UploadRawData",
+                "purpose": "синхронная загрузка изображений в виде бинарных данных",
+                "v5_equivalent": "`AdImages.add`"
+              },
+              {
+                "name": "Delete",
+                "purpose": "удаление изображений",
+                "v5_equivalent": "`AdImages.delete`"
+              },
+              {
+                "name": "Get",
+                "purpose": "получение списка изображений",
+                "v5_equivalent": "`AdImages.get`"
+              },
+              {
+                "name": "GetLimits",
+                "purpose": "сколько изображений клиент может загрузить и сколько уже загружено или в очереди",
+                "v5_equivalent": null
+              }
+            ],
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/live/AdImage",
+            "live_note": "В исходной проверке API метод вернул код 55 «Метод не существует». Не используйте его без повторного подтверждения поддержки. Описание и цена сохранены из документации."
+          },
+          {
+            "name": "AdImageAssociation",
+            "versions": [
+              "live/v4"
+            ],
+            "purpose": "Добавлял, удалял и возвращал привязки изображений к объявлениям.",
+            "units": "2 балла за добавление привязки, 1 балл за удаление; для объявления-черновика не списываются",
+            "v5_equivalent": "Ads, но не целиком — см. операции",
+            "operations": [
+              {
+                "name": "Get",
+                "purpose": "получение данных по привязанным изображениям",
+                "v5_equivalent": "`Ads.get`"
+              },
+              {
+                "name": "Set",
+                "purpose": "добавление и удаление привязок изображений к объявлениям",
+                "v5_equivalent": "создание привязки — `Ads.add` и `Ads.update`, удаление — `Ads.update`"
+              }
+            ],
+            "doc": "https://yandex.ru/dev/direct/doc/dg-v4/ru/live/AdImageAssociation",
+            "live_note": "Отвечает иначе, чем соседний AdImage, и это разные вещи: код 509 «Метод недоступен в данной версии API», а не 55 «Метод не существует». Замер , 04.09.2026: операции Get и Set на обоих адресах четвёртой версии. Вызвать нельзя ни тот, ни другой; эквивалент версии 5 указан справа."
+          }
+        ]
+      }
+    ]
+  },
+  "deprecated": [
+    {
+      "target": "AgencyClients.add",
+      "date": "2025-06-16",
+      "kind": "unsupported",
+      "note": "Не поддерживается, вместо него `addPassportOrganization`. Страница метода в справочнике осталась."
+    },
+    {
+      "target": "BidModifiers.toggle",
+      "date": "2025-11-13",
+      "kind": "removed",
+      "note": "Устарел и перестал поддерживаться, страницы в справочнике нет."
+    },
+    {
+      "target": "Keywords.get / Productivity",
+      "date": "2018-04-09",
+      "kind": "disabled_field",
+      "note": "Параметр всегда возвращает null."
+    },
+    {
+      "target": "Dictionaries.get / ProductivityAssertions",
+      "date": "2018-04-09",
+      "kind": "disabled_field",
+      "note": "Справочник рекомендаций по продуктивности не возвращается."
+    },
+    {
+      "target": "Ручное управление ставками в РСЯ",
+      "date": "2024-07-01",
+      "kind": "disabled_feature",
+      "note": "Отключено на стороне Директа."
+    },
+    {
+      "target": "Версии 4 и Live 4: управление кампаниями, группами, объявлениями, фразами, ставками, статистикой и клиентами",
+      "date": null,
+      "kind": "disabled_group",
+      "note": "Перечень — в разделе «Отключённое» выше. Дат отключения справочник версии 4 не приводит."
+    }
+  ],
+  "discrepancies": [
+    {
+      "id": "D-01",
+      "title": "Справочник публикует только адреса v501, но префикс v5 продолжает работать",
+      "docs": "Все страницы сервисов дают адрес `https://api.direct.yandex.com/json/v501/{сервис}`. Живой адрес версии 5 остался в справочнике трижды, и все три раза — в примерах запроса к `Ads`: `POST /json/v5/ads/` дважды и `POST /v5/ads/` в SOAP-примере, у которого при этом `SOAPAction` указывает на `v501`. Ещё восемь упоминаний `/v5/` — XML-неймспейсы вида `http://api.direct.yandex.com/v5/ads`; это идентификаторы пространств имён, а не адреса.",
+      "fact": "Для основных сервисов используется документированный префикс v501.",
+      "action": "Использовать v501, кроме отдельно описанного адреса Reports."
+    },
+    {
+      "id": "D-02",
+      "title": "Оглавления справочника отстают от самого справочника",
+      "docs": "Страница `concepts/about` не содержит сервиса `Strategies` и методов `Dictionaries.getGeoRegions`, `AgencyClients.addPassportOrganization`, `AgencyClients.addPassportOrganizationMember`; ссылки методов `Feeds` ведут на страницы `RetargetingLists`. Списки «Методы» на самих страницах сервисов отстают так же: `dictionaries/dictionaries` перечисляет один `get`, `agencyclients/agencyclients` — только `add`, `update` и `get`.",
+      "fact": "Оглавление документации может отставать от страниц отдельных сервисов.",
+      "action": "Проверять страницу нужного сервиса и метода."
+    },
+    {
+      "id": "D-03",
+      "title": "У VCards, SmartAdTargets и DynamicTextAdTargets отняли справочник, но не документацию",
+      "docs": "Страниц сервисов в справочнике нет — ни в русском, ни в английском, 404. При этом руководство продолжает предписывать вызовы: `best-practice/launch-campaign` ведёт в `DynamicTextAdTargets.add`, `suspend` и `resume`, `best-practice/smart-ads` — в `SmartAdTargets.add`, `concepts/contact-info` описывает визитки, `concepts/methods` отсылает к `vcards`. В таблице баллов все три остались с полным перечнем методов. В журнале изменений об удалении не сказано ничего.",
+      "fact": "У ряда старых сервисов отсутствует подробный справочник, хотя схемы и отдельные упоминания сохранены.",
+      "action": "Одной схемы недостаточно для безопасной записи: нужны смысл полей, ограничения и проверяемый результат."
+    },
+    {
+      "id": "D-11",
+      "title": "Страница соответствия отправляет редактирование фраз в создающий метод",
+      "docs": "В таблице соответствия методов строка `CreateOrUpdateBanners` содержит пункт «Создание и редактирование ключевых фраз — сервис `Keywords`, метод `add`». То есть редактирование фразы предлагается делать методом `add`.",
+      "fact": "В таблице соответствия версий встречается ссылка на создание вместо редактирования ключевых фраз.",
+      "action": "Для изменения существующих фраз использовать Keywords.update; Keywords.add создаёт новые объекты."
+    },
+    {
+      "id": "D-12",
+      "title": "«Соответствие методов» выдаёт заголовок Units за замену GetClientsUnits",
+      "docs": "В таблице соответствия методов строка `GetClientsUnits` вместо метода версии 5 предлагает заголовок: «Доступный остаток баллов возвращается в ответе любого метода в HTTP-заголовке». А руководство версии 4 на своей странице ограничений описывает у неё собственную систему баллов — они «не накапливаются и каждый день начисляются заново», а список платных методов закрыт и с таблицей баллов версии 5 не совпадает.",
+      "fact": "GetClientsUnits относится к пулу v4. Он не показывает остаток v5.",
+      "action": "Остаток v5 брать из Units, суточный лимит — Clients.get → Restrictions → API_POINTS."
+    },
+    {
+      "id": "D-13",
+      "title": "Сервис изображений четвёртой версии описан справочником, но не отвечает",
+      "docs": "Руководство версии 4 описывает `AdImage (Live)` с шестью операциями: `Upload` — асинхронная загрузка по списку URL, `CheckUploadStatus`, `UploadRawData` — синхронная загрузка бинарных данных, `Delete`, `Get` и `GetLimits`. Страница объекта `AdImage` версии 5 сама отсылает туда: «Для асинхронной загрузки изображений по списку URL используйте операцию Upload метода AdImage (Live) API версии Live 4». Таблица соответствия методов оставляет колонку «Название метода в версии 5» пустой у `AdImage_Upload`, `AdImage_CheckUploadStatus` и `AdImage_GetLimits` — то есть объявляет их незаменимыми.",
+      "fact": "Старый AdImage v4 возвращает «Метод не существует». Аналога получения готового остатка пула изображений в v501 нет.",
+      "action": "Изображения загружать через AdImages.add. Возможности старых GetLimits, Delete и UpdateTags не обещать через v501 без соответствующего метода."
+    },
+    {
+      "id": "D-04",
+      "title": "Таблица баллов не покрывает часть действующих методов",
+      "docs": "В таблице нет сервиса `Strategies` целиком, а также `AdVideos.add`, `AdVideos.get`, `Creatives.add`, `Dictionaries.getGeoRegions`, `AgencyClients.addPassportOrganization`, `AgencyClients.addPassportOrganizationMember`.",
+      "fact": "Таблица стоимости не перечисляет все действующие методы.",
+      "action": "Отсутствие строки не означает бесплатный вызов; учитывать остаток и ограничения частоты."
+    },
+    {
+      "id": "D-05",
+      "title": "Песочница описана в другом языке, в другой версии и по другому адресу",
+      "docs": "В русском `llms.txt` версии 5 нет ни `concepts/sandbox`, ни `concepts/sandbox-init`, ни `sandbox`; прямые русские адреса отдают 404. В английском все три раздела есть. В руководстве версии 4 русская страница `concepts/sandbox` существует, но адреса не приводит — единственный адрес песочницы там встречается в быстром старте: `api-sandbox.direct.yandex.ru/v4/json/`.",
+      "fact": "Документация песочницы отличается по языку, версии и адресам.",
+      "action": "Не переключать рабочую задачу в песочницу автоматически; скилл использует настоящий v501."
+    },
+    {
+      "id": "D-06",
+      "title": "Обновления до комбинаторных объявлений нет в английской документации",
+      "docs": "Страница `update-tga` есть только в русском `llms.txt`; английский адрес отдаёт 404.",
+      "fact": "Английская документация может отставать в описании комбинаторных объявлений.",
+      "action": "Проверять актуальные структуры ResponsiveAd по русскому справочнику и схеме сервиса."
+    },
+    {
+      "id": "D-07",
+      "title": "«Соответствие методов» ведёт на метод, снятый с поддержки",
+      "docs": "Таблица соответствия отправляет `CreateNewSubclient` в `AgencyClients.add`.",
+      "fact": "В таблицах соответствия встречаются ссылки на снятые методы.",
+      "action": "Проверять статус метода на его собственной странице и выбирать поддерживаемую замену."
+    },
+    {
+      "id": "D-08",
+      "title": "Хост v4 в документации и в бою разный",
+      "docs": "Справочник v4 приводит адреса на `api.direct.yandex.ru`.",
+      "fact": "В старой документации v4 встречается адрес, отличающийся от используемого API.",
+      "action": "Использовать адрес Live v4 или v4, указанный для конкретного метода в endpoints."
+    },
+    {
+      "id": "D-09",
+      "title": "Сверка с боем закрывает чтение и редактирование, но не создание",
+      "docs": "—",
+      "fact": "Наличие работающего чтения не подтверждает правильность записи или создания.",
+      "action": "Проверять параметры записи и сверять фактический результат; не проводить пробное изменение кабинета без поручения."
+    },
+    {
+      "id": "D-10",
+      "title": "Стоимость Reports в баллах не описана",
+      "docs": "В таблице баллов сервиса `Reports` нет. Среди документированных заголовков ответа `Units` тоже не значится: страница заголовков называет `RequestId`, а для офлайн-режима `retryIn` и `reportsInQueue`.",
+      "fact": "Стоимость Reports в баллах не описана общей таблицей методов.",
+      "action": "Соблюдать документированные ограничения Reports; не выводить стоимость из отсутствующей строки или недокументированных заголовков."
+    }
+  ]
+}

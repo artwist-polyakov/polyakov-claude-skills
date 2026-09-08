@@ -1,0 +1,3717 @@
+{
+  "schema_version": 2,
+  "verified_at": "2026-08-26",
+  "source": "Рекомендации по анализу кампаний: PLAYBOOK.md",
+  "readme": "Справочник признаков для проверки кампаний. У правила указаны применимость, необходимые поля и статистика, условие и возможное исправление. Это данные для анализа, а не обещание отдельной готовой команды аудита. derived описывает связанные значения и поля ссылок; utm — состав разметки. Цели статистики выбирает пользователь, а пороги цены результата зависят от экономики бизнеса.",
+  "severities": {
+    "urgent": "требует реакции в тот же день: деньги уходят впустую либо остальные выводы аудита недостоверны",
+    "important": "влияет на результат, разбирается в текущей работе",
+    "advisory": "замечание к обсуждению, само по себе ошибкой не является"
+  },
+  "groups": {
+    "strategy": "Стратегия, бюджет, цели",
+    "targeting": "Таргетинги, фразы, минусовка",
+    "bids": "Ставки и корректировки",
+    "creative": "Комплект объявления",
+    "extensions": "Дополнительные элементы",
+    "naming": "Именование и структура",
+    "analytics": "Разметка и аналитика",
+    "moderation": "Модерация",
+    "money": "Деньги: расход и его отдача",
+    "settings": "Прочие настройки кампании"
+  },
+  "levels": {
+    "both": "правило применимо на обоих уровнях пользователя",
+    "specialist": "только специалисту по контекстной рекламе",
+    "entrepreneur": "только предпринимателю без опыта"
+  },
+  "scopes": {
+    "account": "кабинет целиком",
+    "campaign": "кампания",
+    "adgroup": "группа объявлений",
+    "ad": "объявление",
+    "keyword": "ключевая фраза или автотаргетинг",
+    "placement": "площадка показа"
+  },
+  "needs": {
+    "fields": "предикаты по полям чтения — движку хватает ответа get",
+    "stats": "нужен запрос Reports за период",
+    "probe": "нужно обращение наружу, за пределы API Директа",
+    "text": "нужен разбор текста подпрограммой",
+    "human": "автоматической проверки не существует: правило только задаёт вопрос человеку"
+  },
+  "operations": {
+    "empty": "значения нет, либо оно пустая строка или пустой массив",
+    "not_empty": "значение есть и непусто",
+    "eq": "равно value",
+    "ne": "не равно value",
+    "in": "входит в массив value",
+    "not_in": "не входит в массив value",
+    "gt": "больше value",
+    "gte": "не меньше value",
+    "lt": "меньше value",
+    "lte": "не больше value",
+    "len_lt": "длина массива меньше value",
+    "ratio_gt": "больше, чем производная ref, умноженная на порог thresholds[times_threshold]",
+    "lt_benchmark": "меньше ориентира benchmarks по пути benchmark",
+    "outside_range": "вне диапазона ориентиров benchmarks по пути benchmark",
+    "routine": "вычисляется подпрограммой routines[routine]: выразить предикатом нельзя"
+  },
+  "combinators": {
+    "any_of": "элемент списка предикатов, срабатывающий, если сработал хотя бы один вложенный. Сам список — конъюнкция"
+  },
+  "routines": {
+    "http_status": {
+      "comment": "запросить ссылку и оценить конечный ответ, пройдя по редиректам с ограничением на число переходов; срабатывает, если конечный ответ не 200. Обычный переход с http на https отдаёт 301, и правило, срабатывающее на первом же 3xx, объявило бы битой рабочую ссылку. Проверяются и посадочная ссылка объявления (ad_landing_href), и адреса его набора быстрых ссылок (ad_sitelink_set): у товарного, каталожного и динамического объявления посадочной нет вовсе, и проверка, опирающаяся только на неё, не дошла бы до их быстрых ссылок Адреса набора быстрых ссылок берутся только при принятом результате его модерации — производная ad_sitelinks_moderation: набор, ждущий модерации или отклонённый, кликов не получает, а показываться при этом может предыдущая его версия, которой API не отдаёт. У объявления кампании продвижения приложения посадочной ссылки нет: клик ведёт в магазин по адресу StoreUrl группы (производная adgroup_store_url), и проверяется он. Трекинговый адрес TrackingUrl при этом не запрашивается — обращение к нему зарегистрировало бы переход в системе трекинга, то есть проверка исказила бы данные, которые проверяет. Перед запросом и после каждого редиректа адрес проверяется по probe_policy: непубличное назначение не запрашивается вовсе",
+      "reads": [
+        "ad_landing_href",
+        "ad_sitelink_set",
+        "ad_sitelinks_moderation",
+        "adgroup_store_url"
+      ],
+      "calls": [
+        "Sitelinks.get"
+      ]
+    },
+    "placement_vs_strategy": {
+      "comment": "сверить четвёртый слот имени кампании с парой Search × Network действующей стратегии (NAME-04). У кампании со своей стратегией пара берётся из BiddingStrategy, у привязанной к пакетной — из стратегии, прочитанной Strategies.get: собственной BiddingStrategy у такой кампании нет",
+      "reads": [],
+      "calls": []
+    },
+    "name_off_convention": {
+      "comment": "проверить имя по четырём слотам конвенции (NAME-03)",
+      "reads": [],
+      "calls": []
+    },
+    "unfixed_stopword": {
+      "comment": "найти стоп-слово без фиксации через ! в минус-фразе (K). Проверяется тот уровень, на который указывает поле правила; наборы из библиотеки, подключённые к этому уровню, разбираются вместе с ним через NegativeKeywordSharedSets.get",
+      "reads": [],
+      "calls": []
+    },
+    "extension_sets_differ": {
+      "comment": "сравнить наборы быстрых ссылок и состав уточнений у объявлений одной кампании. Форматы берутся производными ad_sitelink_set и ad_extensions: во время автоконвертации кампания смешанная, и объявления разных форматов держат свои дополнения наравне",
+      "reads": [
+        "ad_extensions",
+        "ad_sitelink_set"
+      ],
+      "calls": []
+    },
+    "zero_conversions_significant": {
+      "comment": "решить, значимо ли отсутствие конверсий при накопленном числе кликов; доверительный интервал, а не порог по числу наблюдений (PLC-02)",
+      "reads": [],
+      "calls": []
+    },
+    "enough_impressions": {
+      "comment": "решить, достаточно ли показов, чтобы судить о CTR площадки",
+      "reads": [],
+      "calls": []
+    },
+    "autotargeting_bid_above_minimum": {
+      "comment": "сравнить ставку автотаргетинга с MinimumBid валюты кабинета из Dictionaries.get",
+      "reads": [],
+      "calls": []
+    },
+    "autotargeting_spend_share": {
+      "comment": "посчитать долю расхода кампании, пришедшуюся на автотаргетинг",
+      "reads": [],
+      "calls": []
+    },
+    "naming_schemes_mixed": {
+      "comment": "определить, названы ли группы кабинета по одной схеме (NAME-06)",
+      "reads": [],
+      "calls": []
+    },
+    "or_sequence": {
+      "comment": "найти в тексте фразы OR-последовательность вида (а|б|в) (K)",
+      "reads": [],
+      "calls": []
+    },
+    "no_utm_anywhere": {
+      "comment": "найти ссылки, до которых разметка не доходит. Разметкой считается набор ключей utm.required_keys с непустыми значениями, а не наличие каких-либо параметров URL: в TrackingParams может лежать ref=direct или метка партнёра, и принять её за разметку значит промолчать о кампании без атрибуции. Общая разметка — в параметрах URL кампании — производная campaign_tracking_params или в TrackingParams группы — покрывает все ссылки сразу; ключи, зашитые в отдельную ссылку, покрывают только её. Срабатывает, если общей разметки нет и хотя бы одна действующая ссылка осталась без собственной. Действующие ссылки — производная ad_landing_href плюс адреса набора быстрых ссылок — производная ad_sitelink_set; перечислять форматы здесь нельзя, иначе графические, медийные и видеообъявления выпадут из проверки. Ссылки берутся только у показывающихся объявлений — состояние ON и статус ACCEPTED или PREACCEPTED Адреса набора быстрых ссылок берутся только при принятом результате его модерации — производная ad_sitelinks_moderation: набор, ждущий модерации или отклонённый, кликов не получает, а показываться при этом может предыдущая его версия, которой API не отдаёт",
+      "reads": [
+        "ad_landing_href",
+        "ad_sitelink_set",
+        "ad_sitelinks_moderation",
+        "campaign_tracking_params"
+      ],
+      "serving_only": true,
+      "calls": [
+        "Sitelinks.get"
+      ]
+    },
+    "network_delivery_enabled": {
+      "comment": "определить, идут ли показы в сетях: у кампании со своей стратегией — по Network в производной campaign_bidding_strategy, у привязанной к пакетной — по стратегии, прочитанной Strategies.get. Стратегия лежит в структуре своего типа кампании, поэтому берётся производной, а не путём ЕПК",
+      "reads": [
+        "campaign_bidding_strategy"
+      ],
+      "calls": []
+    },
+    "utm_tagged_twice": {
+      "comment": "сравнить действующие метки с действующими ссылками и найти склейку. Меткой считается набор ключей utm.required_keys с непустыми значениями в параметрах URL кампании — производная campaign_tracking_params либо в TrackingParams группы; посторонние параметры вроде ref=direct меткой не являются и второй разметки не создают. Ссылки — производная ad_landing_href и адреса набора быстрых ссылок — производная ad_sitelink_set; перечислять форматы здесь нельзя по той же причине, что и в no_utm_anywhere. Метки на группе при пустой кампании дают ту же склейку, и правило, смотрящее только на кампанию, её пропустит. Ссылки берутся только у показывающихся объявлений — состояние ON и статус ACCEPTED или PREACCEPTED Адреса набора быстрых ссылок берутся только при принятом результате его модерации — производная ad_sitelinks_moderation: набор, ждущий модерации или отклонённый, кликов не получает, а показываться при этом может предыдущая его версия, которой API не отдаёт",
+      "reads": [
+        "ad_landing_href",
+        "ad_sitelink_set",
+        "ad_sitelinks_moderation",
+        "campaign_tracking_params"
+      ],
+      "serving_only": true,
+      "calls": [
+        "Sitelinks.get"
+      ]
+    },
+    "pay_for_conversion_active": {
+      "comment": "срабатывает, когда действующая стратегия кампании — оплата за конверсии. Тип берётся из производной campaign_bidding_strategy: у кампании со своей стратегией из структуры её типа, у привязанной к пакетной — из стратегии, прочитанной Strategies.get. Пакетными бывают в том числе PAY_FOR_CONVERSION, PAY_FOR_CONVERSION_MULTIPLE_GOALS и PAY_FOR_CONVERSION_CRR, поэтому гейт «пакета нет» выключил бы правило именно там, где оно нужно",
+      "reads": [
+        "campaign_bidding_strategy"
+      ],
+      "calls": []
+    },
+    "no_campaign_negatives": {
+      "comment": "убедиться, что минус-фраз у кампании нет ни одним способом: пуст и собственный список Campaign.NegativeKeywords, и перечень подключённых наборов NegativeKeywordSharedSetIds. Правило K разрешает держать минусы набором, и находка «минус-фраз нет вовсе» при подключённом наборе была бы неверной",
+      "reads": [],
+      "calls": []
+    },
+    "metrika_counters_absent": {
+      "comment": "срабатывает, когда счётчиков Метрики у кампании нет. У кампании со своей стратегией они лежат в её типовой структуре, у привязанной к пакетной собственных нет — смотреть надо у стратегии, прочитанной Strategies.get. Состав полей пакетной стратегии справочник не раскрывает: имя поля подтверждает",
+      "reads": [],
+      "calls": []
+    },
+    "priority_goals_absent": {
+      "comment": "срабатывает, когда ключевых целей не задано. У кампании со своей стратегией они лежат в PriorityGoals кампании, у привязанной к пакетной собственных нет — цели задаются самой стратегии, и справочник называет для неё предел в 30 ключевых целей. Читать надо Strategies.get",
+      "reads": [],
+      "calls": []
+    },
+    "multi_goal_strategy_active": {
+      "comment": "срабатывает, когда действующая стратегия кампании входит в перечень strategy_sets.priority_goals_users. У кампании со своей стратегией тип берётся из BiddingStrategy, у привязанной к пакетной — из стратегии, прочитанной Strategies.get: собственной BiddingStrategy у такой кампании нет, и предикат по её полю не сработал бы вовсе",
+      "reads": [],
+      "calls": []
+    },
+    "is_autotargeting_entry": {
+      "comment": "срабатывает, когда запись сервиса Keywords является автотаргетингом, а не обычной ключевой фразой. Чем именно они различаются в ответе Keywords.get, наш справочник не описывает: он сообщает лишь, что сервис управляет и тем и другим и что автотаргетинг в группе один. Признак выясняет",
+      "reads": [],
+      "calls": []
+    },
+    "sitelinks_supported_here": {
+      "comment": "решить, может ли у этого объявления быть набор быстрых ссылок. У структур, где справочник допускает SitelinkSetId только при Href — комбинаторное и текстово-графическое, — требуется непустая посадочная ссылка. У товарного, для страниц каталога и динамического поля Href нет вовсе, и такого условия к ним не предъявляется: гейт по ссылке выбросил бы их из проверки целиком",
+      "reads": [],
+      "calls": []
+    },
+    "manual_search_bidding": {
+      "comment": "срабатывает, когда на поиске у кампании ручное управление ставками. Тип берётся из производной campaign_bidding_strategy — стратегия лежит в структуре своего типа кампании, и путь ЕПК потерял бы текстово-графические, динамические и смарт-кампании, у которых автотаргетинг работает тем же сервисом Keywords. Гейт «пакета нет» здесь не нужен и вреден: пакетными бывают только автоматические стратегии, поэтому ручное управление ставками само по себе означает, что кампания не под пакетом, — а лишний гейт потянул бы за собой сужение до ЕПК",
+      "reads": [
+        "campaign_bidding_strategy"
+      ],
+      "calls": []
+    }
+  },
+  "derived": {
+    "target_cpa": {
+      "comment": "Целевая цена конверсии, к которой правило сравнивает расход. Берётся в порядке: сначала значение, названное пользователем (вход target_cpa), затем — если его нет — средняя цена конверсии из структуры действующей стратегии. У кампании со своей стратегией она лежит в её структуре, у привязанной к пакетной — только в самой стратегии. Денежные значения умножены на множитель.",
+      "sources": [
+        "AverageCpa.AverageCpa",
+        "PayForConversion.Cpa"
+      ],
+      "money_multiplier": 1000000,
+      "reads": [
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "input": "target_cpa",
+      "when_unavailable": "Ни входа, ни поля в стратегии — правило не выполняется, и аудит обязан сказать об этом вслух: «проверка не выполнена, нужна целевая цена конверсии». Молча пропустить нельзя — именно так дорогой трафик и остаётся ненайденным, а отчёт выглядит полным."
+    },
+    "actual_cpa": {
+      "comment": "Фактическая цена конверсии за период. Считается делением и потому требует ненулевого числа конверсий — ветка с нулём разбирается отдельным правилом.",
+      "formula": "Reports.Cost / Reports.Conversions",
+      "requires": [
+        "Reports.Cost",
+        "Reports.Conversions"
+      ],
+      "money_multiplier": 1000000
+    },
+    "ad_landing_href": {
+      "comment": "Посадочная ссылка объявления, каким бы ни был его формат. Перечислять форматы в каждом правиле нельзя: их больше, чем кажется, и каждый забытый — это оплаченные клики, о которых аудит молчит.",
+      "sources": [
+        "ResponsiveAd.Href",
+        "TextAd.Href",
+        "TextImageAd.Href",
+        "TextAdBuilderAd.Href",
+        "CpmBannerAdBuilderAd.Href",
+        "CpcVideoAdBuilderAd.Href",
+        "CpmVideoAdBuilderAd.Href"
+      ],
+      "reads": [
+        "Ads.get"
+      ],
+      "selection": "by_structure",
+      "when_unavailable": "Ни одна из структур не дала значения — значит у этого формата объявления поля посадочной ссылки нет вовсе. Правило к нему просто не применяется, и говорить об этом не нужно: отсутствие поля у формата не дефект, в отличие от невычислимой величины.",
+      "carries_urls": true,
+      "structures": "ad",
+      "fields": [
+        "Href"
+      ],
+      "responsive": [
+        "ResponsiveAd.Href"
+      ]
+    },
+    "ad_sitelink_set": {
+      "comment": "Набор быстрых ссылок объявления в структуре его формата. Сам по себе это идентификатор набора; адреса достаются Sitelinks.get и проверяются наравне с посадочной ссылкой — у товарного, каталожного и динамического объявления посадочной нет вовсе, и быстрые ссылки там единственные адреса, по которым уходит трафик.",
+      "sources": [
+        "ResponsiveAd.SitelinkSetId",
+        "TextAd.SitelinkSetId",
+        "ShoppingAd.SitelinkSetId",
+        "ListingAd.SitelinkSetId",
+        "DynamicTextAd.SitelinkSetId"
+      ],
+      "reads": [
+        "Ads.get"
+      ],
+      "selection": "by_structure",
+      "when_unavailable": "Ни одна из структур не дала значения — значит у этого формата объявления поля набора быстрых ссылок нет вовсе. Правило к нему просто не применяется, и говорить об этом не нужно: отсутствие поля у формата не дефект, в отличие от невычислимой величины.",
+      "carries_urls": true,
+      "structures": "ad",
+      "fields": [
+        "SitelinkSetId"
+      ],
+      "responsive": [
+        "ResponsiveAd.SitelinkSetId"
+      ]
+    },
+    "ad_extensions": {
+      "comment": "Уточнения объявления в структуре его формата. У товарного объявления и объявления для страниц каталога поле названо не в таблице структуры, а прозой ниже: «только на чтение … плюс SitelinksModeration и AdExtensions». Разбор, читающий одни таблицы, эти два формата теряет.",
+      "sources": [
+        "ResponsiveAd.AdExtensions",
+        "TextAd.AdExtensions",
+        "DynamicTextAd.AdExtensions",
+        "ShoppingAd.AdExtensions",
+        "ListingAd.AdExtensions"
+      ],
+      "reads": [
+        "Ads.get"
+      ],
+      "selection": "by_structure",
+      "when_unavailable": "Ни одна из структур не дала значения — значит у этого формата объявления поля уточнений нет вовсе. Правило к нему просто не применяется, и говорить об этом не нужно: отсутствие поля у формата не дефект, в отличие от невычислимой величины.",
+      "structures": "ad",
+      "fields": [
+        "AdExtensions"
+      ],
+      "responsive": [
+        "ResponsiveAd.AdExtensions"
+      ]
+    },
+    "ad_images": {
+      "comment": "Изображения объявления в структуре его формата. У комбинаторного это массив AdImages, у остальных — одиночный AdImageHash: имя поля разное, смысл один.",
+      "selection": "by_structure",
+      "structures": "ad",
+      "sources": [
+        "ResponsiveAd.AdImages",
+        "TextAd.AdImageHash",
+        "TextImageAd.AdImageHash",
+        "DynamicTextAd.AdImageHash",
+        "MobileAppAd.AdImageHash",
+        "MobileAppImageAd.AdImageHash"
+      ],
+      "reads": [
+        "Ads.get"
+      ],
+      "when_unavailable": "У формата изображений нет вовсе — правило к нему не применяется, и говорить об этом не нужно.",
+      "fields": [
+        "AdImageHash"
+      ],
+      "responsive": [
+        "ResponsiveAd.AdImages"
+      ]
+    },
+    "ad_videos": {
+      "comment": "Видеодополнения объявления в структуре его формата.",
+      "selection": "by_structure",
+      "structures": "ad",
+      "sources": [
+        "ResponsiveAd.VideoExtensions",
+        "TextAd.VideoExtension",
+        "MobileAppAd.VideoExtension"
+      ],
+      "reads": [
+        "Ads.get"
+      ],
+      "when_unavailable": "У формата видеодополнений нет вовсе — правило к нему не применяется.",
+      "fields": [
+        "VideoExtension"
+      ],
+      "responsive": [
+        "ResponsiveAd.VideoExtensions"
+      ]
+    },
+    "campaign_bidding_strategy": {
+      "comment": "Стратегия показа кампании в структуре её типа. Матрица раздела 2.5 называет BiddingStrategy поддержанной всеми типами, но лежит она в своей структуре у каждого — читать по пути ЕПК значит потерять остальные пять.",
+      "selection": "by_structure",
+      "structures": "campaign",
+      "field": "BiddingStrategy",
+      "sources": [
+        "UnifiedCampaign.BiddingStrategy",
+        "TextCampaign.BiddingStrategy",
+        "MobileAppCampaign.BiddingStrategy",
+        "CpmBannerCampaign.BiddingStrategy",
+        "SmartCampaign.BiddingStrategy",
+        "DynamicTextCampaign.BiddingStrategy"
+      ],
+      "reads": [
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "when_unavailable": "Стратегии нет ни у кампании, ни у привязанной пакетной — случай невозможный по построению; движок обязан сказать об этом, а не молчать.",
+      "fields": [
+        "BiddingStrategy"
+      ]
+    },
+    "ad_sitelinks_moderation": {
+      "comment": "Результат модерации набора быстрых ссылок объявления в структуре его формата. Ссылка, чей набор ждёт модерации или отклонён, кликов сейчас не получает — проверять её адрес значит объявлять срочную находку про то, чем никто не пользуется.",
+      "selection": "by_structure",
+      "structures": "ad",
+      "fields": [
+        "SitelinksModeration"
+      ],
+      "responsive": [
+        "ResponsiveAd.SitelinksModeration"
+      ],
+      "sources": [
+        "ResponsiveAd.SitelinksModeration",
+        "TextAd.SitelinksModeration",
+        "DynamicTextAd.SitelinksModeration",
+        "ShoppingAd.SitelinksModeration",
+        "ListingAd.SitelinksModeration"
+      ],
+      "reads": [
+        "Ads.get"
+      ],
+      "when_unavailable": "Результата модерации у формата нет — набор быстрых ссылок к нему не привязан, и проверять нечего."
+    },
+    "adgroup_store_url": {
+      "comment": "Адрес приложения в магазине — единственное место, куда ведёт клик по объявлению кампании продвижения приложения. Живёт не у объявления, а у группы, и одинаков во всех группах одной кампании. Структура здесь одна, поэтому перечень задан прямо, а не выведен по разделу справочника.",
+      "selection": "single",
+      "sources": [
+        "MobileAppAdGroup.StoreUrl"
+      ],
+      "carries_urls": true,
+      "reads": [
+        "AdGroups.get"
+      ],
+      "when_unavailable": "Группа не для продвижения приложения — адреса магазина у неё нет, и правило к ней не применяется.",
+      "fields": [
+        "StoreUrl"
+      ],
+      "writable": false,
+      "unwritable_because": "изменить её после создания нельзя"
+    },
+    "campaign_tracking_params": {
+      "comment": "Параметры URL кампании — вторая половина общей разметки наравне с TrackingParams группы. Справочник описывает это поле только у структуры единой перфоманс-кампании (раздел 2.3): ни в матрице 2.5, ни среди общих параметров раздела 2.2 его нет. Поэтому источник один, а у прочих типов разметка ставится на уровне группы — и починка обязана это различать, иначе она обещает запись в поле, которого у кампании нет.",
+      "selection": "single",
+      "sources": [
+        "UnifiedCampaign.TrackingParams"
+      ],
+      "reads": [
+        "Campaigns.get"
+      ],
+      "fields": [
+        "TrackingParams"
+      ],
+      "when_unavailable": "У типа кампании своего поля параметров URL нет — общая разметка ставится на уровне группы, TrackingParams. Это не дефект, а свойство типа, и говорить о нём не нужно."
+    }
+  },
+  "thresholds": {
+    "cpa_overrun_multiple": {
+      "value": 3,
+      "established": false,
+      "comment": "Рабочий порог предварительной проверки. Пользователь может изменить его по допустимой цене результата; это не универсальная граница прибыльности."
+    }
+  },
+  "benchmarks": {
+    "comment": "Грубый фильтр из HC-01, не норма. Числа зависят от тематики и региона, поэтому правила, опирающиеся на них, помечены contextual. Путь by_placement означает выбор ветки: у правил с областью placement — по AdNetworkType строки отчёта, у остальных — по паре Search × Network действующей стратегии. Зашивать ветку в правило нельзя: поисковая площадка-партнёр с CTR в один процент прошла бы сетевой порог в 0,3% и осталась незамеченной. Диапазоны цены клика названы в рублях и только для рублёвых кабинетов: денежные значения отчёта приходят в валюте пользователя, а столбца с валютой в отчёте нет. Правило, опирающееся на ориентир в валюте, обязано сверяться с Campaign.Currency — иначе обычная цена клика в долларах или тенге попадёт в находку из-за единиц измерения, а не из-за величины. У CTR этой беды нет: доля от валюты не зависит. Ветка by_placement выбирается по AdNetworkType строки отчёта, поэтому строка обязана этот сегмент нести. Пресеты campaigns, adgroups, ads и keywords сегментов не добавляют: в их строках поиск и сети уже сложены, и выбирать ветку не по чему — любая была бы произволом.",
+    "search": {
+      "ctr_min_percent": 5.0,
+      "cpc_rub": {
+        "min": 50,
+        "max": 200
+      }
+    },
+    "network": {
+      "ctr_min_percent": 0.3,
+      "cpc_rub": {
+        "min": 15,
+        "max": 50
+      }
+    }
+  },
+  "rules": [
+    {
+      "id": "counter_missing",
+      "title": "Тратит без счётчика Метрики: единой перфоманс-кампании",
+      "group": "money",
+      "severity": "urgent",
+      "scope": "campaign",
+      "needs": [
+        "fields",
+        "stats"
+      ],
+      "api_field": "UnifiedCampaign.CounterIds",
+      "reads": [
+        "Campaigns.get",
+        "Reports",
+        "Strategies.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "UNIFIED_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "ListingAd",
+          "ResponsiveAd",
+          "ShoppingAd",
+          "TextAd",
+          "TextAdBuilderAd",
+          "TextImageAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Campaign.Type",
+          "op": "eq",
+          "value": "UNIFIED_CAMPAIGN"
+        },
+        {
+          "field": "Reports.Cost",
+          "op": "gt",
+          "value": 0
+        }
+      ],
+      "condition": [
+        {
+          "field": "UnifiedCampaign.CounterIds",
+          "op": "routine",
+          "routine": "metrika_counters_absent"
+        }
+      ],
+      "fix": "Привязать счётчик Метрики кампании: Campaigns.update — CounterIds. Правило смотрит только на показывающиеся кампании: расход за период бывает и у остановленной, завершившейся или архивной — она потратила раньше, а сегодня тратить не может, и срочной находки не заслуживает.",
+      "fix_when_packaged": "Параметр принадлежит пакетной стратегии. Покажите связанные кампании; изменение пакета затронет их все. Если нужной команды нет, используйте интерфейс по UI_MAP.md. Не отвязывайте кампанию только ради правки поля.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "counter_missing_text",
+      "title": "Тратит без счётчика Метрики: текстово-графической кампании",
+      "group": "money",
+      "severity": "urgent",
+      "scope": "campaign",
+      "needs": [
+        "fields",
+        "stats"
+      ],
+      "api_field": "TextCampaign.CounterIds",
+      "reads": [
+        "Campaigns.get",
+        "Reports",
+        "Strategies.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "TEXT_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "CpcVideoAdBuilderAd",
+          "TextAd",
+          "TextAdBuilderAd",
+          "TextImageAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Campaign.Type",
+          "op": "eq",
+          "value": "TEXT_CAMPAIGN"
+        },
+        {
+          "field": "Reports.Cost",
+          "op": "gt",
+          "value": 0
+        }
+      ],
+      "condition": [
+        {
+          "field": "TextCampaign.CounterIds",
+          "op": "routine",
+          "routine": "metrika_counters_absent"
+        }
+      ],
+      "fix": "Привязать счётчик Метрики кампании: Campaigns.update — CounterIds. Правило смотрит только на показывающиеся кампании: расход за период бывает и у остановленной, завершившейся или архивной — она потратила раньше, а сегодня тратить не может, и срочной находки не заслуживает.",
+      "fix_when_packaged": "Параметр принадлежит пакетной стратегии. Покажите связанные кампании; изменение пакета затронет их все. Если нужной команды нет, используйте интерфейс по UI_MAP.md. Не отвязывайте кампанию только ради правки поля.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "counter_missing_dynamic",
+      "title": "Тратит без счётчика Метрики: кампании динамических объявлений",
+      "group": "money",
+      "severity": "urgent",
+      "scope": "campaign",
+      "needs": [
+        "fields",
+        "stats"
+      ],
+      "api_field": "DynamicTextCampaign.CounterIds",
+      "reads": [
+        "Campaigns.get",
+        "Reports",
+        "Strategies.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "DYNAMIC_TEXT_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "DynamicTextAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Campaign.Type",
+          "op": "eq",
+          "value": "DYNAMIC_TEXT_CAMPAIGN"
+        },
+        {
+          "field": "Reports.Cost",
+          "op": "gt",
+          "value": 0
+        }
+      ],
+      "condition": [
+        {
+          "field": "DynamicTextCampaign.CounterIds",
+          "op": "routine",
+          "routine": "metrika_counters_absent"
+        }
+      ],
+      "fix": "Привязать счётчик Метрики кампании: Campaigns.update — CounterIds. Правило смотрит только на показывающиеся кампании: расход за период бывает и у остановленной, завершившейся или архивной — она потратила раньше, а сегодня тратить не может, и срочной находки не заслуживает.",
+      "fix_when_packaged": "Параметр принадлежит пакетной стратегии. Покажите связанные кампании; изменение пакета затронет их все. Если нужной команды нет, используйте интерфейс по UI_MAP.md. Не отвязывайте кампанию только ради правки поля.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "counter_missing_cpm",
+      "title": "Тратит без счётчика Метрики: медийной кампании",
+      "group": "money",
+      "severity": "urgent",
+      "scope": "campaign",
+      "needs": [
+        "fields",
+        "stats"
+      ],
+      "api_field": "CpmBannerCampaign.CounterIds",
+      "reads": [
+        "Campaigns.get",
+        "Reports"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "CPM_BANNER_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "CpmBannerAdBuilderAd",
+          "CpmVideoAdBuilderAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Campaign.Type",
+          "op": "eq",
+          "value": "CPM_BANNER_CAMPAIGN"
+        },
+        {
+          "field": "Reports.Cost",
+          "op": "gt",
+          "value": 0
+        }
+      ],
+      "condition": [
+        {
+          "field": "CpmBannerCampaign.CounterIds",
+          "op": "empty"
+        }
+      ],
+      "fix": "Привязать счётчик Метрики кампании: Campaigns.update — CounterIds. Правило смотрит только на показывающиеся кампании: расход за период бывает и у остановленной, завершившейся или архивной — она потратила раньше, а сегодня тратить не может, и срочной находки не заслуживает.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "counter_missing_smart",
+      "title": "Тратит без счётчика Метрики: кампании смарт-баннеров",
+      "group": "money",
+      "severity": "urgent",
+      "scope": "campaign",
+      "needs": [
+        "fields",
+        "stats"
+      ],
+      "api_field": "SmartCampaign.CounterId",
+      "reads": [
+        "Campaigns.get",
+        "Reports",
+        "Strategies.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "SMART_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "SmartAdBuilderAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Campaign.Type",
+          "op": "eq",
+          "value": "SMART_CAMPAIGN"
+        },
+        {
+          "field": "Reports.Cost",
+          "op": "gt",
+          "value": 0
+        }
+      ],
+      "condition": [
+        {
+          "field": "SmartCampaign.CounterId",
+          "op": "routine",
+          "routine": "metrika_counters_absent"
+        }
+      ],
+      "fix": "Привязать счётчик Метрики кампании: Campaigns.update — CounterId в структуре SmartCampaign. Поле здесь в единственном числе: множественное CounterIds смарт-кампания не поддерживает, и запись с ним будет отвергнута. Правило смотрит только на показывающиеся кампании: расход за период бывает и у остановленной, завершившейся или архивной — она потратила раньше, а сегодня тратить не может, и срочной находки не заслуживает.",
+      "fix_when_packaged": "Параметр принадлежит пакетной стратегии. Покажите связанные кампании; изменение пакета затронет их все. Если нужной команды нет, используйте интерфейс по UI_MAP.md. Не отвязывайте кампанию только ради правки поля.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "priority_goals_missing",
+      "title": "Многоцелевая стратегия без ключевых целей: единой перфоманс-кампании",
+      "group": "strategy",
+      "severity": "urgent",
+      "scope": "campaign",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "UnifiedCampaign.PriorityGoals",
+      "reads": [
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "UNIFIED_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "ListingAd",
+          "ResponsiveAd",
+          "ShoppingAd",
+          "TextAd",
+          "TextAdBuilderAd",
+          "TextImageAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.Type",
+          "op": "eq",
+          "value": "UNIFIED_CAMPAIGN"
+        },
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "UnifiedCampaign.BiddingStrategy",
+          "op": "routine",
+          "routine": "multi_goal_strategy_active"
+        }
+      ],
+      "condition": [
+        {
+          "field": "UnifiedCampaign.PriorityGoals",
+          "op": "routine",
+          "routine": "priority_goals_absent"
+        }
+      ],
+      "fix": "Задать ключевые цели и их ценность: Campaigns.update — PriorityGoals. Одноцелевые стратегии сюда не попадают: справочник называет PriorityGoals используемым только у трёх структур, а одноцелевая AverageCpa хранит цель полем GoalId внутри самой структуры стратегии. Правило смотрит только на показывающиеся кампании.",
+      "fix_when_packaged": "Параметр принадлежит пакетной стратегии. Покажите связанные кампании; изменение пакета затронет их все. Если нужной команды нет, используйте интерфейс по UI_MAP.md. Не отвязывайте кампанию только ради правки поля.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "priority_goals_missing_text",
+      "title": "Многоцелевая стратегия без ключевых целей: текстово-графической кампании",
+      "group": "strategy",
+      "severity": "urgent",
+      "scope": "campaign",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "TextCampaign.PriorityGoals",
+      "reads": [
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "TEXT_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "CpcVideoAdBuilderAd",
+          "TextAd",
+          "TextAdBuilderAd",
+          "TextImageAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.Type",
+          "op": "eq",
+          "value": "TEXT_CAMPAIGN"
+        },
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "TextCampaign.BiddingStrategy",
+          "op": "routine",
+          "routine": "multi_goal_strategy_active"
+        }
+      ],
+      "condition": [
+        {
+          "field": "TextCampaign.PriorityGoals",
+          "op": "routine",
+          "routine": "priority_goals_absent"
+        }
+      ],
+      "fix": "Задать ключевые цели и их ценность: Campaigns.update — PriorityGoals. Одноцелевые стратегии сюда не попадают: справочник называет PriorityGoals используемым только у трёх структур, а одноцелевая AverageCpa хранит цель полем GoalId внутри самой структуры стратегии. Правило смотрит только на показывающиеся кампании.",
+      "fix_when_packaged": "Параметр принадлежит пакетной стратегии. Покажите связанные кампании; изменение пакета затронет их все. Если нужной команды нет, используйте интерфейс по UI_MAP.md. Не отвязывайте кампанию только ради правки поля.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "priority_goals_missing_dynamic",
+      "title": "Многоцелевая стратегия без ключевых целей: кампании динамических объявлений",
+      "group": "strategy",
+      "severity": "urgent",
+      "scope": "campaign",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "DynamicTextCampaign.PriorityGoals",
+      "reads": [
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "DYNAMIC_TEXT_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "DynamicTextAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.Type",
+          "op": "eq",
+          "value": "DYNAMIC_TEXT_CAMPAIGN"
+        },
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "DynamicTextCampaign.BiddingStrategy",
+          "op": "routine",
+          "routine": "multi_goal_strategy_active"
+        }
+      ],
+      "condition": [
+        {
+          "field": "DynamicTextCampaign.PriorityGoals",
+          "op": "routine",
+          "routine": "priority_goals_absent"
+        }
+      ],
+      "fix": "Задать ключевые цели и их ценность: Campaigns.update — PriorityGoals. Одноцелевые стратегии сюда не попадают: справочник называет PriorityGoals используемым только у трёх структур, а одноцелевая AverageCpa хранит цель полем GoalId внутри самой структуры стратегии. Правило смотрит только на показывающиеся кампании.",
+      "fix_when_packaged": "Параметр принадлежит пакетной стратегии. Покажите связанные кампании; изменение пакета затронет их все. Если нужной команды нет, используйте интерфейс по UI_MAP.md. Не отвязывайте кампанию только ради правки поля.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "priority_goals_missing_smart",
+      "title": "Многоцелевая стратегия без ключевых целей: кампании смарт-баннеров",
+      "group": "strategy",
+      "severity": "urgent",
+      "scope": "campaign",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "SmartCampaign.PriorityGoals",
+      "reads": [
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "SMART_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "SmartAdBuilderAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.Type",
+          "op": "eq",
+          "value": "SMART_CAMPAIGN"
+        },
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "SmartCampaign.BiddingStrategy",
+          "op": "routine",
+          "routine": "multi_goal_strategy_active"
+        }
+      ],
+      "condition": [
+        {
+          "field": "SmartCampaign.PriorityGoals",
+          "op": "routine",
+          "routine": "priority_goals_absent"
+        }
+      ],
+      "fix": "Задать ключевые цели и их ценность: Campaigns.update — PriorityGoals. Одноцелевые стратегии сюда не попадают: справочник называет PriorityGoals используемым только у трёх структур, а одноцелевая AverageCpa хранит цель полем GoalId внутри самой структуры стратегии. Правило смотрит только на показывающиеся кампании.",
+      "fix_when_packaged": "Параметр принадлежит пакетной стратегии. Покажите связанные кампании; изменение пакета затронет их все. Если нужной команды нет, используйте интерфейс по UI_MAP.md. Не отвязывайте кампанию только ради правки поля.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ads_rejected",
+      "title": "Объявление отклонено модерацией и показы остановлены",
+      "group": "moderation",
+      "severity": "urgent",
+      "scope": "ad",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "Ad.Status",
+      "reads": [
+        "Ads.get",
+        "Campaigns.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Ad.State",
+          "op": "eq",
+          "value": "OFF"
+        }
+      ],
+      "condition": [
+        {
+          "field": "Ad.Status",
+          "op": "eq",
+          "value": "REJECTED"
+        }
+      ],
+      "fix": "Прочитать StatusClarification, исправить причину — Ads.update — и отправить Ads.moderate. Стадии две, и без второй исправленное объявление остаётся отклонённым и без показов. Правило сужено до состояния OFF: у ON может показываться предыдущая версия (см. ad_rejected_while_serving), а SUSPENDED и ARCHIVED показывать и не должны — для архивного объявления модерация вообще невозможна. Архивные объявления исключены: модерацию они не принимают, как и любую другую операцию, — находка по ним предлагала бы отказ. Отправке предшествует правка, а пути записи у ещё не сконвертированного объявления нет вовсе: причину скилл называет, а исправляет и переотправляет человек — интерфейс по UI_MAP.md.",
+      "writes": {
+        "target": "ad",
+        "objects": [
+          "ad"
+        ],
+        "steps": [
+          {
+            "object": "ad",
+            "method": "Ads.update",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Ad.Status"
+            }
+          },
+          {
+            "object": "ad",
+            "method": "Ads.moderate",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Ad.Status"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ad_rejected_while_serving",
+      "title": "Правка объявления отклонена, а объявление числится включённым",
+      "group": "moderation",
+      "severity": "important",
+      "scope": "ad",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "Ad.Status",
+      "reads": [
+        "Ads.get",
+        "Campaigns.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Ad.State",
+          "op": "eq",
+          "value": "ON"
+        }
+      ],
+      "condition": [
+        {
+          "field": "Ad.Status",
+          "op": "eq",
+          "value": "REJECTED"
+        }
+      ],
+      "fix": "Разбирается человеком, автоматического действия нет. Показы могут идти прежней версией целиком, а могут быть остановлены — версия, допущенная автоматически и затем отклонённая, показы не возобновляет. Различить их состоянием объекта нечем: истории версий API не хранит.",
+      "question": "Правка объявления отклонена, а объявление в состоянии ON. Показывается прежняя версия или показы уже встали?",
+      "writes": {
+        "target": "none",
+        "objects": [],
+        "steps": []
+      }
+    },
+    {
+      "id": "campaign_rejected",
+      "title": "Кампания отклонена модерацией и показы остановлены",
+      "group": "moderation",
+      "severity": "urgent",
+      "scope": "campaign",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "Campaign.Status",
+      "reads": [
+        "Campaigns.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "OFF"
+        }
+      ],
+      "condition": [
+        {
+          "field": "Campaign.Status",
+          "op": "eq",
+          "value": "REJECTED"
+        }
+      ],
+      "fix": "Разобрать StatusClarification кампании: показов нет, пока статус REJECTED. Правило сужено до состояния OFF: остановленная владельцем, завершившаяся по дате, архивная и переведённая в специальный архив показывать и не должны, и срочной находкой их отклонение не является.",
+      "writes": {
+        "target": "none",
+        "objects": [],
+        "steps": []
+      }
+    },
+    {
+      "id": "href_broken",
+      "title": "Ссылка объявления или быстрой ссылки отдаёт не 200",
+      "group": "money",
+      "severity": "urgent",
+      "scope": "ad",
+      "needs": [
+        "fields",
+        "probe"
+      ],
+      "api_field": "Derived.ad_landing_href",
+      "reads": [
+        "Ads.get",
+        "Campaigns.get",
+        "Sitelinks.get",
+        "AdGroups.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "CPM_BANNER_CAMPAIGN",
+          "DYNAMIC_TEXT_CAMPAIGN",
+          "MOBILE_APP_CAMPAIGN",
+          "TEXT_CAMPAIGN",
+          "UNIFIED_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "CpcVideoAdBuilderAd",
+          "CpmBannerAdBuilderAd",
+          "CpmVideoAdBuilderAd",
+          "DynamicTextAd",
+          "ListingAd",
+          "MobileAppAd",
+          "MobileAppAdBuilderAd",
+          "MobileAppCpcVideoAdBuilderAd",
+          "MobileAppImageAd",
+          "ResponsiveAd",
+          "ShoppingAd",
+          "TextAd",
+          "TextAdBuilderAd",
+          "TextImageAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Ad.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Ad.Status",
+          "op": "in",
+          "value": [
+            "ACCEPTED",
+            "PREACCEPTED"
+          ]
+        }
+      ],
+      "condition": [
+        {
+          "any_of": [
+            {
+              "field": "Derived.ad_landing_href",
+              "op": "routine",
+              "routine": "http_status"
+            },
+            {
+              "field": "Derived.ad_sitelink_set",
+              "op": "routine",
+              "routine": "http_status"
+            },
+            {
+              "field": "Derived.adgroup_store_url",
+              "op": "routine",
+              "routine": "http_status"
+            }
+          ]
+        }
+      ],
+      "fix": "Заменить адрес. У комбинаторного объявления — Ads.update с ResponsiveAdUpdate; для набора быстрых ссылок — новый Sitelinks.add и Ads.update. У ещё не сконвертированного текстово-графического пути записи нет вовсе: находка ставится, а починка уходит в интерфейс по UI_MAP.md либо ждёт автоконвертации. Правило смотрит только на показывающиеся объявления: у остановленного или архивного битая ссылка денег не стоит. Проверяются только статусы, при которых показывается именно та версия, что вернул API: ACCEPTED и PREACCEPTED. И у ждущей модерации правки, и у отклонённой показы идёт предыдущая версия, а её ссылку API не отдаёт вовсе — проверять пришлось бы не тот адрес, который получает клики. Кампания-родитель тоже обязана показывать: включённое объявление внутри остановленной, завершившейся или архивной кампании оплаченных кликов не получает. У формата, который скилл не поддерживает для записи, находка ставится, а починка уходит в интерфейс по UI_MAP.md. Адрес приложения в магазине после создания группы изменить нельзя, поэтому его починка — не правка поля, а пересоздание группы: интерфейс по UI_MAP.md.",
+      "writes": {
+        "target": "ad",
+        "objects": [
+          "ad",
+          "sitelink_set"
+        ],
+        "steps": [
+          {
+            "object": "ad",
+            "method": "Ads.update",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Derived.ad_landing_href"
+            }
+          },
+          {
+            "object": "sitelink_set",
+            "method": "Sitelinks.add",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Derived.ad_sitelink_set"
+            }
+          },
+          {
+            "object": "sitelink_set",
+            "method": "Ads.update",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Derived.ad_sitelink_set"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "utm_missing",
+      "title": "До части ссылок группы не доходит UTM-разметка",
+      "group": "analytics",
+      "severity": "urgent",
+      "scope": "adgroup",
+      "needs": [
+        "fields",
+        "text"
+      ],
+      "api_field": "AdGroup.TrackingParams",
+      "reads": [
+        "Campaigns.get",
+        "AdGroups.get",
+        "Ads.get",
+        "Sitelinks.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        }
+      ],
+      "condition": [
+        {
+          "field": "AdGroup.TrackingParams",
+          "op": "routine",
+          "routine": "no_utm_anywhere"
+        }
+      ],
+      "fix": "Собрать разметку из имени кампании и записать в параметры URL. Общая разметка на кампании или группе закрывает вопрос разом; отдельные метки в ссылках считаются только за свою ссылку. Находка ставится, когда общей разметки нет и какая-то ссылка осталась непокрытой. Правило смотрит только на показывающиеся кампании. Состояние OFF сюда не годится: под ним лежат и черновик, и ожидание модерации, и отсутствие средств — тратить прямо сейчас такая кампания не может, а срочность обещает реакцию именно сегодня. Разметка ставится на уровне кампании там, где у типа есть своё поле параметров URL, — Campaigns.update, TrackingParams структуры типа; справочник описывает его только у единой перфоманс-кампании. У прочих типов такого поля нет, и разметка ставится на уровне группы: AdGroups.update — TrackingParams задаёт GET-параметры для ссылок всех объявлений группы. У ещё не сконвертированного объявления пути записи нет: починка ссылки уходит в интерфейс по UI_MAP.md. Ссылка, несущая собственную метку, общей разметкой не лечится: рядом с TrackingParams группы она даст двойную склейку (UTM-04), и такую ссылку надо очистить. Адрес быстрой ссылки при этом правится не полем объявления: набор целиком неизменяем, и очистка — это новый Sitelinks.add и перепривязка Ads.update — SitelinkSetId. Набор общий: один и тот же держат несколько кампаний, и правка на месте задела бы остальные — берётся копия, ключ owners.shared_fix. Собственную метку несёт и посадочная ссылка объявления, и чистится она правкой самого объявления — Ads.update: набор быстрых ссылок тут ни при чём, и починка, знающая только его, оставит склейку на месте.",
+      "fix_when_packaged": "У пакетной стратегии проверьте, где находится изменяемое поле и разрешена ли его правка без отвязки. Отвязка и выбор самостоятельной стратегии — отдельное изменение; оно не выполняется попутно. При отсутствии команды используйте UI_MAP.md.",
+      "writes": {
+        "target": "adgroup",
+        "objects": [
+          "ad",
+          "adgroup",
+          "campaign",
+          "sitelink_set"
+        ],
+        "steps": [
+          {
+            "object": "ad",
+            "method": "Ads.update",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Derived.ad_landing_href"
+            }
+          },
+          {
+            "object": "adgroup",
+            "method": "AdGroups.update",
+            "when": {
+              "kind": "field_absent",
+              "field": "Derived.campaign_tracking_params"
+            }
+          },
+          {
+            "object": "campaign",
+            "method": "Campaigns.update",
+            "when": {
+              "kind": "field_present",
+              "field": "Derived.campaign_tracking_params"
+            }
+          },
+          {
+            "object": "sitelink_set",
+            "method": "Sitelinks.add",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Derived.ad_sitelink_set"
+            }
+          },
+          {
+            "object": "sitelink_set",
+            "method": "Ads.update",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Derived.ad_sitelink_set"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "utm_double",
+      "title": "Разметка задана и в TrackingParams, и в самих ссылках",
+      "group": "analytics",
+      "severity": "urgent",
+      "scope": "adgroup",
+      "needs": [
+        "fields",
+        "text"
+      ],
+      "api_field": "AdGroup.TrackingParams",
+      "reads": [
+        "Campaigns.get",
+        "AdGroups.get",
+        "Ads.get",
+        "Sitelinks.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        }
+      ],
+      "condition": [
+        {
+          "field": "AdGroup.TrackingParams",
+          "op": "routine",
+          "routine": "utm_tagged_twice"
+        }
+      ],
+      "fix": "Оставить один источник разметки — по умолчанию TrackingParams, ссылки очистить. У ещё не сконвертированного объявления пути записи нет: находка ставится, а починка уходит в интерфейс по UI_MAP.md либо ждёт автоконвертации. Правило смотрит только на показывающиеся кампании. Состояние OFF сюда не годится: под ним лежат и черновик, и ожидание модерации, и отсутствие средств — тратить прямо сейчас такая кампания не может, а срочность обещает реакцию именно сегодня. Разметка ставится на уровне кампании там, где у типа есть своё поле параметров URL, — Campaigns.update, TrackingParams структуры типа; справочник описывает его только у единой перфоманс-кампании. У прочих типов такого поля нет, и разметка ставится на уровне группы: AdGroups.update — TrackingParams задаёт GET-параметры для ссылок всех объявлений группы. У ещё не сконвертированного объявления пути записи нет: починка ссылки уходит в интерфейс по UI_MAP.md. Очистка адреса быстрой ссылки — не правка поля объявления: набор целиком неизменяем, и делается новый Sitelinks.add с перепривязкой Ads.update — SitelinkSetId. Набор общий: один и тот же держат несколько кампаний, и правка на месте задела бы остальные — берётся копия, ключ owners.shared_fix. Собственную метку несёт и посадочная ссылка объявления, и чистится она правкой самого объявления — Ads.update: набор быстрых ссылок тут ни при чём, и починка, знающая только его, оставит склейку на месте.",
+      "fix_when_packaged": "У пакетной стратегии проверьте, где находится изменяемое поле и разрешена ли его правка без отвязки. Отвязка и выбор самостоятельной стратегии — отдельное изменение; оно не выполняется попутно. При отсутствии команды используйте UI_MAP.md.",
+      "writes": {
+        "target": "adgroup",
+        "objects": [
+          "ad",
+          "adgroup",
+          "campaign",
+          "sitelink_set"
+        ],
+        "steps": [
+          {
+            "object": "ad",
+            "method": "Ads.update",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Derived.ad_landing_href"
+            }
+          },
+          {
+            "object": "adgroup",
+            "method": "AdGroups.update",
+            "when": {
+              "kind": "field_absent",
+              "field": "Derived.campaign_tracking_params"
+            }
+          },
+          {
+            "object": "campaign",
+            "method": "Campaigns.update",
+            "when": {
+              "kind": "field_present",
+              "field": "Derived.campaign_tracking_params"
+            }
+          },
+          {
+            "object": "sitelink_set",
+            "method": "Sitelinks.add",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Derived.ad_sitelink_set"
+            }
+          },
+          {
+            "object": "sitelink_set",
+            "method": "Ads.update",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Derived.ad_sitelink_set"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "auto_apply_recommendations_on",
+      "title": "Автоприменение рекомендаций не отключено",
+      "group": "settings",
+      "severity": "important",
+      "scope": "campaign",
+      "needs": [
+        "human"
+      ],
+      "api_field": null,
+      "reads": [
+        "Campaigns.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [],
+      "condition": null,
+      "fix": "Отключить в интерфейсе — интерфейс по UI_MAP.md. Полем API настройка не отдаётся, подтвердить её можно только глазами.",
+      "question": "Автоприменение рекомендаций проверить нечем: поля в API нет. Оно выключено в кабинете?",
+      "writes": {
+        "target": "none",
+        "objects": [],
+        "steps": []
+      }
+    },
+    {
+      "id": "site_monitoring_off",
+      "title": "Мониторинг сайта выключен: у единой перфоманс-кампании",
+      "group": "settings",
+      "severity": "important",
+      "scope": "campaign",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "UnifiedCampaign.Settings[ENABLE_SITE_MONITORING].Value",
+      "reads": [
+        "Campaigns.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "UNIFIED_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "ListingAd",
+          "ResponsiveAd",
+          "ShoppingAd",
+          "TextAd",
+          "TextAdBuilderAd",
+          "TextImageAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.Type",
+          "op": "eq",
+          "value": "UNIFIED_CAMPAIGN"
+        }
+      ],
+      "condition": [
+        {
+          "field": "UnifiedCampaign.Settings[ENABLE_SITE_MONITORING].Value",
+          "op": "ne",
+          "value": "YES"
+        }
+      ],
+      "fix": "Включить: Campaigns.update — Settings ENABLE_SITE_MONITORING = YES.",
+      "fix_when_packaged": "У пакетной стратегии проверьте, где находится изменяемое поле и разрешена ли его правка без отвязки. Отвязка и выбор самостоятельной стратегии — отдельное изменение; оно не выполняется попутно. При отсутствии команды используйте UI_MAP.md.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "site_monitoring_off_text",
+      "title": "Мониторинг сайта выключен: у текстово-графической кампании",
+      "group": "settings",
+      "severity": "important",
+      "scope": "campaign",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "TextCampaign.Settings[ENABLE_SITE_MONITORING].Value",
+      "reads": [
+        "Campaigns.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "TEXT_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "CpcVideoAdBuilderAd",
+          "TextAd",
+          "TextAdBuilderAd",
+          "TextImageAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.Type",
+          "op": "eq",
+          "value": "TEXT_CAMPAIGN"
+        }
+      ],
+      "condition": [
+        {
+          "field": "TextCampaign.Settings[ENABLE_SITE_MONITORING].Value",
+          "op": "ne",
+          "value": "YES"
+        }
+      ],
+      "fix": "Включить: Campaigns.update — Settings ENABLE_SITE_MONITORING = YES.",
+      "fix_when_packaged": "У пакетной стратегии проверьте, где находится изменяемое поле и разрешена ли его правка без отвязки. Отвязка и выбор самостоятельной стратегии — отдельное изменение; оно не выполняется попутно. При отсутствии команды используйте UI_MAP.md.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "site_monitoring_off_dynamic",
+      "title": "Мониторинг сайта выключен: у кампании динамических объявлений",
+      "group": "settings",
+      "severity": "important",
+      "scope": "campaign",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "DynamicTextCampaign.Settings[ENABLE_SITE_MONITORING].Value",
+      "reads": [
+        "Campaigns.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "DYNAMIC_TEXT_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "DynamicTextAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.Type",
+          "op": "eq",
+          "value": "DYNAMIC_TEXT_CAMPAIGN"
+        }
+      ],
+      "condition": [
+        {
+          "field": "DynamicTextCampaign.Settings[ENABLE_SITE_MONITORING].Value",
+          "op": "ne",
+          "value": "YES"
+        }
+      ],
+      "fix": "Включить: Campaigns.update — Settings ENABLE_SITE_MONITORING = YES.",
+      "fix_when_packaged": "У пакетной стратегии проверьте, где находится изменяемое поле и разрешена ли его правка без отвязки. Отвязка и выбор самостоятельной стратегии — отдельное изменение; оно не выполняется попутно. При отсутствии команды используйте UI_MAP.md.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "site_monitoring_off_cpm",
+      "title": "Мониторинг сайта выключен: у медийной кампании",
+      "group": "settings",
+      "severity": "important",
+      "scope": "campaign",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "CpmBannerCampaign.Settings[ENABLE_SITE_MONITORING].Value",
+      "reads": [
+        "Campaigns.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "CPM_BANNER_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "CpmBannerAdBuilderAd",
+          "CpmVideoAdBuilderAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.Type",
+          "op": "eq",
+          "value": "CPM_BANNER_CAMPAIGN"
+        }
+      ],
+      "condition": [
+        {
+          "field": "CpmBannerCampaign.Settings[ENABLE_SITE_MONITORING].Value",
+          "op": "ne",
+          "value": "YES"
+        }
+      ],
+      "fix": "Включить: Campaigns.update — Settings ENABLE_SITE_MONITORING = YES.",
+      "fix_when_packaged": "У пакетной стратегии проверьте, где находится изменяемое поле и разрешена ли его правка без отвязки. Отвязка и выбор самостоятельной стратегии — отдельное изменение; оно не выполняется попутно. При отсутствии команды используйте UI_MAP.md.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "daily_budget_set",
+      "title": "Задан снимаемый с поддержки DailyBudget",
+      "group": "money",
+      "severity": "important",
+      "scope": "campaign",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "Campaign.DailyBudget",
+      "reads": [
+        "Campaigns.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "CPM_BANNER_CAMPAIGN",
+          "DYNAMIC_TEXT_CAMPAIGN",
+          "MOBILE_APP_CAMPAIGN",
+          "TEXT_CAMPAIGN",
+          "UNIFIED_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "CpcVideoAdBuilderAd",
+          "CpmBannerAdBuilderAd",
+          "CpmVideoAdBuilderAd",
+          "DynamicTextAd",
+          "ListingAd",
+          "MobileAppAd",
+          "MobileAppAdBuilderAd",
+          "MobileAppCpcVideoAdBuilderAd",
+          "MobileAppImageAd",
+          "ResponsiveAd",
+          "ShoppingAd",
+          "TextAd",
+          "TextAdBuilderAd",
+          "TextImageAd"
+        ]
+      },
+      "applies_to": [],
+      "condition": [
+        {
+          "field": "Campaign.DailyBudget",
+          "op": "not_empty"
+        }
+      ],
+      "fix": "Убрать DailyBudget, ограничивать расход через WeeklySpendLimit стратегии. Пишется Campaigns.update — DailyBudget очищается.",
+      "fix_when_packaged": "У пакетной стратегии проверьте, где находится изменяемое поле и разрешена ли его правка без отвязки. Отвязка и выбор самостоятельной стратегии — отдельное изменение; оно не выполняется попутно. При отсутствии команды используйте UI_MAP.md.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "placement_name_mismatch",
+      "title": "Плейсмент в имени кампании не совпадает со стратегией",
+      "group": "naming",
+      "severity": "important",
+      "scope": "campaign",
+      "needs": [
+        "fields",
+        "text"
+      ],
+      "api_field": "Campaign.Name",
+      "reads": [
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [],
+      "condition": [
+        {
+          "field": "Campaign.Name",
+          "op": "routine",
+          "routine": "placement_vs_strategy"
+        }
+      ],
+      "fix": "Привести в соответствие имя или пару Search × Network стратегии. Переименование идёт одной правкой вместе с разметкой: Campaigns.update меняет Name и TrackingParams разом, а у типов без собственного поля параметров URL — ещё и TrackingParams групп через AdGroups.update. Имя входит в utm_campaign буквально, и переименованная кампания продолжила бы отдавать клики под старым utm_campaign — см. NAME-08.",
+      "fix_when_packaged": "У пакетной стратегии проверьте, где находится изменяемое поле и разрешена ли его правка без отвязки. Отвязка и выбор самостоятельной стратегии — отдельное изменение; оно не выполняется попутно. При отсутствии команды используйте UI_MAP.md.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "campaign_name_off_convention",
+      "title": "Имя кампании не по конвенции четырёх слотов",
+      "group": "naming",
+      "severity": "important",
+      "scope": "campaign",
+      "needs": [
+        "text"
+      ],
+      "api_field": "Campaign.Name",
+      "reads": [
+        "Campaigns.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [],
+      "condition": [
+        {
+          "field": "Campaign.Name",
+          "op": "routine",
+          "routine": "name_off_convention"
+        }
+      ],
+      "fix": "Переименовать по конвенции — но только если пользователь эту конвенцию принял. Переименование идёт одной правкой вместе с разметкой: Campaigns.update меняет Name и TrackingParams разом, а у типов без собственного поля параметров URL — ещё и TrackingParams групп через AdGroups.update. Имя входит в utm_campaign буквально, и переименованная кампания продолжила бы отдавать клики под старым utm_campaign — см. NAME-08.",
+      "question": "Имя не по конвенции скилла. У вас своя схема именования или это отклонение?",
+      "fix_when_packaged": "У пакетной стратегии проверьте, где находится изменяемое поле и разрешена ли его правка без отвязки. Отвязка и выбор самостоятельной стратегии — отдельное изменение; оно не выполняется попутно. При отсутствии команды используйте UI_MAP.md.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "negative_keywords_empty",
+      "title": "У кампании нет минус-фраз",
+      "group": "targeting",
+      "severity": "important",
+      "scope": "campaign",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "Campaign.NegativeKeywords",
+      "reads": [
+        "Campaigns.get",
+        "NegativeKeywordSharedSets.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "DYNAMIC_TEXT_CAMPAIGN",
+          "MOBILE_APP_CAMPAIGN",
+          "SMART_CAMPAIGN",
+          "TEXT_CAMPAIGN",
+          "UNIFIED_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "CpcVideoAdBuilderAd",
+          "DynamicTextAd",
+          "ListingAd",
+          "MobileAppAd",
+          "MobileAppAdBuilderAd",
+          "MobileAppCpcVideoAdBuilderAd",
+          "MobileAppImageAd",
+          "ResponsiveAd",
+          "ShoppingAd",
+          "SmartAdBuilderAd",
+          "TextAd",
+          "TextAdBuilderAd",
+          "TextImageAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.Type",
+          "op": "in",
+          "value": [
+            "TEXT_CAMPAIGN",
+            "SMART_CAMPAIGN",
+            "MOBILE_APP_CAMPAIGN",
+            "DYNAMIC_TEXT_CAMPAIGN",
+            "UNIFIED_CAMPAIGN"
+          ]
+        }
+      ],
+      "condition": [
+        {
+          "field": "Campaign.NegativeKeywords",
+          "op": "routine",
+          "routine": "no_campaign_negatives"
+        }
+      ],
+      "fix": "Добавить стартовый слой минус-фраз: Campaigns.update — NegativeKeywords. Медийная кампания исключена: NegativeKeywords для неё не поддерживается, и поле отсутствует не по недосмотру. Подключённый набор из библиотеки считается наравне с собственным списком: находка ставится, только если пусты оба. Минусы можно держать и набором из библиотеки (K): тогда стартовый слой уходит в NegativeKeywordSharedSets.add, а привязка — в Campaigns.update — NegativeKeywordSharedSetIds, до трёх наборов. Набор общий: один и тот же держат несколько кампаний, и правка на месте задела бы остальные — берётся копия, ключ owners.shared_fix.",
+      "question": "Минус-фраз нет вовсе. Мусорный спрос отсекается иначе или минусовку не делали?",
+      "fix_when_packaged": "У пакетной стратегии проверьте, где находится изменяемое поле и разрешена ли его правка без отвязки. Отвязка и выбор самостоятельной стратегии — отдельное изменение; оно не выполняется попутно. При отсутствии команды используйте UI_MAP.md.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign",
+          "negative_shared_set"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update",
+            "when": {
+              "kind": "human_choice",
+              "option": "собственный список кампании",
+              "default": true
+            }
+          },
+          {
+            "object": "negative_shared_set",
+            "method": "NegativeKeywordSharedSets.add",
+            "when": {
+              "kind": "human_choice",
+              "option": "набор минус-фраз из библиотеки"
+            }
+          },
+          {
+            "object": "negative_shared_set",
+            "method": "Campaigns.update",
+            "when": {
+              "kind": "human_choice",
+              "option": "набор минус-фраз из библиотеки"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "negative_unfixed_stopword",
+      "title": "В минус-фразе кампании стоп-слово не зафиксировано через !",
+      "group": "targeting",
+      "severity": "important",
+      "scope": "campaign",
+      "needs": [
+        "text"
+      ],
+      "api_field": "Campaign.NegativeKeywords",
+      "reads": [
+        "Campaigns.get",
+        "NegativeKeywordSharedSets.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "DYNAMIC_TEXT_CAMPAIGN",
+          "MOBILE_APP_CAMPAIGN",
+          "SMART_CAMPAIGN",
+          "TEXT_CAMPAIGN",
+          "UNIFIED_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "CpcVideoAdBuilderAd",
+          "DynamicTextAd",
+          "ListingAd",
+          "MobileAppAd",
+          "MobileAppAdBuilderAd",
+          "MobileAppCpcVideoAdBuilderAd",
+          "MobileAppImageAd",
+          "ResponsiveAd",
+          "ShoppingAd",
+          "SmartAdBuilderAd",
+          "TextAd",
+          "TextAdBuilderAd",
+          "TextImageAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Campaign.Type",
+          "op": "in",
+          "value": [
+            "TEXT_CAMPAIGN",
+            "SMART_CAMPAIGN",
+            "MOBILE_APP_CAMPAIGN",
+            "DYNAMIC_TEXT_CAMPAIGN",
+            "UNIFIED_CAMPAIGN"
+          ]
+        }
+      ],
+      "condition": [
+        {
+          "field": "Campaign.NegativeKeywords",
+          "op": "routine",
+          "routine": "unfixed_stopword"
+        }
+      ],
+      "fix": "Поставить ! перед стоп-словом: без него слово выпадает и минус не срабатывает. Медийная кампания исключена: NegativeKeywords для неё не поддерживается, и поле отсутствует не по недосмотру. Стоп-слово бывает не в собственном списке кампании, а в подключённом наборе из библиотеки, и починка, адресованная кампании, оставит его на месте. Набор правится своим сервисом: NegativeKeywordSharedSets.add — копия с исправленной фразой, Campaigns.update — NegativeKeywordSharedSetIds — перепривязка кампании на неё. Набор общий: один и тот же держат несколько кампаний, и правка на месте задела бы остальные — берётся копия, ключ owners.shared_fix.",
+      "fix_when_packaged": "У пакетной стратегии проверьте, где находится изменяемое поле и разрешена ли его правка без отвязки. Отвязка и выбор самостоятельной стратегии — отдельное изменение; оно не выполняется попутно. При отсутствии команды используйте UI_MAP.md.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign",
+          "negative_shared_set"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Campaign.NegativeKeywords"
+            }
+          },
+          {
+            "object": "negative_shared_set",
+            "method": "NegativeKeywordSharedSets.add",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Campaign.NegativeKeywordSharedSetIds"
+            }
+          },
+          {
+            "object": "negative_shared_set",
+            "method": "Campaigns.update",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Campaign.NegativeKeywordSharedSetIds"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "adgroup_negative_unfixed_stopword",
+      "title": "В минус-фразе группы стоп-слово не зафиксировано через !",
+      "group": "targeting",
+      "severity": "important",
+      "scope": "adgroup",
+      "needs": [
+        "text"
+      ],
+      "api_field": "AdGroup.NegativeKeywords",
+      "reads": [
+        "AdGroups.get",
+        "NegativeKeywordSharedSets.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": [
+          "CpcVideoAdBuilderAd",
+          "CpmBannerAdBuilderAd",
+          "DynamicTextAd",
+          "ListingAd",
+          "MobileAppAd",
+          "MobileAppAdBuilderAd",
+          "MobileAppCpcVideoAdBuilderAd",
+          "MobileAppImageAd",
+          "ResponsiveAd",
+          "ShoppingAd",
+          "SmartAdBuilderAd",
+          "TextAd",
+          "TextAdBuilderAd",
+          "TextImageAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "AdGroup.Subtype",
+          "op": "not_in",
+          "value": [
+            "USER_PROFILE"
+          ]
+        }
+      ],
+      "condition": [
+        {
+          "field": "AdGroup.NegativeKeywords",
+          "op": "routine",
+          "routine": "unfixed_stopword"
+        }
+      ],
+      "fix": "Поставить ! перед стоп-словом: без него слово выпадает и минус не срабатывает, а минусовка выглядит сделанной. Уровень группы отдельный: минус, поставленный на кампании, сюда не заглядывает. Стоп-слово бывает не в собственном списке группы, а в подключённом наборе из библиотеки, и починка, адресованная группе, оставит его на месте. Набор правится своим сервисом: NegativeKeywordSharedSets.add — копия с исправленной фразой, AdGroups.update — NegativeKeywordSharedSetIds — перепривязка группы на неё. Набор общий: один и тот же держат несколько кампаний, и правка на месте задела бы остальные — берётся копия, ключ owners.shared_fix. Медийная группа с нацеливанием по профилю пользователей исключена, а группа медийных видеообъявлений уходит из применимости сама: минус-фразы в них не допускаются вовсе — ни своим списком, ни набором.",
+      "writes": {
+        "target": "adgroup",
+        "objects": [
+          "adgroup",
+          "negative_shared_set"
+        ],
+        "steps": [
+          {
+            "object": "adgroup",
+            "method": "AdGroups.update",
+            "when": {
+              "kind": "carrier_in",
+              "field": "AdGroup.NegativeKeywords"
+            }
+          },
+          {
+            "object": "negative_shared_set",
+            "method": "NegativeKeywordSharedSets.add",
+            "when": {
+              "kind": "carrier_in",
+              "field": "AdGroup.NegativeKeywordSharedSetIds"
+            }
+          },
+          {
+            "object": "negative_shared_set",
+            "method": "AdGroups.update",
+            "when": {
+              "kind": "carrier_in",
+              "field": "AdGroup.NegativeKeywordSharedSetIds"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "keyword_negative_unfixed_stopword",
+      "title": "В минус-словах ключевой фразы стоп-слово не зафиксировано через !",
+      "group": "targeting",
+      "severity": "important",
+      "scope": "keyword",
+      "needs": [
+        "text"
+      ],
+      "api_field": "Keyword.Keyword",
+      "reads": [
+        "Keywords.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [],
+      "condition": [
+        {
+          "field": "Keyword.Keyword",
+          "op": "routine",
+          "routine": "unfixed_stopword"
+        }
+      ],
+      "fix": "Поставить ! перед стоп-словом: без него слово выпадает и минус не срабатывает, а минусовка выглядит сделанной. Минус-слова фразы живут внутри её собственного текста и на уровнях выше не видны. Минус-слова лежат внутри текста самой фразы, поэтому правится она целиком: Keywords.update — Keyword.",
+      "writes": {
+        "target": "keyword",
+        "objects": [
+          "keyword"
+        ],
+        "steps": [
+          {
+            "object": "keyword",
+            "method": "Keywords.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sitelinks_missing",
+      "title": "У объявления нет набора быстрых ссылок",
+      "group": "extensions",
+      "severity": "important",
+      "scope": "ad",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "Derived.ad_sitelink_set",
+      "reads": [
+        "Ads.get",
+        "Campaigns.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "DYNAMIC_TEXT_CAMPAIGN",
+          "TEXT_CAMPAIGN",
+          "UNIFIED_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "DynamicTextAd",
+          "ListingAd",
+          "ResponsiveAd",
+          "ShoppingAd",
+          "TextAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Ad.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Derived.ad_sitelink_set",
+          "op": "routine",
+          "routine": "sitelinks_supported_here"
+        }
+      ],
+      "condition": [
+        {
+          "field": "Derived.ad_sitelink_set",
+          "op": "empty"
+        }
+      ],
+      "fix": "Создать набор Sitelinks.add и привязать Ads.update — SitelinkSetId. Объявление без Href — только с BusinessId — исключено: SitelinkSetId допустим лишь при наличии Href, и запись отвергнут. У формата, который скилл не поддерживает для записи, находка ставится, а починка уходит в интерфейс по UI_MAP.md.",
+      "writes": {
+        "target": "ad",
+        "objects": [
+          "sitelink_set"
+        ],
+        "steps": [
+          {
+            "object": "sitelink_set",
+            "method": "Sitelinks.add"
+          },
+          {
+            "object": "sitelink_set",
+            "method": "Ads.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "callouts_missing",
+      "title": "У объявления нет уточнений",
+      "group": "extensions",
+      "severity": "important",
+      "scope": "ad",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "Derived.ad_extensions",
+      "reads": [
+        "Ads.get",
+        "Campaigns.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "DYNAMIC_TEXT_CAMPAIGN",
+          "TEXT_CAMPAIGN",
+          "UNIFIED_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "DynamicTextAd",
+          "ListingAd",
+          "ResponsiveAd",
+          "ShoppingAd",
+          "TextAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Ad.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        }
+      ],
+      "condition": [
+        {
+          "field": "Derived.ad_extensions",
+          "op": "empty"
+        }
+      ],
+      "fix": "Создать уточнения AdExtensions.add и привязать Ads.update — CalloutSetting. У формата, который скилл не поддерживает для записи, находка ставится, а починка уходит в интерфейс по UI_MAP.md.",
+      "question": "Уточнений нет. Их сознательно не ставили или про них забыли?",
+      "writes": {
+        "target": "ad",
+        "objects": [
+          "callout_set"
+        ],
+        "steps": [
+          {
+            "object": "callout_set",
+            "method": "AdExtensions.add"
+          },
+          {
+            "object": "callout_set",
+            "method": "Ads.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "extensions_drift",
+      "title": "Объявления одной кампании несут разные наборы дополнений",
+      "group": "extensions",
+      "severity": "important",
+      "scope": "campaign",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "Derived.ad_sitelink_set",
+      "reads": [
+        "Ads.get",
+        "Campaigns.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "DYNAMIC_TEXT_CAMPAIGN",
+          "TEXT_CAMPAIGN",
+          "UNIFIED_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "DynamicTextAd",
+          "ListingAd",
+          "ResponsiveAd",
+          "ShoppingAd",
+          "TextAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Ad.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        }
+      ],
+      "condition": [
+        {
+          "any_of": [
+            {
+              "field": "Derived.ad_sitelink_set",
+              "op": "routine",
+              "routine": "extension_sets_differ"
+            },
+            {
+              "field": "Derived.ad_extensions",
+              "op": "routine",
+              "routine": "extension_sets_differ"
+            }
+          ]
+        }
+      ],
+      "fix": "Выровнять наборы по кампании: наследования в API нет, набор пишется каждому комбинаторному объявлению отдельно. Объявления других форматов скилл не переписывает — скилл пишет только ResponsiveAd, — и выравнивание их наборов уходит в интерфейс по UI_MAP.md.",
+      "question": "Наборы дополнений в кампании разные. Это переопределение на группе или объявление добавили позже и набор не дописали?",
+      "writes": {
+        "target": "ad",
+        "objects": [
+          "callout_set",
+          "sitelink_set"
+        ],
+        "steps": [
+          {
+            "object": "callout_set",
+            "method": "AdExtensions.add",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Derived.ad_extensions"
+            }
+          },
+          {
+            "object": "callout_set",
+            "method": "Ads.update",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Derived.ad_extensions"
+            }
+          },
+          {
+            "object": "sitelink_set",
+            "method": "Sitelinks.add",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Derived.ad_sitelink_set"
+            }
+          },
+          {
+            "object": "sitelink_set",
+            "method": "Ads.update",
+            "when": {
+              "kind": "carrier_in",
+              "field": "Derived.ad_sitelink_set"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "pool_underfilled",
+      "title": "Комплект комбинаторного объявления недозаполнен",
+      "group": "creative",
+      "severity": "important",
+      "scope": "ad",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "ResponsiveAd.Titles",
+      "reads": [
+        "Ads.get",
+        "Campaigns.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "UNIFIED_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "ResponsiveAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Ad.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Ad.Type",
+          "op": "eq",
+          "value": "RESPONSIVE_AD"
+        }
+      ],
+      "condition": [
+        {
+          "any_of": [
+            {
+              "field": "ResponsiveAd.Titles",
+              "op": "len_lt",
+              "value": 7
+            },
+            {
+              "field": "ResponsiveAd.Texts",
+              "op": "len_lt",
+              "value": 3
+            }
+          ]
+        }
+      ],
+      "fix": "Дозаполнить пул до 7 заголовков и 3 текстов — если пул не урезан намеренно.",
+      "question": "В комплекте меньше элементов, чем позволяет формат. Пул урезан намеренно или это след автоконвертации?",
+      "writes": {
+        "target": "ad",
+        "objects": [
+          "ad"
+        ],
+        "steps": [
+          {
+            "object": "ad",
+            "method": "Ads.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "network_images_missing",
+      "title": "У кампании с показами в сетях нет изображений",
+      "group": "creative",
+      "severity": "important",
+      "scope": "ad",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "Derived.ad_images",
+      "reads": [
+        "Ads.get",
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "contextual": false,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "DYNAMIC_TEXT_CAMPAIGN",
+          "MOBILE_APP_CAMPAIGN",
+          "TEXT_CAMPAIGN",
+          "UNIFIED_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "DynamicTextAd",
+          "MobileAppAd",
+          "MobileAppImageAd",
+          "ResponsiveAd",
+          "TextAd",
+          "TextImageAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Ad.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Derived.campaign_bidding_strategy",
+          "op": "routine",
+          "routine": "network_delivery_enabled"
+        }
+      ],
+      "condition": [
+        {
+          "field": "Derived.ad_images",
+          "op": "empty"
+        }
+      ],
+      "fix": "Загрузить AdImages.add и привязать Ads.update — AdImageHashes, от 1 до 5. У объявления старого формата пути записи нет: находка ставится, а починка уходит в интерфейс по UI_MAP.md.",
+      "writes": {
+        "target": "ad",
+        "objects": [
+          "ad_image"
+        ],
+        "steps": [
+          {
+            "object": "ad_image",
+            "method": "AdImages.add"
+          },
+          {
+            "object": "ad_image",
+            "method": "Ads.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "network_video_missing",
+      "title": "У кампании с показами в сетях нет видео",
+      "group": "creative",
+      "severity": "important",
+      "scope": "ad",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "Derived.ad_videos",
+      "reads": [
+        "Ads.get",
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": [
+          "MOBILE_APP_CAMPAIGN",
+          "TEXT_CAMPAIGN",
+          "UNIFIED_CAMPAIGN"
+        ],
+        "ad_formats": [
+          "MobileAppAd",
+          "ResponsiveAd",
+          "TextAd"
+        ]
+      },
+      "applies_to": [
+        {
+          "field": "Ad.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Campaign.State",
+          "op": "eq",
+          "value": "ON"
+        },
+        {
+          "field": "Derived.campaign_bidding_strategy",
+          "op": "routine",
+          "routine": "network_delivery_enabled"
+        }
+      ],
+      "condition": [
+        {
+          "field": "Derived.ad_videos",
+          "op": "empty"
+        }
+      ],
+      "fix": "Загрузить AdVideos.add, собрать Creatives.add и привязать VideoExtensionIds. У объявления старого формата пути записи нет: находка ставится, а починка уходит в интерфейс по UI_MAP.md.",
+      "question": "Видео в сетях нет. Его не делали или сняли из-за расхода без отдачи?",
+      "writes": {
+        "target": "ad",
+        "objects": [
+          "ad_video"
+        ],
+        "steps": [
+          {
+            "object": "ad_video",
+            "method": "AdVideos.add"
+          },
+          {
+            "object": "ad_video",
+            "method": "Creatives.add"
+          },
+          {
+            "object": "ad_video",
+            "method": "Ads.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "placement_over_target_cpa",
+      "title": "Площадка конвертирует, но кратно дороже целевой цены конверсии",
+      "group": "money",
+      "severity": "important",
+      "scope": "placement",
+      "needs": [
+        "stats"
+      ],
+      "api_field": "Campaign.ExcludedSites",
+      "reads": [
+        "Reports",
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Reports.Conversions",
+          "op": "gt",
+          "value": 0
+        }
+      ],
+      "condition": [
+        {
+          "field": "Derived.actual_cpa",
+          "op": "ratio_gt",
+          "ref": "target_cpa",
+          "times_threshold": "cpa_overrun_multiple"
+        }
+      ],
+      "fix": "Запретить площадку: Campaigns.update — ExcludedSites, поле заменяется целиком.",
+      "question": "Площадка дороже цели по CPA. Наблюдений хватает, чтобы это не было случайностью?",
+      "fix_when_packaged": "У пакетной стратегии проверьте, где находится изменяемое поле и разрешена ли его правка без отвязки. Отвязка и выбор самостоятельной стратегии — отдельное изменение; оно не выполняется попутно. При отсутствии команды используйте UI_MAP.md.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "placement_spend_without_conversions",
+      "title": "Площадка расходует бюджет и не даёт конверсий",
+      "group": "money",
+      "severity": "important",
+      "scope": "placement",
+      "needs": [
+        "stats"
+      ],
+      "api_field": "Campaign.ExcludedSites",
+      "reads": [
+        "Reports",
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Reports.Conversions",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "field": "Reports.Conversions",
+          "op": "routine",
+          "routine": "zero_conversions_significant"
+        }
+      ],
+      "condition": [
+        {
+          "field": "Reports.Cost",
+          "op": "ratio_gt",
+          "ref": "target_cpa",
+          "times_threshold": "cpa_overrun_multiple"
+        }
+      ],
+      "fix": "Запретить площадку: Campaigns.update — ExcludedSites, поле заменяется целиком.",
+      "question": "Площадка потратила больше цели по CPA и не дала ни одной конверсии. Наблюдений хватает, чтобы это не было случайностью?",
+      "fix_when_packaged": "У пакетной стратегии проверьте, где находится изменяемое поле и разрешена ли его правка без отвязки. Отвязка и выбор самостоятельной стратегии — отдельное изменение; оно не выполняется попутно. При отсутствии команды используйте UI_MAP.md.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "placement_low_ctr",
+      "title": "Площадка с большим числом показов и низким CTR",
+      "group": "money",
+      "severity": "important",
+      "scope": "placement",
+      "needs": [
+        "stats"
+      ],
+      "api_field": "Campaign.ExcludedSites",
+      "reads": [
+        "Reports",
+        "Campaigns.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Reports.AdNetworkType",
+          "op": "not_empty"
+        },
+        {
+          "field": "Reports.Impressions",
+          "op": "routine",
+          "routine": "enough_impressions"
+        }
+      ],
+      "condition": [
+        {
+          "field": "Reports.Ctr",
+          "op": "lt_benchmark",
+          "benchmark": "by_placement.ctr_min_percent"
+        }
+      ],
+      "fix": "Запретить площадку: низкий CTR деградирует статистику и удорожает клики на поиске. Запрет площадки — Campaigns.update, ExcludedSites; поле заменяется целиком.",
+      "question": "Площадка показывает низкий CTR. Отключаем — или показов ещё слишком мало для вывода?",
+      "fix_when_packaged": "У пакетной стратегии проверьте, где находится изменяемое поле и разрешена ли его правка без отвязки. Отвязка и выбор самостоятельной стратегии — отдельное изменение; оно не выполняется попутно. При отсутствии команды используйте UI_MAP.md.",
+      "writes": {
+        "target": "campaign",
+        "objects": [
+          "campaign"
+        ],
+        "steps": [
+          {
+            "object": "campaign",
+            "method": "Campaigns.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "keyword_over_target_cpa",
+      "title": "Фраза конвертирует, но кратно дороже целевой цены конверсии",
+      "group": "money",
+      "severity": "important",
+      "scope": "keyword",
+      "needs": [
+        "stats"
+      ],
+      "api_field": "Keyword.Keyword",
+      "reads": [
+        "Reports",
+        "Keywords.get",
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Reports.Conversions",
+          "op": "gt",
+          "value": 0
+        }
+      ],
+      "condition": [
+        {
+          "field": "Derived.actual_cpa",
+          "op": "ratio_gt",
+          "ref": "target_cpa",
+          "times_threshold": "cpa_overrun_multiple"
+        }
+      ],
+      "fix": "Сначала посмотреть поисковые запросы внутри фразы и минусовать; отключать фразу — крайняя мера. Минус-слова лежат внутри текста фразы, и добавляются они правкой самой фразы: Keywords.update. Отключение — Keywords.suspend, и это именно крайняя мера: остановленная фраза перестаёт собирать данные.",
+      "question": "Фраза расходует выше цели. Проблема в самой фразе или в запросах внутри неё?",
+      "writes": {
+        "target": "keyword",
+        "objects": [
+          "keyword"
+        ],
+        "steps": [
+          {
+            "object": "keyword",
+            "method": "Keywords.update",
+            "when": {
+              "kind": "human_choice",
+              "option": "минусовка запросов внутри фразы",
+              "default": true
+            }
+          },
+          {
+            "object": "keyword",
+            "method": "Keywords.suspend",
+            "when": {
+              "kind": "human_choice",
+              "option": "отключение фразы"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "keyword_spend_without_conversions",
+      "title": "Фраза расходует бюджет и не даёт конверсий",
+      "group": "money",
+      "severity": "important",
+      "scope": "keyword",
+      "needs": [
+        "stats"
+      ],
+      "api_field": "Keyword.Keyword",
+      "reads": [
+        "Reports",
+        "Keywords.get",
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Reports.Conversions",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "field": "Reports.Conversions",
+          "op": "routine",
+          "routine": "zero_conversions_significant"
+        }
+      ],
+      "condition": [
+        {
+          "field": "Reports.Cost",
+          "op": "ratio_gt",
+          "ref": "target_cpa",
+          "times_threshold": "cpa_overrun_multiple"
+        }
+      ],
+      "fix": "Сначала посмотреть поисковые запросы внутри фразы и минусовать; отключать фразу — крайняя мера. Минус-слова лежат внутри текста фразы, и добавляются они правкой самой фразы: Keywords.update. Отключение — Keywords.suspend, и это именно крайняя мера: остановленная фраза перестаёт собирать данные.",
+      "question": "Фраза потратила больше цели по CPA и не дала ни одной конверсии. Наблюдений хватает, чтобы это не было случайностью?",
+      "writes": {
+        "target": "keyword",
+        "objects": [
+          "keyword"
+        ],
+        "steps": [
+          {
+            "object": "keyword",
+            "method": "Keywords.update",
+            "when": {
+              "kind": "human_choice",
+              "option": "минусовка запросов внутри фразы",
+              "default": true
+            }
+          },
+          {
+            "object": "keyword",
+            "method": "Keywords.suspend",
+            "when": {
+              "kind": "human_choice",
+              "option": "отключение фразы"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ctr_below_benchmark",
+      "title": "CTR ниже грубого ориентира плейсмента",
+      "group": "money",
+      "severity": "advisory",
+      "scope": "ad",
+      "needs": [
+        "stats"
+      ],
+      "api_field": "Reports.Ctr",
+      "reads": [
+        "Reports"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Reports.AdNetworkType",
+          "op": "not_empty"
+        }
+      ],
+      "condition": [
+        {
+          "field": "Reports.Ctr",
+          "op": "lt_benchmark",
+          "benchmark": "by_placement.ctr_min_percent"
+        }
+      ],
+      "fix": "Разобрать тексты и таргетинг группы; ориентир грубый и тематикой не подтверждён. Строка отчёта обязана нести AdNetworkType: пресет ads сегментов не добавляет, и в его строке CTR поиска и сетей уже смешаны — сравнивать такую величину с ориентиром любого из двух плейсментов бессмысленно.",
+      "question": "CTR ниже ориентира для этого плейсмента. Для вашей тематики это норма?",
+      "writes": {
+        "target": "none",
+        "objects": [],
+        "steps": []
+      }
+    },
+    {
+      "id": "cpc_out_of_range",
+      "title": "Средняя цена клика вне грубого диапазона плейсмента",
+      "group": "money",
+      "severity": "advisory",
+      "scope": "ad",
+      "needs": [
+        "stats"
+      ],
+      "api_field": "Reports.AvgCpc",
+      "reads": [
+        "Reports",
+        "Campaigns.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Reports.AdNetworkType",
+          "op": "not_empty"
+        },
+        {
+          "field": "Campaign.Currency",
+          "op": "eq",
+          "value": "RUB"
+        }
+      ],
+      "condition": [
+        {
+          "field": "Reports.AvgCpc",
+          "op": "outside_range",
+          "benchmark": "by_placement.cpc_rub"
+        }
+      ],
+      "fix": "Сверить со ставками и конкуренцией; диапазон грубый и от региона зависит сильно. Правило применяется только к рублёвым кабинетам: отчёт отдаёт деньги в валюте пользователя и столбца с валютой не имеет, а ориентиры интервью названы в рублях. Для кабинета в другой валюте установленного диапазона нет, и правило молчит — придумывать курс пересчёта значило бы выдать выдумку за ориентир. Строка отчёта обязана нести AdNetworkType: у пресета ads поиск и сети смешаны в одной строке.",
+      "question": "Цена клика вне ориентировочного диапазона. Так и задумано по ставкам?",
+      "writes": {
+        "target": "none",
+        "objects": [],
+        "steps": []
+      }
+    },
+    {
+      "id": "autotargeting_not_zeroed",
+      "title": "При ручных ставках автотаргетингу не занулена ставка",
+      "group": "bids",
+      "severity": "advisory",
+      "scope": "keyword",
+      "needs": [
+        "fields"
+      ],
+      "api_field": "KeywordBids.Bid",
+      "reads": [
+        "Keywords.get",
+        "KeywordBids.get",
+        "Campaigns.get",
+        "Dictionaries.get",
+        "Strategies.get"
+      ],
+      "contextual": true,
+      "level": "specialist",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Derived.campaign_bidding_strategy",
+          "op": "routine",
+          "routine": "manual_search_bidding"
+        },
+        {
+          "field": "Keyword.Keyword",
+          "op": "routine",
+          "routine": "is_autotargeting_entry"
+        }
+      ],
+      "condition": [
+        {
+          "field": "KeywordBids.Bid",
+          "op": "routine",
+          "routine": "autotargeting_bid_above_minimum"
+        }
+      ],
+      "fix": "Поставить автотаргетингу минимальную ставку: KeywordBids.set, нижняя граница — MinimumBid валюты кабинета. Правило смотрит только на запись автотаргетинга: у обычной фразы ставка выше минимума — норма, и объявлять её находкой значило бы отметить весь список фраз кампании.",
+      "question": "Автотаргетинг работает по обычной ставке. Его оставили намеренно?",
+      "writes": {
+        "target": "keyword",
+        "objects": [
+          "keyword_bid"
+        ],
+        "steps": [
+          {
+            "object": "keyword_bid",
+            "method": "KeywordBids.set"
+          }
+        ]
+      }
+    },
+    {
+      "id": "autotargeting_unreachable",
+      "title": "Автотаргетинг тянет расход, но рычага зануления нет",
+      "group": "bids",
+      "severity": "advisory",
+      "scope": "campaign",
+      "needs": [
+        "fields",
+        "stats"
+      ],
+      "api_field": "KeywordBids.Bid",
+      "reads": [
+        "Campaigns.get",
+        "Reports",
+        "Strategies.get"
+      ],
+      "contextual": true,
+      "level": "specialist",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Derived.campaign_bidding_strategy",
+          "op": "routine",
+          "routine": "pay_for_conversion_active"
+        }
+      ],
+      "condition": [
+        {
+          "field": "Reports.Cost",
+          "op": "routine",
+          "routine": "autotargeting_spend_share"
+        }
+      ],
+      "fix": "Действия на ставке нет: оплата за конверсии отключает ручное управление. Довод — сменить стратегию.",
+      "question": "Автотаргетинг расходует заметную долю. Готовы обсудить смену стратегии — занулить его при оплате за конверсии нельзя?",
+      "writes": {
+        "target": "none",
+        "objects": [],
+        "steps": []
+      }
+    },
+    {
+      "id": "promotion_absent",
+      "title": "У кампании нет промоакции",
+      "group": "extensions",
+      "severity": "advisory",
+      "scope": "campaign",
+      "needs": [
+        "human"
+      ],
+      "api_field": null,
+      "reads": [
+        "Campaigns.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [],
+      "condition": null,
+      "fix": "Через API промоакция недоступна целиком — интерфейс по UI_MAP.md. Скилл только предлагает найти акцию.",
+      "question": "Промоакции нет. Есть что предложить — бесплатную консультацию, замер, тест-драйв?",
+      "writes": {
+        "target": "none",
+        "objects": [],
+        "steps": []
+      }
+    },
+    {
+      "id": "adgroup_naming_mixed",
+      "title": "Группы кабинета названы по разным схемам",
+      "group": "naming",
+      "severity": "advisory",
+      "scope": "account",
+      "needs": [
+        "text"
+      ],
+      "api_field": "AdGroup.Name",
+      "reads": [
+        "AdGroups.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [],
+      "condition": [
+        {
+          "field": "AdGroup.Name",
+          "op": "routine",
+          "routine": "naming_schemes_mixed"
+        }
+      ],
+      "fix": "Привести к одной схеме — той, что уже преобладает в кабинете. Пишется AdGroups.update — Name.",
+      "question": "В кабинете смешаны схемы именования групп. Приводим к одной?",
+      "writes": {
+        "target": "adgroup",
+        "objects": [
+          "adgroup"
+        ],
+        "steps": [
+          {
+            "object": "adgroup",
+            "method": "AdGroups.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "or_sequence_in_keyword",
+      "title": "В ключевой фразе стоит OR-последовательность",
+      "group": "targeting",
+      "severity": "advisory",
+      "scope": "keyword",
+      "needs": [
+        "text"
+      ],
+      "api_field": "Keyword.Keyword",
+      "reads": [
+        "Keywords.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [],
+      "condition": [
+        {
+          "field": "Keyword.Keyword",
+          "op": "routine",
+          "routine": "or_sequence"
+        }
+      ],
+      "fix": "Не трогать. Скилл такие фразы сохраняет как есть: работает ли запись через API, не проверено.",
+      "question": "Во фразах кабинета есть OR-последовательности. Оставляем как есть — переписывать их скилл не берётся?",
+      "writes": {
+        "target": "none",
+        "objects": [],
+        "steps": []
+      }
+    },
+    {
+      "id": "adgroup_over_target_cpa",
+      "title": "Группа конвертирует, но кратно дороже целевой цены конверсии",
+      "group": "money",
+      "severity": "important",
+      "scope": "adgroup",
+      "needs": [
+        "stats"
+      ],
+      "api_field": "AdGroup.Id",
+      "reads": [
+        "Reports",
+        "AdGroups.get",
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Reports.Conversions",
+          "op": "gt",
+          "value": 0
+        }
+      ],
+      "condition": [
+        {
+          "field": "Derived.actual_cpa",
+          "op": "ratio_gt",
+          "ref": "target_cpa",
+          "times_threshold": "cpa_overrun_multiple"
+        }
+      ],
+      "fix": "Разобрать состав фраз и таргетинг группы: сначала поисковые запросы и минусовка, отключение группы — крайняя мера. Минусовка на уровне группы — AdGroups.update, NegativeKeywords; поле заменяется целиком, поэтому текущее читается до записи.",
+      "question": "Группа конвертирует дороже цели по CPA. Наблюдений хватает, чтобы это не было случайностью?",
+      "writes": {
+        "target": "adgroup",
+        "objects": [
+          "adgroup"
+        ],
+        "steps": [
+          {
+            "object": "adgroup",
+            "method": "AdGroups.update"
+          }
+        ]
+      }
+    },
+    {
+      "id": "adgroup_spend_without_conversions",
+      "title": "Группа расходует бюджет и не даёт конверсий",
+      "group": "money",
+      "severity": "important",
+      "scope": "adgroup",
+      "needs": [
+        "stats"
+      ],
+      "api_field": "AdGroup.Id",
+      "reads": [
+        "Reports",
+        "AdGroups.get",
+        "Campaigns.get",
+        "Strategies.get"
+      ],
+      "contextual": true,
+      "level": "both",
+      "applies": {
+        "campaign_types": "any",
+        "ad_formats": "any"
+      },
+      "applies_to": [
+        {
+          "field": "Reports.Conversions",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "field": "Reports.Conversions",
+          "op": "routine",
+          "routine": "zero_conversions_significant"
+        }
+      ],
+      "condition": [
+        {
+          "field": "Reports.Cost",
+          "op": "ratio_gt",
+          "ref": "target_cpa",
+          "times_threshold": "cpa_overrun_multiple"
+        }
+      ],
+      "fix": "Разобрать состав фраз и таргетинг группы: сначала поисковые запросы и минусовка, отключение группы — крайняя мера. Минусовка на уровне группы — AdGroups.update, NegativeKeywords; поле заменяется целиком, поэтому текущее читается до записи.",
+      "question": "Группа потратила больше цели по CPA и не дала ни одной конверсии. Наблюдений хватает, чтобы это не было случайностью?",
+      "writes": {
+        "target": "adgroup",
+        "objects": [
+          "adgroup"
+        ],
+        "steps": [
+          {
+            "object": "adgroup",
+            "method": "AdGroups.update"
+          }
+        ]
+      }
+    }
+  ],
+  "routines_resolving_package": [
+    "network_delivery_enabled",
+    "placement_vs_strategy",
+    "pay_for_conversion_active",
+    "metrika_counters_absent",
+    "priority_goals_absent",
+    "multi_goal_strategy_active",
+    "manual_search_bidding"
+  ],
+  "field_restrictions": [
+    {
+      "comment": "Минус-фразы допускаются не в любой группе. Оговорку справочника две оси applies не выражают: подтип группы — не тип кампании и не формат объявления. Тип группы из перечня уходит из применимости сам, а подтип правило обязано исключить гейтом — иначе находка достанется группе, у которой поля нет вовсе, а отсутствующее значение эта схема считает пустым.",
+      "level": "adgroup",
+      "fields": [
+        "NegativeKeywords",
+        "NegativeKeywordSharedSetIds"
+      ],
+      "excluded_group_types": [
+        "CPM_VIDEO_AD_GROUP"
+      ],
+      "excluded_subtypes": [
+        "USER_PROFILE"
+      ],
+      "subtype_field": "AdGroup.Subtype",
+      "quotes": [
+        "В `CPM_VIDEO_AD_GROUP` минус-фразы тоже не допускаются",
+        "В группе медийных объявлений с нацеливанием по профилю пользователей\n **минус-фразы не допускаются** — ни `NegativeKeywords`, ни наборы."
+      ]
+    }
+  ],
+  "path_forms": {
+    "Объект.Поле": "обычное поле ответа",
+    "Объект.Массив[ИМЯ].Поле": "элемент массива записей, выбранный по имени настройки, и поле этого элемента. Так устроены Settings кампании: Campaigns.get отдаёт массив записей UnifiedCampaignSetting, а не объект с ключами, и путь без скобок движок не разрешит — он молча получит пустоту и объявит настройку выключенной у каждой кампании. Селектором служит поле Option записи, значением — Value."
+  },
+  "inputs": {
+    "target_cpa": {
+      "comment": "Допустимая цена выбранной ценной конверсии. Определяется экономикой бизнеса и подтверждается пользователем; не выводится из любой доступной цели автоматически.",
+      "unit": "валюта кабинета",
+      "money_multiplier": 1000000
+    }
+  },
+  "strategy_sets": {
+    "priority_goals_users": {
+      "comment": "Типы стратегий, у которых справочник называет PriorityGoals используемым (раздел 2.3, колонка add). Перечень лежит здесь, а не внутри правила, потому что действующую стратегию у кампании под пакетом приходится разрешать подпрограммой, а сверять перечень со справочником всё равно надо.",
+      "types": [
+        "AVERAGE_CPA_MULTIPLE_GOALS",
+        "PAY_FOR_CONVERSION_MULTIPLE_GOALS",
+        "MAX_PROFIT"
+      ]
+    }
+  },
+  "utm": {
+    "comment": "Ключи, из которых состоит разметка по правилу UTM-02. Перечень нужен потому, что «параметры URL заданы» и «разметка есть» — разные вещи: в TrackingParams может лежать ref=direct или служебная метка партнёра, и правило, считающее любой параметр разметкой, промолчит о кампании, у которой атрибуции нет вовсе.",
+    "required_keys": [
+      "utm_source",
+      "utm_medium",
+      "utm_campaign"
+    ],
+    "template_keys": [
+      "utm_source",
+      "utm_medium",
+      "utm_term",
+      "utm_campaign",
+      "utm_content"
+    ],
+    "required_comment": "Обязательными считаются три ключа, по которым аналитика опознаёт источник, канал и кампанию. Остальные ключи шаблона уточняют срез, и их отсутствие — не разрыв атрибуции, а потеря детализации. Ключ с пустым значением считается отсутствующим: строка utm_source=&utm_medium=&utm_campaign= содержит все три имени и не даёт ни источника, ни канала, ни кампании."
+  },
+  "probe_policy": {
+    "comment": "Проверка ссылок заставляет процесс аудита ходить по адресам из кабинета. Адрес в кабинет вписывает человек, и он может указывать внутрь периметра — на localhost, в частную сеть, на служебный адрес метаданных облака. Аудит, сходивший туда, превращается в инструмент разведки чужой сети, причём от имени того, кто его запустил.",
+    "rules": [
+      "разрешать адрес до первого запроса и заново после каждого редиректа: ограничение числа переходов от подмены назначения не спасает",
+      "отвергать назначение, разрешившееся в петлевой, частный, link-local или иной непубличный адрес, включая служебный адрес метаданных облака",
+      "соединяться с уже разрешённым адресом, а не с именем: иначе между проверкой и соединением имя успевает перерешиться в другой адрес",
+      "отвергнутый адрес — не находка о битой ссылке: правило говорит, что проверить не смогло, и называет причину"
+    ]
+  },
+  "writes": {
+    "comment": "Уровень, который принимает правку находки. Нужен, чтобы проверять выполнимость предлагаемого: архивное объявление правку не принимает, а в архивной кампании невозможны никакие операции. Опознавать это по тексту починки нельзя — формулировка меняется, и проверка, ищущая в ней имя метода, пропускает правило, где метод назван иначе. Кто именно правится, уровень не говорит: это второе поле, writes.objects, и его значения объявлены в owners.",
+    "values": {
+      "campaign": "правка кампании",
+      "adgroup": "правка группы",
+      "ad": "правка объявления",
+      "keyword": "правка фразы или её ставки",
+      "none": "скилл ничего не пишет: находка либо разбирается человеком, либо служит доводом"
+    }
+  },
+  "branch_conditions": {
+    "comment": "Условие, при котором шаг починки выбирается, — ключ when у шага. Без него движок не может выбрать объект, перечитать именно его и сверить записанное с прочитанным, а конвейер записи требует и того и другого ровно у объекта, который правился. Шаг называет условие там, где ветка у правила не одна: объектов среди шагов больше одного либо у уровневого объекта шагов несколько. Второе — не мелочь: Ads.update и Ads.moderate суть две стадии одного действия, Keywords.update и Keywords.suspend — две разные починки, из которых берут одну, а объект у обеих пар один и тот же, и по паре «объект → метод» их не различить. Шаги с одинаковым when — одна ветка в несколько стадий, с разным — разные ветки. Безусловного вида нет вовсе: проверять на нём нечего, а стоя рядом с ветками он выполнялся бы и там, где ветка его не выбрала. Стадии одной ветки поэтому называют своё условие наравне с альтернативами. Останавливающий показы вызов стоит в ветке один: справочник описывает Keywords.suspend как «Останавливает показы», и стадией чужого действия такой вызов быть не может — иначе фраза остановится там, где её собирались лишь поправить. Рядом с kind стоит спутник: у carrier_in, field_present и field_absent — field, путь к полю; у human_choice — option, короткое имя пути починки, которым ветки различаются между собой, и у одной из них ещё default: true — предлагаемая. Условие обязано быть выводимо из того, что правило читает: производная — из предикатов правила или из reads его подпрограмм, обычное поле — из путей самого правила или из полей самостоятельного объекта, чей get правило заказывает. Условие по непрочитанному движок не вычислит, и ветка тогда выбирается гаданием.",
+    "values": {
+      "carrier_in": "правку этой ветки требует носитель по названному пути — им и выбирается объект, который движок перечитает и сверит. Вид не утверждает, что находка правила лежит там же, и путать это нельзя: у разметки находка — отсутствие общей разметки, а ветка правит носитель, несущий собственную метку, которую общая разметка не лечит. Чем именно носитель требует правки, знает подпрограмма правила, и текст починки это называет. Одно и то же условие у нескольких шагов означает одну ветку в несколько стадий: отклонённое объявление правится и отправляется на модерацию, и требует того и другого один носитель — его статус",
+      "field_present": "поле по названному пути у объекта есть — правка уходит ему; путь тоже ведёт к объекту шага",
+      "field_absent": "поля по названному пути у объекта нет — правка уходит другому уровню. Единственная ветка наоборот: путь ведёт к чужому объекту, и он же обязан нести парную field_present, иначе случай без поля остаётся без починки. Отсутствие как состояние существует только у производной — она объявляет when_unavailable, — а у обычного поля эта схема отсутствие от пустоты не отличает",
+      "human_choice": "оба пути допустимы, и по прочитанному их не различить: выбирает человек. Требует контекстного правила и двух различных option — одинокая ветка выбором не является, — а ровно одна из них помечена default: её движок и предлагает в показе «было → станет», человек подтверждает или меняет. Поле question тут ни при чём и подменить умолчание не может: оно спрашивает, настоящая ли находка, а не какую починку взять, и у правила минус-фраз спрашивает про умысел, а не про место для стартового слоя. Без предлагаемой ветки движку после согласия нечего записывать, и разрушающая ветка стоит наравне с обычной"
+    }
+  },
+  "owners": {
+    "comment": "writes.target задаёт уровень правки, writes.objects — объекты, которые фактически изменятся. Связанный набор ссылок, уточнений или минус-фраз может использоваться несколькими объявлениями и кампаниями. Проверяйте весь охват изменения; отсутствие готовой команды требует пути в интерфейсе.",
+    "shared_fix": "Для изменения общего объекта подготовьте копию и перепривяжите только нужные объекты. У быстрых ссылок, уточнений, изображений и видео редактирования на месте нет; у наборов минус-фраз оно есть, но может затронуть другие кампании.",
+    "objects": {
+      "campaign": {
+        "comment": "Сама кампания: её собственные поля и типовая структура. Кампания под пакетной стратегией собственных полей не имеет, и правка уходит самой стратегии — но это не другой адресат, а другая ветка починки: её держит поле fix_when_packaged со своим требованием. Записывать стратегию отдельным объектом здесь было бы неверно: из пути поля она не выводится, потому что под пакетом того пути нет вовсе.",
+        "attached": false,
+        "attaches_to": [
+          "campaign"
+        ],
+        "paths": [
+          "Campaign"
+        ],
+        "services": [
+          "Campaigns"
+        ],
+        "write": [
+          "Campaigns.update"
+        ],
+        "operations": [
+          "Campaigns.update"
+        ],
+        "read": [
+          "Campaigns.get"
+        ]
+      },
+      "adgroup": {
+        "comment": "Сама группа объявлений.",
+        "attached": false,
+        "attaches_to": [
+          "adgroup"
+        ],
+        "paths": [
+          "AdGroup"
+        ],
+        "services": [
+          "AdGroups"
+        ],
+        "write": [
+          "AdGroups.update"
+        ],
+        "operations": [
+          "AdGroups.update"
+        ],
+        "read": [
+          "AdGroups.get"
+        ]
+      },
+      "ad": {
+        "comment": "Скилл записывает ResponsiveAd. Для других форматов доступны чтение и инструкция по изменению через интерфейс.",
+        "attached": false,
+        "attaches_to": [
+          "ad"
+        ],
+        "paths": [
+          "Ad"
+        ],
+        "services": [
+          "Ads"
+        ],
+        "write": [
+          "Ads.update"
+        ],
+        "writable_formats": [
+          "ResponsiveAd"
+        ],
+        "operations": [
+          "Ads.moderate",
+          "Ads.update"
+        ],
+        "read": [
+          "Ads.get"
+        ]
+      },
+      "keyword": {
+        "comment": "Ключевая фраза или автотаргетинг — записи сервиса Keywords.",
+        "attached": false,
+        "attaches_to": [
+          "keyword"
+        ],
+        "paths": [
+          "Keyword"
+        ],
+        "services": [
+          "Keywords"
+        ],
+        "write": [
+          "Keywords.update"
+        ],
+        "operations": [
+          "Keywords.suspend",
+          "Keywords.update"
+        ],
+        "read": [
+          "Keywords.get"
+        ]
+      },
+      "keyword_bid": {
+        "comment": "Ставка фразы или автотаргетинга. Живёт отдельным сервисом: Keywords.update ставку не принимает, и починка, адресованная фразе, ушла бы не тем методом.",
+        "attached": false,
+        "attaches_to": [
+          "keyword"
+        ],
+        "paths": [
+          "KeywordBids"
+        ],
+        "services": [
+          "KeywordBids"
+        ],
+        "write": [
+          "KeywordBids.set"
+        ],
+        "operations": [
+          "KeywordBids.set"
+        ],
+        "read": [
+          "KeywordBids.get"
+        ]
+      },
+      "sitelink_set": {
+        "comment": "Набор быстрых ссылок. Объект — набор целиком, а не отдельная ссылка, и у объявления он один. Редактирования у набора нет: правка — это новый набор и перепривязка. Один набор допустимо привязать к нескольким объявлениям.",
+        "attached": true,
+        "shared": true,
+        "attaches_to": [
+          "ad"
+        ],
+        "services": [
+          "Sitelinks"
+        ],
+        "read": [
+          "Sitelinks.get"
+        ],
+        "write": [
+          "Sitelinks.add"
+        ],
+        "attach": {
+          "ad": "Ads.update"
+        },
+        "fields": [
+          "SitelinkSetId",
+          "SitelinksModeration"
+        ],
+        "editable_in_place": false
+      },
+      "callout_set": {
+        "comment": "Уточнения объявления. Редактирование не предусмотрено; совпавшее уточнение ищется через AdExtensions.get и переиспользуется, потому что идентичное при добавлении даёт ошибку.",
+        "attached": true,
+        "shared": true,
+        "attaches_to": [
+          "ad"
+        ],
+        "services": [
+          "AdExtensions"
+        ],
+        "read": [
+          "AdExtensions.get"
+        ],
+        "write": [
+          "AdExtensions.add"
+        ],
+        "attach": {
+          "ad": "Ads.update"
+        },
+        "fields": [
+          "AdExtensions",
+          "AdExtensionIds",
+          "CalloutSetting"
+        ],
+        "editable_in_place": false
+      },
+      "ad_image": {
+        "comment": "Изображение объявления. Опознаётся хэшем, а не идентификатором; редактирование не предусмотрено.",
+        "attached": true,
+        "shared": true,
+        "attaches_to": [
+          "ad"
+        ],
+        "services": [
+          "AdImages"
+        ],
+        "read": [
+          "AdImages.get"
+        ],
+        "write": [
+          "AdImages.add"
+        ],
+        "attach": {
+          "ad": "Ads.update"
+        },
+        "fields": [
+          "AdImageHash",
+          "AdImageHashes",
+          "AdImages"
+        ],
+        "editable_in_place": false
+      },
+      "ad_video": {
+        "comment": "Видеодополнение: видео загружается AdVideos.add, креатив собирается Creatives.add. Два сервиса, а объект один — починка, назвавшая только первый, остановится на полпути.",
+        "attached": true,
+        "shared": true,
+        "attaches_to": [
+          "ad"
+        ],
+        "services": [
+          "AdVideos",
+          "Creatives"
+        ],
+        "read": [
+          "AdVideos.get",
+          "Creatives.get"
+        ],
+        "write": [
+          "AdVideos.add",
+          "Creatives.add"
+        ],
+        "attach": {
+          "ad": "Ads.update"
+        },
+        "fields": [
+          "VideoExtension",
+          "VideoExtensions",
+          "VideoExtensionIds"
+        ],
+        "editable_in_place": false
+      },
+      "negative_shared_set": {
+        "comment": "Набор минус-фраз из библиотеки. Наборов у пользователя до 30, к кампании или группе подключается до трёх, и один набор держат сразу несколько кампаний. Единственный из общих объектов, у которого есть update, — и потому единственный, у кого путей правки два. Скилл берёт копию: write называет NegativeKeywordSharedSets.add, а не update, и это не описка. Почему именно копия — в shared_fix; что правка на месте у сервиса существует — в editable_in_place.",
+        "attached": true,
+        "shared": true,
+        "attaches_to": [
+          "campaign",
+          "adgroup"
+        ],
+        "services": [
+          "NegativeKeywordSharedSets"
+        ],
+        "read": [
+          "NegativeKeywordSharedSets.get"
+        ],
+        "write": [
+          "NegativeKeywordSharedSets.add"
+        ],
+        "attach": {
+          "campaign": "Campaigns.update",
+          "adgroup": "AdGroups.update"
+        },
+        "fields": [
+          "NegativeKeywordSharedSetIds"
+        ],
+        "editable_in_place": true
+      }
+    },
+    "handoff": "UI_MAP.md"
+  }
+}

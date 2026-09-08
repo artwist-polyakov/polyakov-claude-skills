@@ -1,0 +1,986 @@
+{
+  "version": "1",
+  "checked_at": "2026-08-24",
+  "source": "https://yandex.ru/support/direct/ru/",
+  "about": "Карта действий и экранов Директа. Для confirmed есть подтверждённая ссылка, для navigation — последовательность переходов от известного экрана. Обзор: UI_MAP.md.",
+  "conventions": {
+    "confidence": {
+      "confirmed": "URL встречается в справке Яндекса; поле source указывает страницу-источник",
+      "navigation": "устойчивого URL у экрана нет или он не подтверждён справкой; вести пользователя по шагам из поля path от экрана anchor"
+    },
+    "why_not_guessed": "Любой путь на direct.yandex.ru отдаёт 302 на passport.yandex.ru с retpath, включая заведомо несуществующий. Проверить угаданный адрес без авторизации невозможно, поэтому невыясненные экраны описаны навигацией, а не выдуманной ссылкой.",
+    "tracking_params": "Из адресов вырезаны рекламные метки сессии (ysclid, utm_*). Метка ysclid частью адреса не является и протухает — в хендофф она попадать не должна.",
+    "locale": "Российский контур — direct.yandex.ru. Для кабинетов вне России тот же путь на direct.yandex.com.",
+    "interface": "direct — базовый интерфейс; direct_pro — режим эксперта; both — оба; agency — агентский кабинет",
+    "operation_interface": "Поле interface у операции: в каком интерфейсе она вообще доступна. direct_pro проставлен только там, где справка прямо называет ограничение (массовое управление, A/B-эксперименты, Мастер отчётов и Библиотека отчётов, XLS/XLSX, Коммандер, API, ЕПК, разделы Библиотеки). unknown означает, что справка про интерфейс молчит: генератору ранбуков такую операцию нельзя молча предлагать пользователю базового Директа, доступность нужно проверить в живом кабинете. Экран операции может быть шире операции — фильтровать надо по полю операции, а не по полю экрана."
+  },
+  "hosts": {
+    "direct": "https://direct.yandex.ru",
+    "direct_com": "https://direct.yandex.com",
+    "balance": "https://balance.yandex.ru",
+    "metrika": "https://metrika.yandex.ru",
+    "audience": "https://audience.yandex.ru",
+    "wordstat": "https://wordstat.yandex.ru",
+    "business": "https://yandex.ru/sprav",
+    "passport": "https://passport.yandex.ru"
+  },
+  "screens": [
+    {
+      "id": "cabinet_root",
+      "title": "Кабинет Директа",
+      "url": "https://direct.yandex.ru/",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/troubleshooting/moderation"
+    },
+    {
+      "id": "campaigns_list",
+      "title": "Список кампаний",
+      "url": "https://direct.yandex.ru/dna/grid/campaigns",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/new-interface/guide",
+      "note": "Основная рабочая страница. По умолчанию показаны активные кампании с оплатой за клики; медийные и архивные видны после смены фильтра."
+    },
+    {
+      "id": "campaign_create",
+      "title": "Создание кампании",
+      "url": "https://direct.yandex.ru/dna/campaigns-edit/",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/efficiency/messengers-ads",
+      "params": [
+        {
+          "name": "is-new",
+          "value": "1",
+          "meaning": "открыть форму создания новой кампании"
+        },
+        {
+          "name": "campaign-type",
+          "value": "UNIFIED",
+          "meaning": "Единая перфоманс-кампания; другие значения справкой не подтверждены"
+        },
+        {
+          "name": "default-placement-type",
+          "value": "MESSENGERS",
+          "meaning": "предвыбранное место показа; подтверждено только значение MESSENGERS"
+        }
+      ],
+      "note": "Полный подтверждённый пример: https://direct.yandex.ru/dna/campaigns-edit/?is-new=1&campaign-type=UNIFIED&default-placement-type=MESSENGERS"
+    },
+    {
+      "id": "recommendations",
+      "title": "Рекомендации",
+      "url": "https://direct.yandex.ru/dna/recommendations",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/new-interface/recommendations"
+    },
+    {
+      "id": "reports_library",
+      "title": "Библиотека отчётов",
+      "url": "https://direct.yandex.ru/dna/reports/library",
+      "confidence": "confirmed",
+      "interface": "direct_pro",
+      "source": "https://yandex.ru/support/direct/ru/statistics/library"
+    },
+    {
+      "id": "copy_campaigns",
+      "title": "Копирование кампаний",
+      "url": "https://direct.yandex.ru/dna/copy-campaigns",
+      "confidence": "confirmed",
+      "interface": "agency",
+      "source": "https://yandex.ru/support/direct/ru/agencies/interface-guide"
+    },
+    {
+      "id": "user_settings_account",
+      "title": "Настройки пользователя, вкладка «Аккаунт»",
+      "url": "https://direct.yandex.ru/dna/user-settings/account/",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/efficiency/enrich-ads-with-third-party-data",
+      "note": "Здесь же — «Показывать метки», уведомления на телефон, счётчик Метрики для новых кампаний, «Дополнять объявления данными из внешних источников»."
+    },
+    {
+      "id": "subclient_create",
+      "title": "Регистрация нового клиента агентства",
+      "url": "https://direct.yandex.ru/dna/sub-clients/create/",
+      "confidence": "confirmed",
+      "interface": "agency",
+      "source": "https://yandex.ru/support/direct/ru/agencies/manage-clients"
+    },
+    {
+      "id": "budget_forecast",
+      "title": "Прогноз бюджета",
+      "url": "https://direct.yandex.ru/registered/main.pl?cmd=advancedForecast",
+      "confidence": "confirmed",
+      "interface": "direct_pro",
+      "source": "https://yandex.ru/support/direct/ru/impressions/budget-estimation"
+    },
+    {
+      "id": "api_settings",
+      "title": "Настройки API и пользовательское соглашение",
+      "url": "https://direct.yandex.ru/registered/main.pl?cmd=apiSettings&api_welcome=yes",
+      "confidence": "confirmed",
+      "interface": "direct_pro",
+      "source": "https://yandex.ru/support/direct/ru/alternative-interfaces/api",
+      "note": "Без принятия соглашения на этом экране API не работает — обязательный шаг настройки скилла."
+    },
+    {
+      "id": "retargeting_conditions",
+      "title": "Условия ретаргетинга (старый интерфейс)",
+      "url": "https://direct.yandex.ru/registered/main.pl?cmd=showRetargetingCond",
+      "confidence": "confirmed",
+      "interface": "direct_pro",
+      "source": "https://yandex.ru/support/direct/ru/impression-criteria/retargeting-lists",
+      "note": "В актуальном интерфейсе те же условия живут в «Библиотека → Сегменты аудитории»."
+    },
+    {
+      "id": "legacy_search_page",
+      "title": "Страница кампаний (старый интерфейс)",
+      "url": "https://direct.yandex.ru/registered/main.pl?cmd=showSearchPage",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/troubleshooting/moderation"
+    },
+    {
+      "id": "wordstat",
+      "title": "Вордстат — подбор слов",
+      "url": "https://wordstat.yandex.ru/",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/keywords/wordstat"
+    },
+    {
+      "id": "balance_root",
+      "title": "Яндекс Баланс",
+      "url": "https://balance.yandex.ru/",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/payments/docs"
+    },
+    {
+      "id": "balance_invoices",
+      "title": "Яндекс Баланс — счета",
+      "url": "https://balance.yandex.ru/invoices.xml?service_cc=PPC&ref_service_id=7",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/payments/docs",
+      "note": "Без параметров — https://balance.yandex.ru/invoices.xml — тот же список без фильтра по Директу."
+    },
+    {
+      "id": "balance_documents",
+      "title": "Яндекс Баланс — документы",
+      "url": "https://balance.yandex.ru/docs.xml#/invoices",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/payments/deferred-payment"
+    },
+    {
+      "id": "balance_acts",
+      "title": "Яндекс Баланс — акты",
+      "url": "https://balance.yandex.ru/acts.xml",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/payments/faq"
+    },
+    {
+      "id": "balance_person_new",
+      "title": "Яндекс Баланс — добавить плательщика",
+      "url": "https://balance.yandex.ru/persons.xml#/new",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/agencies/account-transfer"
+    },
+    {
+      "id": "metrika",
+      "title": "Яндекс Метрика",
+      "url": "https://metrika.yandex.ru/",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/statistics/metrika"
+    },
+    {
+      "id": "metrika_counter_create",
+      "title": "Яндекс Метрика — создать счётчик",
+      "url": "https://metrika.yandex.ru/add/",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/statistics/metrika"
+    },
+    {
+      "id": "audience",
+      "title": "Яндекс Аудитории",
+      "url": "https://audience.yandex.ru",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/technologies-and-services/audience-segments-in-direct"
+    },
+    {
+      "id": "audience_pixels",
+      "title": "Яндекс Аудитории — пиксели",
+      "url": "https://audience.yandex.ru/pixels",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/products-cpm-campaign-frontpage/retargeting"
+    },
+    {
+      "id": "business_profile",
+      "title": "Яндекс Бизнес — профиль организации",
+      "url": "https://yandex.ru/sprav",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/efficiency/vcards"
+    },
+    {
+      "id": "passport_profile",
+      "title": "Яндекс ID — профиль и привязанные карты",
+      "url": "https://passport.yandex.ru/profile",
+      "confidence": "confirmed",
+      "interface": "both",
+      "source": "https://yandex.ru/support/direct/ru/payments/shared-account"
+    },
+    {
+      "id": "agency_feedback_forms",
+      "title": "Формы обратной связи для агентств",
+      "url": "https://yandex.ru/partner-office/knowledge-base",
+      "confidence": "confirmed",
+      "interface": "agency",
+      "source": "https://yandex.ru/support/direct/ru/troubleshooting/moderation"
+    },
+    {
+      "id": "campaign_page",
+      "title": "Страница кампании",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "both",
+      "anchor": "campaigns_list",
+      "path": [
+        "Найти кампанию по названию или номеру",
+        "«…» рядом с названием",
+        "Перейти к кампании"
+      ],
+      "note": "Для кампаний Мастера кампаний, Простого старта и товарной кампании здесь же лежит вся статистика."
+    },
+    {
+      "id": "campaign_edit",
+      "title": "Параметры кампании (редактирование)",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "both",
+      "anchor": "campaigns_list",
+      "path": [
+        "«…» рядом с названием кампании",
+        "Редактировать"
+      ]
+    },
+    {
+      "id": "campaign_edit_additional",
+      "title": "Дополнительные настройки кампании",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "direct_pro",
+      "anchor": "campaign_edit",
+      "path": [
+        "Дополнительные настройки (внизу страницы)"
+      ]
+    },
+    {
+      "id": "group_edit",
+      "title": "Редактирование группы объявлений",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "direct_pro",
+      "anchor": "campaigns_list",
+      "path": [
+        "Отметить кампанию",
+        "Вкладка «Группы»",
+        "Отметить группу",
+        "Действия → Редактировать"
+      ]
+    },
+    {
+      "id": "ads_tab",
+      "title": "Вкладка «Объявления»",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "direct_pro",
+      "anchor": "campaigns_list",
+      "path": [
+        "Отметить кампании",
+        "Вкладка «Объявления»"
+      ]
+    },
+    {
+      "id": "phrases_tab",
+      "title": "Вкладка «Ставки и фразы»",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "direct_pro",
+      "anchor": "campaigns_list",
+      "path": [
+        "Отметить кампании",
+        "Вкладка «Ставки и фразы»"
+      ]
+    },
+    {
+      "id": "library",
+      "title": "Библиотека",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "direct_pro",
+      "anchor": "campaigns_list",
+      "path": [
+        "Меню слева → Библиотека"
+      ],
+      "note": "Разделы: Минус-фразы, Промоакции, Сегменты аудитории, Фиды, Мобильные приложения, Лендинги, A/B-эксперименты."
+    },
+    {
+      "id": "landings_basic",
+      "title": "Лендинги (базовый интерфейс Директа)",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "direct",
+      "anchor": "campaigns_list",
+      "path": [
+        "Меню слева → Лендинги"
+      ],
+      "note": "В базовом Директе лендинги — отдельный пункт меню; в Директ Про они лежат в «Библиотека → Лендинги» (экран library)."
+    },
+    {
+      "id": "tools",
+      "title": "Инструменты",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "unknown",
+      "anchor": "campaigns_list",
+      "path": [
+        "Меню слева → Инструменты"
+      ],
+      "note": "Подбор слов, Прогноз бюджета, Управление с помощью Excel, История изменений, Ваши представители, Заявки на перенос. Справка не говорит, доступен ли раздел «Инструменты» в базовом Директе."
+    },
+    {
+      "id": "statistics_overview",
+      "title": "Обзор результатов продвижения",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "direct_pro",
+      "anchor": "campaigns_list",
+      "path": [
+        "Меню слева → Статистика",
+        "Обзор"
+      ],
+      "note": "Справка называет страницу «Обзор результатов продвижения в Директ», но не приводит путь к ней в меню — шаги ниже восстановлены по соседним отчётам раздела «Статистика» и требуют проверки в живом кабинете."
+    },
+    {
+      "id": "report_wizard",
+      "title": "Мастер отчётов",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "direct_pro",
+      "anchor": "campaigns_list",
+      "path": [
+        "Меню слева → Статистика → Мастер отчётов"
+      ],
+      "note": "Быстрый путь: отметить кампании и нажать «Статистика N кампаний» внизу страницы."
+    },
+    {
+      "id": "my_reports",
+      "title": "Мои отчёты",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "direct_pro",
+      "anchor": "campaigns_list",
+      "path": [
+        "Меню слева → Статистика → Мои отчёты"
+      ]
+    },
+    {
+      "id": "conversions_center",
+      "title": "Центр конверсий",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "direct_pro",
+      "anchor": "campaigns_list",
+      "path": [
+        "Меню слева → Конверсии"
+      ]
+    },
+    {
+      "id": "shared_account",
+      "title": "Общий счёт",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "both",
+      "anchor": "campaigns_list",
+      "path": [
+        "Под логином нажать на сумму",
+        "Все настройки"
+      ],
+      "note": "Номер общего счёта виден при наведении курсора на логин."
+    },
+    {
+      "id": "advertiser_data",
+      "title": "Данные рекламодателя (маркировка, ЕРИР)",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "both",
+      "anchor": "campaigns_list",
+      "path": [
+        "Меню слева → логин",
+        "Данные рекламодателя"
+      ]
+    },
+    {
+      "id": "agency_clients",
+      "title": "Мои клиенты",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "agency",
+      "anchor": "cabinet_root",
+      "path": [
+        "Меню слева → Мои клиенты"
+      ]
+    },
+    {
+      "id": "agency_administration",
+      "title": "Администрирование агентства",
+      "url": null,
+      "confidence": "navigation",
+      "interface": "agency",
+      "anchor": "cabinet_root",
+      "path": [
+        "Меню слева → Администрирование"
+      ],
+      "note": "Параметры представителя агентства, Представители агентства, Назначение клиентов представителям, Все кампании моих клиентов."
+    }
+  ],
+  "operations": [
+    {
+      "id": "campaign_create_master",
+      "title": "Создать кампанию в Мастере кампаний",
+      "screen": "campaigns_list",
+      "interface": "both",
+      "steps": [
+        "Добавить → Кампанию",
+        "Вкладка «Мастер кампаний»",
+        "Выбрать сценарий",
+        "Заполнить шаги",
+        "Создать кампанию"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/campaign-master/about"
+    },
+    {
+      "id": "campaign_create_upc",
+      "title": "Создать Единую перфоманс-кампанию",
+      "screen": "campaigns_list",
+      "interface": "direct_pro",
+      "steps": [
+        "Добавить → Кампанию",
+        "Вкладка «Режим эксперта»",
+        "Единая перфоманс-кампания"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/unified-performance-campaign/create-campaign",
+      "alternative_screen": "campaign_create",
+      "note": "Кнопка «Добавить» — в меню слева на списке кампаний. Прямой вход в уже открытую форму — экран campaign_create с is-new=1&campaign-type=UNIFIED."
+    },
+    {
+      "id": "bid_adjustment_demographics",
+      "title": "Настроить корректировку ставок по полу и возрасту",
+      "screen": "campaign_edit_additional",
+      "interface": "direct_pro",
+      "steps": [
+        "Блок «Корректировки»",
+        "Пол и возраст",
+        "Выбрать пол, возраст и коэффициент",
+        "Новая корректировка — до 12 штук"
+      ],
+      "alternative_screen": "group_edit",
+      "help": "https://yandex.ru/support/direct/ru/impressions/bids-adjustment",
+      "note": "Корректировка по региону задаётся только на уровне кампании."
+    },
+    {
+      "id": "promotion_manage",
+      "title": "Создать или изменить промоакцию",
+      "screen": "library",
+      "interface": "direct_pro",
+      "steps": [
+        "Библиотека → Промоакции",
+        "Добавить промоакцию",
+        "Указать тип, размер и ссылку",
+        "Дождаться модерации текста и ссылки"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/efficiency/promotion"
+    },
+    {
+      "id": "promotion_bulk_replace",
+      "title": "Массово заменить или отвязать промоакцию",
+      "screen": "campaigns_list",
+      "interface": "direct_pro",
+      "steps": [
+        "Отметить кампании",
+        "Действия → Промоакция",
+        "Заменить промоакцию или Отвязать промоакцию",
+        "Применить"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/efficiency/promotion"
+    },
+    {
+      "id": "moderation_reason",
+      "title": "Посмотреть причину отклонения объявления модерацией",
+      "screen": "campaign_page",
+      "interface": "both",
+      "steps": [
+        "Открыть страницу кампании или вкладку «Объявления»",
+        "Прочитать статус модерации и комментарий у объявления или отклонённого элемента",
+        "Сверить с письмом на адрес регистрации"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/troubleshooting/moderation"
+    },
+    {
+      "id": "moderation_resend",
+      "title": "Повторно отправить объявление на модерацию",
+      "screen": "campaign_page",
+      "interface": "both",
+      "steps": [
+        "Исправить объявление или элемент",
+        "Сохранить",
+        "«…» рядом с кампанией → Отправить на модерацию"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/troubleshooting/moderation",
+      "note": "Пока новая версия на модерации, показывается старая. Если старую остановили вручную, показов не будет вовсе."
+    },
+    {
+      "id": "moderation_send_documents",
+      "title": "Отправить документы по тематике продвижения",
+      "screen": "campaigns_list",
+      "interface": "both",
+      "steps": [
+        "Определить тематику в справке «Тематики продвижения»",
+        "Собрать перечисленный там пакет документов",
+        "Заполнить форму отправки документов, указав номер кампании, тематику и организацию"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/moderation/special-categories",
+      "note": "Принятый пакет действует для всех кампаний аккаунта с той же тематикой и тем же доменом."
+    },
+    {
+      "id": "moderation_appeal_wrong_category",
+      "title": "Обжаловать ошибочное отнесение тематики к запрещённой",
+      "screen": "campaigns_list",
+      "interface": "both",
+      "steps": [
+        "Убедиться, что тематики нет в списке запрещённых",
+        "Заполнить форму на странице справки «Тематику объявления ошибочно отнесли к запрещённой»",
+        "Либо написать в чат, Telegram, WhatsApp, МАКС или позвонить"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/troubleshooting/error-ban",
+      "note": "Агентствам — формы обратной связи в партнёрском кабинете."
+    },
+    {
+      "id": "letter_of_guarantee",
+      "title": "Оформить гарантийное письмо",
+      "screen": "campaigns_list",
+      "interface": "both",
+      "steps": [
+        "Скачать бланк по валюте расчётов (RUB, BYN, KZT)",
+        "Заполнить реквизиты плательщика и домены продвигаемых сайтов",
+        "Подписать, поставить печать, прошить и заверить наклейку",
+        "Отправить скан через форму отправки документов"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/moderation/letter-of-guarantee",
+      "note": "Указываются домены, а не адреса страниц. При редиректе — оба домена. Для физлица подпись заверяется нотариально."
+    },
+    {
+      "id": "top_up_account",
+      "title": "Пополнить общий счёт",
+      "screen": "campaigns_list",
+      "interface": "both",
+      "steps": [
+        "Под логином нажать «Пополнить»",
+        "Указать сумму",
+        "Выбрать способ оплаты",
+        "Указать плательщика (ФИО и ИНН передаются в ЕРИР)",
+        "Пополнить счёт"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/payments/payment-methods"
+    },
+    {
+      "id": "autopayment",
+      "title": "Подключить автоплатёж",
+      "screen": "shared_account",
+      "interface": "both",
+      "steps": [
+        "Под логином нажать на сумму",
+        "Автоплатёж",
+        "Включить опцию",
+        "Указать порог остатка и сумму пополнения",
+        "Привязать карту и указать плательщика",
+        "Сохранить"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/payments/shared-account",
+      "note": "Только прямые рекламодатели из России, расчёты в рублях, до 299 999 ₽ без НДС."
+    },
+    {
+      "id": "weekly_account_budget",
+      "title": "Задать недельный бюджет аккаунта",
+      "screen": "shared_account",
+      "interface": "both",
+      "steps": [
+        "Под логином нажать на сумму",
+        "Недельный бюджет аккаунта",
+        "Включить опцию",
+        "Указать расход за календарную неделю"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/payments/shared-account",
+      "note": "Минимум 7000 ₽ в неделю. Предел дневного расхода зависит от расписания показов: до 35% недельной суммы при расписании на три дня и более или без ограничений, до 50% при расписании на два дня, до 100% при расписании на один день. Расчёт по московскому времени независимо от часового пояса кампании."
+    },
+    {
+      "id": "overdraft_setup",
+      "title": "Настроить овердрафт (порог отключения)",
+      "screen": "campaigns_list",
+      "interface": "both",
+      "steps": [
+        "Пополнить → Овердрафт",
+        "Указать сумму овердрафта",
+        "Выбрать плательщика и способ оплаты",
+        "Сохранить изменения"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/payments/deferred-payment"
+    },
+    {
+      "id": "deferred_invoice_repay",
+      "title": "Погасить счёт с отложенной оплатой",
+      "screen": "shared_account",
+      "interface": "both",
+      "steps": [
+        "Под логином нажать на сумму → Все настройки",
+        "Нажать «Погасить» напротив задолженности",
+        "Вкладка «Счета» в Яндекс Балансе",
+        "Выбрать счёт → «…» → Подробности",
+        "Оплатить"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/payments/deferred-payment",
+      "note": "Сумма, плательщик и способ оплаты должны совпадать со счётом. Обычное пополнение задолженность не гасит. Срок — 15 календарных дней."
+    },
+    {
+      "id": "invoices_list",
+      "title": "Найти счёт или проверить поступление платежа",
+      "screen": "shared_account",
+      "interface": "both",
+      "steps": [
+        "Платежи и документы → Счета",
+        "Показать счета",
+        "Сверить дату, сумму и номер платёжного поручения"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/payments/search",
+      "note": "Заявка на розыск платежа принимается не ранее чем через 2 рабочих дня; номер счёта указывается с буквенным префиксом («Б-» для России)."
+    },
+    {
+      "id": "get_documents",
+      "title": "Получить акты, счета-фактуры и УПД",
+      "screen": "balance_documents",
+      "interface": "both",
+      "steps": [
+        "Окно общего счёта → Все настройки → Документы",
+        "В Яндекс Балансе открыть нужный раздел: акты об оказанных услугах, счета-фактуры, УПД",
+        "Скачать документ или заказать повторную отправку оригиналов"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/payments/docs",
+      "note": "Счёт на оплату лежит отдельно, в списке счетов (экран balance_invoices), и скачивается сразу после выставления. Акты, счета-фактуры и УПД — на странице документов."
+    },
+    {
+      "id": "download_invoice",
+      "title": "Скачать счёт на оплату",
+      "screen": "balance_invoices",
+      "interface": "both",
+      "steps": [
+        "Окно общего счёта → Все настройки → Документы",
+        "Вкладка «Счета» в Яндекс Балансе",
+        "Открыть нужный счёт и скачать электронную копию"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/payments/docs",
+      "note": "Электронная копия счёта доступна сразу после его выставления."
+    },
+    {
+      "id": "reconciliation_act",
+      "title": "Заказать акт сверки",
+      "screen": "balance_acts",
+      "interface": "both",
+      "steps": [
+        "В Яндекс Балансе меню слева → Акты сверки",
+        "Выбрать организацию, договор, плательщика и закрытый период",
+        "Ввести почту",
+        "Заказать"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/payments/docs",
+      "note": "Формируется несколько часов; онлайн доступен только для плательщиков в ООО «ЯНДЕКС»."
+    },
+    {
+      "id": "refund",
+      "title": "Вернуть средства",
+      "screen": "shared_account",
+      "interface": "both",
+      "steps": [
+        "Остановить кампанию",
+        "Открыть список счетов в разделе «Платежи и документы»",
+        "Заполнить заявку на возврат по конкретному счёту",
+        "Приложить документы, если они требуются"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/payments/refund",
+      "note": "Возврат по каждому счёту отдельно; бонусы не возвращаются, а аннулируются."
+    },
+    {
+      "id": "promocode_activate",
+      "title": "Активировать промокод",
+      "screen": "campaigns_list",
+      "interface": "both",
+      "steps": [
+        "Создать кампанию и дождаться результатов модерации",
+        "Пополнить → указать сумму бюджета",
+        "Ввести промокод и выбрать способ оплаты с подходящим плательщиком",
+        "Принять оферту и пополнить счёт",
+        "Оплатить счёт в течение 30 дней"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/payments/promocode"
+    },
+    {
+      "id": "bonus_program",
+      "title": "Открыть кабинет бонусной программы",
+      "screen": "shared_account",
+      "interface": "both",
+      "steps": [
+        "Под логином нажать на сумму",
+        "Бонусная программа"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/payments/bonus"
+    },
+    {
+      "id": "advertiser_data_fill",
+      "title": "Заполнить данные рекламодателя для маркировки",
+      "screen": "advertiser_data",
+      "interface": "both",
+      "steps": [
+        "Меню слева → логин → Данные рекламодателя",
+        "Указать данные конечного рекламодателя",
+        "Оставить включённой опцию «Я — конечный рекламодатель», если ведёте рекламу сами",
+        "Сохранить"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/technologies-and-services/ad-labelingl",
+      "note": "Без этих данных у клиентов агентств появляется статус «Показы остановлены из-за отсутствия данных для закона о маркировке». Опечатка в адресе help — на стороне Яндекса: страница отдаётся по .../ad-labelingl (HTTP 200), а .../ad-labeling возвращает 404. Не «исправлять»."
+    },
+    {
+      "id": "add_representative",
+      "title": "Выдать доступ представителю",
+      "screen": "tools",
+      "interface": "unknown",
+      "steps": [
+        "Инструменты → Ваши представители",
+        "Ввести логин в формате login@yandex.ru",
+        "Указать персональные данные и уровень доступа",
+        "Добавить"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/campaigns/representatives",
+      "note": "Полный доступ выдаётся только логину, не зарегистрированному в Балансе. Добавляет только главный представитель."
+    },
+    {
+      "id": "add_managing_account",
+      "title": "Подключить управляющий аккаунт",
+      "screen": "tools",
+      "interface": "unknown",
+      "steps": [
+        "Инструменты → Ваши представители",
+        "Раздел «Управляющие аккаунты» → Добавить управляющий аккаунт",
+        "Указать логин и уровень доступа",
+        "Добавить",
+        "Владелец подопечного аккаунта принимает приглашение в меню под своим логином"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/campaigns/mcc"
+    },
+    {
+      "id": "change_history",
+      "title": "Посмотреть историю изменений",
+      "screen": "tools",
+      "interface": "unknown",
+      "steps": [
+        "По одной кампании: «…» рядом с кампанией → История изменений",
+        "По всем кампаниям: Инструменты → История изменений → Подробнее"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/campaigns/logs",
+      "note": "Автоматические остановки из-за нехватки денег или лимита бюджета в историю не попадают. Данные с 09.04.2018."
+    },
+    {
+      "id": "excel_management",
+      "title": "Выгрузить или загрузить кампанию через XLS/XLSX",
+      "screen": "tools",
+      "interface": "direct_pro",
+      "steps": [
+        "Инструменты → Управление с помощью Excel",
+        "Выбрать вкладку выгрузки или загрузки",
+        "Выбрать кампанию и формат файла"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/alternative-interfaces/xls-interface",
+      "note": "Расходует баллы аккаунта; неизрасходованные за сутки баллы сгорают."
+    },
+    {
+      "id": "api_agreement",
+      "title": "Принять пользовательское соглашение API",
+      "screen": "api_settings",
+      "interface": "direct_pro",
+      "steps": [
+        "Открыть страницу настроек API",
+        "Принять условия соглашения"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/alternative-interfaces/api"
+    },
+    {
+      "id": "budget_forecast_run",
+      "title": "Рассчитать прогноз бюджета",
+      "screen": "budget_forecast",
+      "interface": "unknown",
+      "steps": [
+        "Выбрать регионы показа",
+        "Задать период и валюту, при необходимости — прогноз только для мобильных",
+        "Подобрать ключевые и минус-фразы",
+        "Посчитать",
+        "При необходимости выгрузить в XLS"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/impressions/budget-estimation"
+    },
+    {
+      "id": "search_queries_report",
+      "title": "Посмотреть поисковые запросы и добавить минус-фразы",
+      "screen": "reports_library",
+      "interface": "direct_pro",
+      "steps": [
+        "Библиотека отчётов → Оптимизация размещения → Поисковые запросы",
+        "Или «…» у кампании → Поисковые запросы",
+        "Отметить нерелевантные запросы",
+        "Добавить в минус-фразы, выбрав уровень «группа» или «кампания»"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/statistics/library/search-queries"
+    },
+    {
+      "id": "platforms_report",
+      "title": "Запретить показы на площадке РСЯ",
+      "screen": "reports_library",
+      "interface": "direct_pro",
+      "steps": [
+        "Библиотека отчётов → Оптимизация размещения → Площадки",
+        "Или «…» у кампании → Площадки",
+        "Отметить площадку и запретить показы",
+        "Сохранить"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/statistics/library/platforms-report",
+      "note": "Альтернатива — параметры кампании → «Площадки, на которых запрещены показы»: до 1000 доменов для баннеров и до 100 доменов для видеообъявлений. В Мастере кампаний настройки нет."
+    },
+    {
+      "id": "conversions_upload",
+      "title": "Загрузить офлайн-конверсии",
+      "screen": "conversions_center",
+      "interface": "unknown",
+      "steps": [
+        "Меню слева → Конверсии",
+        "Добавить источник конверсий",
+        "Выбрать источник: FTP/SFTP, HTTP(S), Google Sheets или Яндекс Метрика",
+        "Указать счётчик и ценность конверсий"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/statistics/conversions",
+      "note": "Логину нужен доступ на редактирование счётчика Метрики."
+    },
+    {
+      "id": "ab_experiment",
+      "title": "Создать A/B-эксперимент",
+      "screen": "library",
+      "interface": "direct_pro",
+      "steps": [
+        "Библиотека → A/B-эксперименты → Добавить эксперимент",
+        "Задать основную метрику, длительность и цель",
+        "Распределить кампании по контрольному и тестируемым вариантам",
+        "Указать процент выборки"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/campaigns/experiments"
+    },
+    {
+      "id": "feed_add",
+      "title": "Добавить фид",
+      "screen": "library",
+      "interface": "direct_pro",
+      "steps": [
+        "Библиотека → Фиды",
+        "Добавить фид",
+        "Загрузить файл или указать ссылку",
+        "При необходимости включить «Автоматически удалять UTM-метки»"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/feeds/add",
+      "note": "До 50 фидов. По ссылке — до 512 МБ, робот обновляет раз в сутки; файлом — до 200 МБ."
+    },
+    {
+      "id": "negative_keywords_set",
+      "title": "Создать набор минус-фраз",
+      "screen": "library",
+      "interface": "direct_pro",
+      "steps": [
+        "Библиотека → Минус-фразы",
+        "Добавить набор",
+        "Ввести название и минус-фразы через запятую или дефис"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/keywords/negative-keywords-library",
+      "note": "До 30 наборов, 4096 символов в наборе, до 3 наборов на группу и на кампанию."
+    },
+    {
+      "id": "landing_create",
+      "title": "Создать лендинг",
+      "screen": "landings_basic",
+      "interface": "both",
+      "steps": [
+        "Базовый Директ: меню слева → Лендинги. Директ Про: меню слева → Библиотека → Лендинги",
+        "Добавить (для первого лендинга — Создать лендинг в центре экрана)",
+        "Выбрать источник: описание бизнеса или ссылка на сайт",
+        "Настроить контент и сохранить"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/efficiency/landing/about",
+      "note": "Путь зависит от интерфейса: экран landings_basic — для базового Директа, library — для Директ Про. Бесплатно, только для клиентов из России. Без контактных данных лендинг не сохраняется.",
+      "alternative_screen": "library"
+    },
+    {
+      "id": "agency_register_client",
+      "title": "Зарегистрировать нового клиента агентства",
+      "screen": "subclient_create",
+      "interface": "agency",
+      "steps": [
+        "Мои клиенты → Управление клиентами → Регистрация нового клиента",
+        "Указать название и тип организации",
+        "Зарегистрировать нового клиента"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/agencies/manage-clients",
+      "note": "Клиент создаётся как организация в Яндекс ID."
+    },
+    {
+      "id": "agency_transfer_request",
+      "title": "Подать заявку на перенос аккаунта клиента",
+      "screen": "tools",
+      "interface": "agency",
+      "steps": [
+        "Инструменты → Заявки на перенос (или логин → Заявки на перенос)",
+        "Создать заявку",
+        "Заполнить данные, включая плательщика и способ оплаты",
+        "Дождаться согласования второй стороной"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/agencies/account-transfer",
+      "note": "Перенос выполняется только 1 числа следующего месяца, заявка подаётся не позднее чем за сутки."
+    },
+    {
+      "id": "switch_to_direct_pro",
+      "title": "Переключиться на Директ Про",
+      "screen": "campaigns_list",
+      "interface": "direct",
+      "steps": [
+        "Меню слева → логин",
+        "Директ Про",
+        "Перейти в Директ Про"
+      ],
+      "help": "https://yandex.ru/support/direct/ru/interface-direct-pro",
+      "note": "Действие доступно только из базового Директа и необратимо: вернуться в базовый интерфейс после переключения нельзя. Пользователю Директ Про предлагать нечего — пункта меню у него уже нет."
+    }
+  ]
+}

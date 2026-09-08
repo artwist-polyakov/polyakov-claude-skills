@@ -1,0 +1,2420 @@
+{
+  "version": 1,
+  "checked_at": "2026-09-08",
+  "reference": "references/REPORTS.md",
+  "endpoint": {
+    "json": "https://api.direct.yandex.com/json/v501/reports",
+    "xml": "https://api.direct.yandex.com/v501/reports"
+  },
+  "defaults": {
+    "format": "TSV",
+    "date_range_type": "LAST_30_DAYS",
+    "include_vat": "YES",
+    "attribution_models": [
+      "LC"
+    ],
+    "processing_mode": "auto",
+    "page_limit": 100000,
+    "money_in_micros": true,
+    "request_headers": {
+      "processingMode": "auto"
+    },
+    "omitted_request_headers": {
+      "Accept-Encoding": "Ответ принимается без сжатия.",
+      "returnMoneyInMicros": "Деньги обрабатываются в миллионных долях валюты.",
+      "skipReportHeader": "Заголовок сохраняется для проверки фактического периода.",
+      "skipColumnHeader": "Столбцы разбираются по именам.",
+      "skipReportSummary": "Количество строк проверяется по итогу ответа."
+    },
+    "omitted_request_params": {
+      "IncludeDiscount": "мёртвый параметр: скидки в Директе нет с 01.09.2015"
+    }
+  },
+  "limits": {
+    "requests_per_10s": 20,
+    "offline_reports_in_queue": 5,
+    "ready_report_ttl_hours": 5,
+    "default_row_limit": 1000000,
+    "row_limit_with_client_login_filter": 500000,
+    "goals_per_request": 10,
+    "filter_values_per_item": 10000,
+    "history_depth": "три года от текущего месяца",
+    "query_field_depth_days": 180
+  },
+  "http_codes": {
+    "200": "отчёт в теле ответа",
+    "201": "поставлен в очередь; повторить тот же запрос через retryIn",
+    "202": "ещё формируется; повторить тот же запрос через retryIn",
+    "400": "ошибка в параметрах или превышен лимит очереди; повтор без изменений бессмыслен",
+    "500": "ошибка сервера; один повтор с нуля, при повторении — в поддержку",
+    "502": "превышено время обработки; повторить в режиме offline"
+  },
+  "money_fields": {
+    "documented": [
+      "AvgCpc",
+      "AvgCpm",
+      "AvgEffectiveBid",
+      "Cost",
+      "CostPerConversion",
+      "Profit",
+      "Revenue"
+    ],
+    "undocumented": [
+      "PurchaseRevenue",
+      "PurchaseProfit",
+      "CPV",
+      "AvgVideoCompleteCost"
+    ],
+    "note": "Документированные денежные поля обрабатываются в миллионных долях валюты. Остальные поля возвращаются без пересчёта."
+  },
+  "goal_scoped_fields": [
+    "Conversions",
+    "ConversionRate",
+    "CostPerConversion",
+    "GoalsRoi",
+    "Revenue"
+  ],
+  "attribution_models": {
+    "FCCD": {
+      "title": "Первый переход кросс-девайс",
+      "window_days": 180,
+      "metrika": "cross_device_first"
+    },
+    "LC": {
+      "title": "Последний переход",
+      "window_days": 180,
+      "metrika": "last"
+    },
+    "LSCCD": {
+      "title": "Последний значимый переход кросс-девайс",
+      "window_days": 90,
+      "metrika": "cross_device_last_significant"
+    },
+    "AUTO": {
+      "title": "Автоматическая атрибуция",
+      "window_days": null,
+      "metrika": "automatic"
+    }
+  },
+  "campaign_master_blind_fields": [
+    "AdGroupId",
+    "AdGroupName",
+    "AdId",
+    "CriteriaId",
+    "CriterionId"
+  ],
+  "fields": {
+    "AdFormat": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "AdGroupId": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": "attribute",
+        "AD_PERFORMANCE_REPORT": "attribute",
+        "CRITERIA_PERFORMANCE_REPORT": "attribute",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "attribute"
+      }
+    },
+    "AdGroupName": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": true,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": "attribute",
+        "AD_PERFORMANCE_REPORT": "attribute",
+        "CRITERIA_PERFORMANCE_REPORT": "attribute",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "attribute"
+      }
+    },
+    "AdId": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": "attribute",
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "AdNetworkType": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "Age": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "AudienceTargetId": {
+      "in_field_names": false,
+      "in_filter": true,
+      "in_order_by": false,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": "filter",
+        "CUSTOM_REPORT": "filter",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "AvgClickPosition": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "AvgCpc": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "AvgCpm": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "AvgEffectiveBid": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "AvgImpressionFrequency": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "AvgImpressionPosition": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "AvgPageviews": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "AvgTrafficVolume": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "AvgVideoCompleteCost": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "BounceRate": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "Bounces": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": true,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "CPV": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "CampaignId": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": "attribute",
+        "ADGROUP_PERFORMANCE_REPORT": "attribute",
+        "AD_PERFORMANCE_REPORT": "attribute",
+        "CRITERIA_PERFORMANCE_REPORT": "attribute",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "attribute"
+      }
+    },
+    "CampaignName": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": true,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": "attribute",
+        "ADGROUP_PERFORMANCE_REPORT": "attribute",
+        "AD_PERFORMANCE_REPORT": "attribute",
+        "CRITERIA_PERFORMANCE_REPORT": "attribute",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "attribute"
+      }
+    },
+    "CampaignType": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "attribute",
+        "ADGROUP_PERFORMANCE_REPORT": "attribute",
+        "AD_PERFORMANCE_REPORT": "attribute",
+        "CRITERIA_PERFORMANCE_REPORT": "attribute",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "attribute"
+      }
+    },
+    "CampaignUrlPath": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": true,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": "attribute",
+        "ADGROUP_PERFORMANCE_REPORT": "attribute",
+        "AD_PERFORMANCE_REPORT": "attribute",
+        "CRITERIA_PERFORMANCE_REPORT": "attribute",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "attribute"
+      }
+    },
+    "CarrierType": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "ClickType": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "Clicks": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "ClientLogin": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "ConversionRate": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "Conversions": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "Cost": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "CostPerConversion": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "Criteria": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": false,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": "attribute",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "CriteriaId": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": false,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": "attribute",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "CriteriaType": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "attribute",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "Criterion": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": false,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": "attribute",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "CriterionId": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": false,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": "attribute",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "CriterionType": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "attribute",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "Ctr": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "Date": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": true,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "Device": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "DynamicTextAdTargetId": {
+      "in_field_names": false,
+      "in_filter": true,
+      "in_order_by": false,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": "filter",
+        "CUSTOM_REPORT": "filter",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "filter"
+      }
+    },
+    "ExternalNetworkName": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "Gender": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "GoalsRoi": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "ImpressionReach": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "Impressions": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "IncomeGrade": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "Keyword": {
+      "in_field_names": false,
+      "in_filter": true,
+      "in_order_by": false,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN",
+        "STARTS_WITH_IGNORE_CASE",
+        "STARTS_WITH_ANY_IGNORE_CASE",
+        "DOES_NOT_START_WITH_IGNORE_CASE",
+        "DOES_NOT_START_WITH_ALL_IGNORE_CASE"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": "filter",
+        "CUSTOM_REPORT": "filter",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "filter"
+      }
+    },
+    "LocationOfPresenceId": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "LocationOfPresenceName": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": true,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "MatchType": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "MatchedKeyword": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN",
+        "STARTS_WITH_IGNORE_CASE",
+        "STARTS_WITH_ANY_IGNORE_CASE",
+        "DOES_NOT_START_WITH_IGNORE_CASE",
+        "DOES_NOT_START_WITH_ALL_IGNORE_CASE"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "MobilePlatform": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "Month": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": true,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "Placement": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "Profit": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "PurchaseGoals": {
+      "in_field_names": false,
+      "in_filter": true,
+      "in_order_by": false,
+      "filter_operators": [
+        "IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "PurchaseGoalsRoi": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "PurchaseProfit": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "PurchaseRevenue": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "Quarter": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": true,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "Query": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN",
+        "STARTS_WITH_IGNORE_CASE",
+        "STARTS_WITH_ANY_IGNORE_CASE",
+        "DOES_NOT_START_WITH_IGNORE_CASE",
+        "DOES_NOT_START_WITH_ALL_IGNORE_CASE"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "attribute"
+      }
+    },
+    "Revenue": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "RlAdjustmentId": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "Sessions": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": true,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "Slot": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "SmartAdTargetId": {
+      "in_field_names": false,
+      "in_filter": true,
+      "in_order_by": false,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": "filter",
+        "CUSTOM_REPORT": "filter",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "TargetingCategory": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "NOT_EQUALS",
+        "NOT_IN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": null,
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "TargetingLocationId": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "EQUALS",
+        "IN",
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "TargetingLocationName": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": true,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "VideoComplete": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "VideoCompleteRate": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "VideoFirstQuartile": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "VideoFirstQuartileRate": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "VideoMidpoint": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "VideoMidpointRate": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "VideoThirdQuartile": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "VideoThirdQuartileRate": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "VideoViews": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "VideoViewsRate": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": null,
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": null,
+        "CAMPAIGN_PERFORMANCE_REPORT": null,
+        "ADGROUP_PERFORMANCE_REPORT": null,
+        "AD_PERFORMANCE_REPORT": null,
+        "CRITERIA_PERFORMANCE_REPORT": null,
+        "CUSTOM_REPORT": null,
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": null
+      }
+    },
+    "Week": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": true,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    },
+    "WeightedCtr": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "WeightedImpressions": {
+      "in_field_names": true,
+      "in_filter": true,
+      "in_order_by": true,
+      "filter_operators": [
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "metric",
+        "CAMPAIGN_PERFORMANCE_REPORT": "metric",
+        "ADGROUP_PERFORMANCE_REPORT": "metric",
+        "AD_PERFORMANCE_REPORT": "metric",
+        "CRITERIA_PERFORMANCE_REPORT": "metric",
+        "CUSTOM_REPORT": "metric",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "metric",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "metric"
+      }
+    },
+    "Year": {
+      "in_field_names": true,
+      "in_filter": false,
+      "in_order_by": true,
+      "filter_operators": [],
+      "roles": {
+        "ACCOUNT_PERFORMANCE_REPORT": "segment",
+        "CAMPAIGN_PERFORMANCE_REPORT": "segment",
+        "ADGROUP_PERFORMANCE_REPORT": "segment",
+        "AD_PERFORMANCE_REPORT": "segment",
+        "CRITERIA_PERFORMANCE_REPORT": "segment",
+        "CUSTOM_REPORT": "segment",
+        "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": "segment",
+        "SEARCH_QUERY_PERFORMANCE_REPORT": "segment"
+      }
+    }
+  },
+  "fields_note": "Допустимость и роли полей по типу отчёта. null означает, что поле недоступно; segment добавляет группировку, attribute описывает строку, metric содержит показатель.",
+  "report_types": {
+    "ACCOUNT_PERFORMANCE_REPORT": {
+      "grouping": [],
+      "forbidden_explicit": [],
+      "offline_only": false
+    },
+    "CAMPAIGN_PERFORMANCE_REPORT": {
+      "grouping": [
+        "CampaignId"
+      ],
+      "forbidden_explicit": [],
+      "offline_only": false
+    },
+    "ADGROUP_PERFORMANCE_REPORT": {
+      "grouping": [
+        "AdGroupId"
+      ],
+      "forbidden_explicit": [],
+      "offline_only": false
+    },
+    "AD_PERFORMANCE_REPORT": {
+      "grouping": [
+        "AdId"
+      ],
+      "forbidden_explicit": [
+        "AudienceTargetId",
+        "Criteria",
+        "CriteriaId",
+        "Criterion",
+        "CriterionId",
+        "DynamicTextAdTargetId",
+        "Keyword",
+        "Query",
+        "RlAdjustmentId",
+        "SmartAdTargetId"
+      ],
+      "offline_only": false
+    },
+    "CRITERIA_PERFORMANCE_REPORT": {
+      "grouping": [
+        "AdGroupId",
+        "CriteriaId",
+        "CriteriaType"
+      ],
+      "forbidden_explicit": [
+        "AdFormat",
+        "AdId",
+        "Query"
+      ],
+      "offline_only": false
+    },
+    "CUSTOM_REPORT": {
+      "grouping": [],
+      "forbidden_explicit": [
+        "Query"
+      ],
+      "offline_only": false
+    },
+    "REACH_AND_FREQUENCY_PERFORMANCE_REPORT": {
+      "grouping": [],
+      "forbidden_explicit": [],
+      "offline_only": false,
+      "requires_field_names": [
+        "CampaignId"
+      ],
+      "note": "только кампании типа «Медийная кампания», остальные игнорируются"
+    },
+    "SEARCH_QUERY_PERFORMANCE_REPORT": {
+      "grouping": [
+        "AdGroupId",
+        "Query"
+      ],
+      "forbidden_explicit": [],
+      "offline_only": true
+    }
+  },
+  "report_types_note": "grouping — группировки типа отчёта; forbidden_explicit — дополнительные ограничения. Полная совместимость указана в fields.",
+  "incompatible_fields": [
+    {
+      "group": [
+        "Date",
+        "Week",
+        "Month",
+        "Quarter",
+        "Year"
+      ],
+      "scope": "FieldNames",
+      "rule": "только одно из перечисленных"
+    },
+    {
+      "group": [
+        "CriterionType",
+        "CriteriaType",
+        "AudienceTargetId",
+        "DynamicTextAdTargetId",
+        "Keyword",
+        "SmartAdTargetId"
+      ],
+      "scope": "Filter",
+      "rule": "только одно из перечисленных"
+    },
+    {
+      "group": [
+        "Criterion",
+        "CriterionId",
+        "CriterionType"
+      ],
+      "conflicts_with": [
+        "Criteria",
+        "CriteriaId",
+        "CriteriaType"
+      ],
+      "scope": "FieldNames",
+      "rule": "тройки не смешиваются"
+    },
+    {
+      "group": [
+        "ClickType"
+      ],
+      "conflicts_with": [
+        "Impressions",
+        "Ctr",
+        "AvgImpressionPosition",
+        "WeightedImpressions",
+        "WeightedCtr",
+        "AvgTrafficVolume"
+      ],
+      "scope": "FieldNames",
+      "rule": "несовместимы"
+    }
+  ],
+  "implied_groupings": {
+    "Placement": [
+      "AdNetworkType"
+    ]
+  },
+  "report_name": {
+    "pattern": "<пресет>-<хеш параметров>-<идентификатор запуска>",
+    "rule": "Имя сохраняется при ожидании одного отчёта. Новый запуск получает новое имя."
+  },
+  "enums": {
+    "AdNetworkType": [
+      "SEARCH",
+      "AD_NETWORK"
+    ],
+    "AdFormat": [
+      "IMAGE",
+      "TEXT",
+      "VIDEO",
+      "ADAPTIVE_IMAGE"
+    ],
+    "CampaignType": [
+      "TEXT_CAMPAIGN",
+      "MOBILE_APP_CAMPAIGN",
+      "DYNAMIC_TEXT_CAMPAIGN",
+      "SMART_CAMPAIGN",
+      "MCBANNER_CAMPAIGN",
+      "CPM_BANNER_CAMPAIGN",
+      "CPM_DEALS_CAMPAIGN",
+      "CPM_FRONTPAGE_CAMPAIGN",
+      "CPM_PRICE",
+      "UNIFIED_CAMPAIGN"
+    ],
+    "CriteriaType": [
+      "KEYWORD",
+      "AUTOTARGETING",
+      "AUDIENCE_TARGET",
+      "DYNAMIC_TEXT_AD_TARGET",
+      "SMART_BANNER_FILTER"
+    ],
+    "CriterionType": [
+      "KEYWORD",
+      "AUTOTARGETING",
+      "RETARGETING",
+      "INTERESTS_AND_DEMOGRAPHICS",
+      "MOBILE_APP_CATEGORY",
+      "WEBPAGE_FILTER",
+      "FEED_FILTER",
+      "OFFER_RETARGETING"
+    ],
+    "MatchType": [
+      "KEYWORD",
+      "SYNONYM",
+      "RELATED_KEYWORD",
+      "NONE"
+    ],
+    "Device": [
+      "DESKTOP",
+      "MOBILE",
+      "TABLET",
+      "SMART_TV"
+    ],
+    "Slot": [
+      "ALONE",
+      "COMMERCIAL_SEARCH",
+      "MAPS_GEO_PRODUCT",
+      "PREMIUMBLOCK",
+      "SERP_GEO_WIZARD",
+      "SUGGEST",
+      "PRODUCT_GALLERY",
+      "OTHER"
+    ],
+    "ClickType": [
+      "TITLE",
+      "SITELINK1",
+      "SITELINK2",
+      "SITELINK3",
+      "SITELINK4",
+      "SITELINK5",
+      "SITELINK6",
+      "SITELINK7",
+      "SITELINK8",
+      "VCARD",
+      "CHAT",
+      "PHONE",
+      "MOBILE_APP_ICON",
+      "BUTTON",
+      "PRODUCT_EXTENSIONS",
+      "MARKET",
+      "UNKNOWN"
+    ],
+    "Age": [
+      "AGE_0_17",
+      "AGE_18_24",
+      "AGE_25_34",
+      "AGE_35_44",
+      "AGE_45",
+      "AGE_45_54",
+      "AGE_55",
+      "UNKNOWN"
+    ],
+    "Gender": [
+      "GENDER_MALE",
+      "GENDER_FEMALE",
+      "UNKNOWN"
+    ],
+    "IncomeGrade": [
+      "VERY_HIGH",
+      "HIGH",
+      "ABOVE_AVERAGE",
+      "OTHER"
+    ],
+    "CarrierType": [
+      "CELLULAR",
+      "STATIONARY",
+      "UNKNOWN"
+    ],
+    "MobilePlatform": [
+      "ANDROID",
+      "IOS",
+      "OTHER",
+      "UNKNOWN"
+    ],
+    "TargetingCategory": [
+      "EXACT",
+      "ALTERNATIVE",
+      "COMPETITOR",
+      "BROADER",
+      "ACCESSORY"
+    ],
+    "DateRangeType": [
+      "TODAY",
+      "YESTERDAY",
+      "LAST_3_DAYS",
+      "LAST_5_DAYS",
+      "LAST_7_DAYS",
+      "LAST_14_DAYS",
+      "LAST_30_DAYS",
+      "LAST_90_DAYS",
+      "LAST_365_DAYS",
+      "THIS_WEEK_MON_TODAY",
+      "THIS_WEEK_SUN_TODAY",
+      "LAST_WEEK",
+      "LAST_BUSINESS_WEEK",
+      "LAST_WEEK_SUN_SAT",
+      "THIS_MONTH",
+      "LAST_MONTH",
+      "ALL_TIME",
+      "CUSTOM_DATE",
+      "AUTO"
+    ],
+    "FilterOperator": [
+      "EQUALS",
+      "NOT_EQUALS",
+      "IN",
+      "NOT_IN",
+      "LESS_THAN",
+      "GREATER_THAN",
+      "STARTS_WITH_IGNORE_CASE",
+      "DOES_NOT_START_WITH_IGNORE_CASE",
+      "STARTS_WITH_ANY_IGNORE_CASE",
+      "DOES_NOT_START_WITH_ALL_IGNORE_CASE"
+    ]
+  },
+  "enums_note": "Перечни значений полей для фильтрации. Устаревшее поле TargetingCategory сохранено для совместимости.",
+  "presets": {
+    "campaigns": {
+      "title": "Кампании",
+      "report_type": "CAMPAIGN_PERFORMANCE_REPORT",
+      "row": "кампания",
+      "processing_mode": "auto",
+      "field_names": [
+        "CampaignId",
+        "CampaignName",
+        "CampaignType",
+        "Impressions",
+        "Clicks",
+        "Ctr",
+        "Cost",
+        "AvgCpc",
+        "AvgTrafficVolume",
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion",
+        "Revenue",
+        "GoalsRoi",
+        "Sessions",
+        "BounceRate",
+        "AvgPageviews"
+      ],
+      "order_by": [
+        {
+          "Field": "Cost",
+          "SortOrder": "DESCENDING"
+        }
+      ],
+      "added_segments": [],
+      "requires_goals": true,
+      "metrika_dependent_fields": [
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion",
+        "Revenue",
+        "GoalsRoi",
+        "Sessions",
+        "BounceRate",
+        "AvgPageviews"
+      ],
+      "money_fields": [
+        "Cost",
+        "AvgCpc",
+        "CostPerConversion",
+        "Revenue"
+      ],
+      "blind_for_campaign_master": [],
+      "notes": "Строка — кампания. Конверсии и доход показаны по выбранным целям."
+    },
+    "adgroups": {
+      "title": "Группы объявлений",
+      "report_type": "ADGROUP_PERFORMANCE_REPORT",
+      "row": "группа объявлений",
+      "processing_mode": "auto",
+      "field_names": [
+        "CampaignId",
+        "CampaignName",
+        "AdGroupId",
+        "AdGroupName",
+        "Impressions",
+        "Clicks",
+        "Ctr",
+        "Cost",
+        "AvgCpc",
+        "AvgTrafficVolume",
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion"
+      ],
+      "order_by": [
+        {
+          "Field": "Cost",
+          "SortOrder": "DESCENDING"
+        }
+      ],
+      "added_segments": [],
+      "requires_goals": true,
+      "metrika_dependent_fields": [
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion"
+      ],
+      "money_fields": [
+        "Cost",
+        "AvgCpc",
+        "CostPerConversion"
+      ],
+      "blind_for_campaign_master": [
+        "AdGroupId",
+        "AdGroupName"
+      ],
+      "notes": "Для кампаний Мастера кампаний пуст: AdGroupId и AdGroupName не выводятся."
+    },
+    "ads": {
+      "title": "Объявления",
+      "report_type": "AD_PERFORMANCE_REPORT",
+      "row": "объявление",
+      "processing_mode": "auto",
+      "field_names": [
+        "CampaignId",
+        "CampaignName",
+        "AdGroupId",
+        "AdGroupName",
+        "AdId",
+        "Impressions",
+        "Clicks",
+        "Ctr",
+        "Cost",
+        "AvgCpc",
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion"
+      ],
+      "order_by": [
+        {
+          "Field": "Cost",
+          "SortOrder": "DESCENDING"
+        }
+      ],
+      "added_segments": [],
+      "requires_goals": true,
+      "metrika_dependent_fields": [
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion"
+      ],
+      "money_fields": [
+        "Cost",
+        "AvgCpc",
+        "CostPerConversion"
+      ],
+      "blind_for_campaign_master": [
+        "AdGroupId",
+        "AdGroupName",
+        "AdId"
+      ],
+      "notes": "Строка — объявление. Для кампаний Мастера кампаний часть идентификаторов недоступна."
+    },
+    "keywords": {
+      "title": "Условия показа (фразы, автотаргетинг, ретаргетинг)",
+      "report_type": "CRITERIA_PERFORMANCE_REPORT",
+      "row": "условие показа",
+      "processing_mode": "auto",
+      "field_names": [
+        "CampaignId",
+        "CampaignName",
+        "AdGroupId",
+        "AdGroupName",
+        "CriterionId",
+        "Criterion",
+        "CriterionType",
+        "Impressions",
+        "Clicks",
+        "Ctr",
+        "Cost",
+        "AvgCpc",
+        "AvgTrafficVolume",
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion"
+      ],
+      "order_by": [
+        {
+          "Field": "Cost",
+          "SortOrder": "DESCENDING"
+        }
+      ],
+      "added_segments": [],
+      "requires_goals": true,
+      "metrika_dependent_fields": [
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion"
+      ],
+      "money_fields": [
+        "Cost",
+        "AvgCpc",
+        "CostPerConversion"
+      ],
+      "blind_for_campaign_master": [
+        "AdGroupId",
+        "AdGroupName",
+        "CriterionId"
+      ],
+      "notes": "Тройка Criterion* — условие, заданное рекламодателем; смешивать её с Criteria* нельзя. Для SMART_CAMPAIGN в Impressions и Ctr будет прочерк."
+    },
+    "search_queries": {
+      "title": "Поисковые запросы",
+      "report_type": "SEARCH_QUERY_PERFORMANCE_REPORT",
+      "row": "запрос × подобранная фраза",
+      "processing_mode": "offline",
+      "field_names": [
+        "CampaignId",
+        "CampaignName",
+        "AdGroupId",
+        "AdGroupName",
+        "Query",
+        "MatchedKeyword",
+        "MatchType",
+        "Criterion",
+        "CriterionId",
+        "CriterionType",
+        "Impressions",
+        "Clicks",
+        "Ctr",
+        "Cost",
+        "AvgCpc",
+        "AvgImpressionPosition",
+        "AvgClickPosition",
+        "AvgTrafficVolume",
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion"
+      ],
+      "order_by": [
+        {
+          "Field": "Clicks",
+          "SortOrder": "DESCENDING"
+        }
+      ],
+      "added_segments": [
+        "MatchedKeyword",
+        "MatchType",
+        "Criterion",
+        "CriterionId",
+        "CriterionType"
+      ],
+      "requires_goals": true,
+      "metrika_dependent_fields": [
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion"
+      ],
+      "money_fields": [
+        "Cost",
+        "AvgCpc",
+        "CostPerConversion"
+      ],
+      "blind_for_campaign_master": [
+        "AdGroupId",
+        "AdGroupName",
+        "CriterionId"
+      ],
+      "notes": "Запросы доступны за последние 180 дней. Средние позиции относятся к первой странице поиска; Slot и AdNetworkType в этом отчёте недоступны."
+    },
+    "placements": {
+      "title": "Площадки",
+      "report_type": "CUSTOM_REPORT",
+      "row": "кампания × площадка",
+      "processing_mode": "auto",
+      "field_names": [
+        "CampaignId",
+        "CampaignName",
+        "AdNetworkType",
+        "Placement",
+        "Impressions",
+        "Clicks",
+        "Ctr",
+        "Cost",
+        "AvgCpc",
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion",
+        "Sessions",
+        "BounceRate",
+        "AvgPageviews"
+      ],
+      "order_by": [
+        {
+          "Field": "Cost",
+          "SortOrder": "DESCENDING"
+        }
+      ],
+      "added_segments": [
+        "CampaignId",
+        "CampaignName",
+        "AdNetworkType",
+        "Placement"
+      ],
+      "requires_goals": true,
+      "metrika_dependent_fields": [
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion",
+        "Sessions",
+        "BounceRate",
+        "AvgPageviews"
+      ],
+      "money_fields": [
+        "Cost",
+        "AvgCpc",
+        "CostPerConversion"
+      ],
+      "blind_for_campaign_master": [],
+      "notes": "Строка — кампания, тип сети и площадка. Только РСЯ: AdNetworkType EQUALS AD_NETWORK."
+    },
+    "goals": {
+      "title": "Цели и конверсии",
+      "report_type": "CAMPAIGN_PERFORMANCE_REPORT",
+      "row": "кампания",
+      "processing_mode": "auto",
+      "field_names": [
+        "CampaignId",
+        "CampaignName",
+        "Impressions",
+        "Clicks",
+        "Cost",
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion",
+        "Revenue",
+        "GoalsRoi"
+      ],
+      "order_by": [
+        {
+          "Field": "Cost",
+          "SortOrder": "DESCENDING"
+        }
+      ],
+      "added_segments": [],
+      "requires_goals": true,
+      "metrika_dependent_fields": [
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion",
+        "Revenue",
+        "GoalsRoi"
+      ],
+      "money_fields": [
+        "Cost",
+        "CostPerConversion",
+        "Revenue"
+      ],
+      "blind_for_campaign_master": [],
+      "notes": "До 10 выбранных целей. Показатели возвращаются отдельно для каждой цели и модели атрибуции."
+    },
+    "daily": {
+      "title": "Дневной тренд",
+      "report_type": "CUSTOM_REPORT",
+      "row": "кампания × день",
+      "processing_mode": "auto",
+      "field_names": [
+        "Date",
+        "CampaignId",
+        "CampaignName",
+        "Impressions",
+        "Clicks",
+        "Ctr",
+        "Cost",
+        "AvgCpc",
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion"
+      ],
+      "order_by": [
+        {
+          "Field": "Date",
+          "SortOrder": "ASCENDING"
+        }
+      ],
+      "added_segments": [
+        "Date",
+        "CampaignId",
+        "CampaignName"
+      ],
+      "requires_goals": true,
+      "metrika_dependent_fields": [
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion"
+      ],
+      "money_fields": [
+        "Cost",
+        "AvgCpc",
+        "CostPerConversion"
+      ],
+      "blind_for_campaign_master": [],
+      "notes": "Строка — кампания и день. Период задаётся датами или именованным интервалом."
+    },
+    "search_positions": {
+      "title": "Блоки и позиции на поиске",
+      "report_type": "CRITERIA_PERFORMANCE_REPORT",
+      "row": "условие показа × блок",
+      "processing_mode": "auto",
+      "field_names": [
+        "CampaignId",
+        "CampaignName",
+        "AdGroupId",
+        "AdGroupName",
+        "CriterionId",
+        "Criterion",
+        "CriterionType",
+        "AdNetworkType",
+        "Slot",
+        "Impressions",
+        "Clicks",
+        "Cost",
+        "AvgCpc",
+        "AvgImpressionPosition",
+        "AvgClickPosition",
+        "AvgTrafficVolume",
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion"
+      ],
+      "filters": [
+        {
+          "Field": "AdNetworkType",
+          "Operator": "EQUALS",
+          "Values": [
+            "SEARCH"
+          ]
+        }
+      ],
+      "order_by": [
+        {
+          "Field": "Impressions",
+          "SortOrder": "DESCENDING"
+        }
+      ],
+      "added_segments": [
+        "AdNetworkType",
+        "Slot"
+      ],
+      "requires_goals": true,
+      "metrika_dependent_fields": [
+        "Conversions",
+        "ConversionRate",
+        "CostPerConversion"
+      ],
+      "money_fields": [
+        "Cost",
+        "AvgCpc",
+        "CostPerConversion"
+      ],
+      "blind_for_campaign_master": [
+        "AdGroupId",
+        "AdGroupName",
+        "CriterionId"
+      ],
+      "notes": "Только поиск. Доля PREMIUMBLOCK считается по показам условия, а не конкретного запроса. ALONE и другие блоки показываются отдельно."
+    }
+  }
+}
