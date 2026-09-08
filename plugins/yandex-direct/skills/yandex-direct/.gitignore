@@ -1,5 +1,6 @@
 config/*
 !config/README.md
+!config/API_ACCESS.md
 !config/.env.example
 .env
 .env.*

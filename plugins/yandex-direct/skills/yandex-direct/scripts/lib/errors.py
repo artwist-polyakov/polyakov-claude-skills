@@ -77,7 +77,7 @@ CODES = {
         AUTH,
         False,
         "Заявка на доступ к API не одобрена. Порядок подачи — в "
-        "references/API_ACCESS.md.",
+        "config/API_ACCESS.md.",
     ),
     513: (
         AUTH,

@@ -178,7 +178,7 @@ ROAS не учитывает себестоимость и прочие расх
 
 | Задача | Команды | Подробности |
 |---|---|---|
-| Кабинет и доступ | `accounts.py`, `whoami.py` | [CLIENT_LOGIN.md](references/CLIENT_LOGIN.md), [API_ACCESS.md](references/API_ACCESS.md) |
+| Кабинет и доступ | `accounts.py`, `whoami.py` | [CLIENT_LOGIN.md](references/CLIENT_LOGIN.md), [API_ACCESS.md](config/API_ACCESS.md) |
 | Кампании и группы | `campaigns.py`, `adgroups.py` | [PLAYBOOK.md](references/PLAYBOOK.md) |
 | Объявления и фразы | `ads.py`, `keywords.py` | [API_OBJECTS.md](references/API_OBJECTS.md) |
 | Статистика, цели и сравнения | `report.py` | [REPORTS.md](references/REPORTS.md) |
