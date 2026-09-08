@@ -11,7 +11,7 @@
     "date_range_type": "LAST_30_DAYS",
     "include_vat": "YES",
     "attribution_models": [
-      "LC"
+      "AUTO"
     ],
     "processing_mode": "auto",
     "page_limit": 100000,
