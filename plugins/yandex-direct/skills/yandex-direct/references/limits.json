@@ -1,0 +1,1809 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-08-24",
+  "readme": "Ограничения API для локальной проверки значений, размеров пакетов, денег и нагрузки. Подробности: ERRORS_AND_LIMITS.md. Актуальные Constants и ограничения кабинета имеют приоритет над сохранёнными значениями.",
+  "money": {
+    "multiplier": 1000000,
+    "comment": "Все денежные значения API — целые числа, умноженные на множитель. Константа обязана существовать в одном модуле скилла.",
+    "price_extension": {
+      "step": 10000,
+      "max": 10000000000000000,
+      "comment": "Цена в объявлении кратна step; OldPrice строго больше Price."
+    },
+    "currency_bounds_source": "Dictionaries.get, справочник Currencies",
+    "currency_bounds_comment": "Минимальные и максимальные ставки и бюджеты зависят от валюты кабинета и в этом файле не фиксируются. Значения в примерах документации приведены для иллюстрации и авторитетным источником не являются.",
+    "currency_bounds_names": [
+      "MinimumBid",
+      "MaximumBid",
+      "MinimumCPM",
+      "MaximumCPM",
+      "MinimumAverageCPC",
+      "MinimumAverageCPA",
+      "MinimumAverageCPV",
+      "MaximumAverageCPV",
+      "MinimumPayForConversionCPA",
+      "MaximumPayForConversionCPA",
+      "MinimumDailyBudget",
+      "MinimumAccountDailyBudget",
+      "MinDailyBudgetForPeriod",
+      "MaxDailyBudgetForPeriod",
+      "MinimumWeeklySpendLimit",
+      "MaxAutobudget",
+      "MinimumPayment",
+      "MinimumTransferAmount",
+      "MinCpcCpaPerformance",
+      "AutobudgetAvgCpaWarning",
+      "BidIncrement"
+    ]
+  },
+  "text": {
+    "narrow_chars": "!,.;:\"",
+    "narrow_chars_comment": "Директ называет эти символы «узкими». Часть полей считает их наравне с прочими (mode = with_narrow), часть — отдельным счётчиком (mode = without_narrow плюс narrow_max).",
+    "template_comment": "Символы # шаблона не входят в длину полей, помеченных template_hash_excluded.",
+    "fields": {
+      "ResponsiveAd.Titles.item": {
+        "max_length": 56,
+        "mode": "with_narrow",
+        "max_word_length": 22,
+        "template_hash_excluded": true
+      },
+      "ResponsiveAd.Texts.item": {
+        "max_length": 81,
+        "mode": "without_narrow",
+        "narrow_max": 15,
+        "max_word_length": 23,
+        "template_hash_excluded": true
+      },
+      "TextAd.Title": {
+        "max_length": 56,
+        "mode": "with_narrow",
+        "max_word_length": 22,
+        "template_hash_excluded": true,
+        "readonly_format": true
+      },
+      "TextAd.Title2": {
+        "max_length": 30,
+        "mode": "without_narrow",
+        "narrow_max": 15,
+        "max_word_length": 22,
+        "template_hash_excluded": true,
+        "readonly_format": true
+      },
+      "TextAd.Text": {
+        "max_length": 81,
+        "mode": "without_narrow",
+        "narrow_max": 15,
+        "max_word_length": 23,
+        "template_hash_excluded": true,
+        "readonly_format": true
+      },
+      "MobileAppAd.Title": {
+        "max_length": 56,
+        "mode": "with_narrow",
+        "max_word_length": 22,
+        "template_hash_excluded": true
+      },
+      "MobileAppAd.Text": {
+        "max_length": 75,
+        "mode": "with_narrow",
+        "max_word_length": 23,
+        "template_hash_excluded": true
+      },
+      "DynamicTextAd.Text": {
+        "max_length": 81,
+        "mode": "without_narrow",
+        "narrow_max": 15,
+        "max_word_length": 23,
+        "template_hash_excluded": true
+      },
+      "Href": {
+        "max_length": 1024,
+        "mode": "with_narrow",
+        "template_hash_excluded": true,
+        "requires_protocol_and_domain": true
+      },
+      "DisplayUrlPath": {
+        "max_length": 20,
+        "mode": "with_narrow",
+        "template_hash_excluded": true,
+        "allowed_chars": "буквы, цифры, - № / % #",
+        "forbidden": [
+          "пробел",
+          "_",
+          "--",
+          "//"
+        ]
+      },
+      "Sitelink.Title": {
+        "max_length": 30,
+        "mode": "with_narrow"
+      },
+      "Sitelink.Description": {
+        "max_length": 60,
+        "mode": "with_narrow"
+      },
+      "Sitelink.Href": {
+        "max_length": 1024,
+        "mode": "with_narrow",
+        "requires_protocol_and_domain": true
+      },
+      "AdExtension.Callout.CalloutText": {
+        "max_length": 25,
+        "mode": "with_narrow"
+      },
+      "AdGroup.Name": {
+        "min_length": 1,
+        "max_length": 255,
+        "mode": "with_narrow"
+      },
+      "AdGroup.TrackingParams": {
+        "max_length": 1024,
+        "mode": "with_narrow"
+      },
+      "MobileAppAdGroup.StoreUrl": {
+        "max_length": 1024,
+        "mode": "with_narrow"
+      },
+      "DynamicTextAdGroup.DomainUrl": {
+        "max_length": 100,
+        "mode": "with_narrow"
+      },
+      "Campaign.Name": {
+        "max_length": 255,
+        "mode": "with_narrow"
+      },
+      "Campaign.ClientInfo": {
+        "max_length": 255,
+        "mode": "with_narrow"
+      },
+      "Campaign.ExcludedSites.item": {
+        "max_length": 255,
+        "mode": "with_narrow"
+      },
+      "NegativeKeywordSharedSet.Name": {
+        "max_length": 255,
+        "mode": "with_narrow"
+      },
+      "RetargetingList.Name": {
+        "max_length": 250,
+        "mode": "with_narrow"
+      },
+      "RetargetingList.Description": {
+        "max_length": 4096,
+        "mode": "with_narrow"
+      },
+      "AdImage.Name": {
+        "max_length": 255,
+        "mode": "with_narrow"
+      },
+      "Feed.Name": {
+        "max_length": 255,
+        "mode": "with_narrow"
+      },
+      "Feed.Url": {
+        "max_length": 1024,
+        "mode": "with_narrow"
+      },
+      "Feed.Login": {
+        "max_length": 50,
+        "mode": "with_narrow"
+      },
+      "Feed.Filename": {
+        "max_length": 255,
+        "mode": "with_narrow"
+      },
+      "TrackingPixels.item": {
+        "max_length": 1024,
+        "mode": "with_narrow"
+      },
+      "Keyword.UserParam1": {
+        "max_length": 255,
+        "mode": "with_narrow"
+      },
+      "Keyword.UserParam2": {
+        "max_length": 255,
+        "mode": "with_narrow"
+      },
+      "CpmBannerCampaign.ExcludedSitesForVideoAds.item": {
+        "max_length": 255,
+        "mode": "with_narrow"
+      }
+    },
+    "runtime_source": {
+      "method": "Dictionaries.get",
+      "dictionary": "Constants",
+      "comment": "Директ отдаёт длины текстов и составы наборов как справочник Constants. Значения этого файла — офлайн-фолбэк; при расхождении верен справочник.",
+      "names": [
+        "MaximumTextAdTitleLength",
+        "MaximumTextAdTitle2Length",
+        "MaximumTextAdTextLength",
+        "MaximumAdTitleWordLength",
+        "MaximumAdTextWordLength",
+        "MaximumNumberOfNarrowCharacters",
+        "MaximumDynamicTextAdTextLength",
+        "MaximumMobileAppAdTitleLength",
+        "MaximumMobileAppAdTextLength",
+        "MaximumSitelinksNumber",
+        "MaximumSitelinkTextLength",
+        "MaximumSitelinkDescriptionLength",
+        "MaximumSitelinksLength",
+        "MaximumAdTitleLength",
+        "MaximumAdTextLength"
+      ],
+      "deprecated_names": [
+        "MaximumAdTitleLength",
+        "MaximumAdTextLength"
+      ],
+      "unbound_names": [
+        "MaximumSitelinksLength"
+      ],
+      "unbound_comment": "Величины, которых в этом файле нет вовсе: документация их не публикует, и офлайн-двойника у них не существует. Пока справочник не прочитан, такой величины у скилла нет — ни числом, ни null: придуманная граница хуже её отсутствия.",
+      "bindings_comment": "Какое имя справочника какую величину этого файла замещает. Соответствие записано потому, что имён справочника в файле нет: величины названы здесь по-своему. Оно не взаимно-однозначное — одно имя отвечает нескольким полям, — поэтому это список, а не объект. path адресует величину сегментами, а не строкой с точками: имена полей длины сами содержат точку. Имена без указания типа объявления (MaximumAdTitleWordLength, MaximumAdTextWordLength, MaximumNumberOfNarrowCharacters) привязаны только к TextAd: устаревшая пара MaximumAdTitleLength → MaximumTextAdTitleLength показывает, что неквалифицированный префикс называл текстово-графическое объявление. Комбинаторных полей здесь нет намеренно: имён вида MaximumResponsiveAd… в справочнике нет (ERRORS_AND_LIMITS.md, раздел 3.7), и привязать их значило бы выдать догадку за прочитанное. Устаревшие имена не привязаны и не запрашиваются: два имени на одну величину спорили бы между собой.",
+      "bindings": [
+        {
+          "name": "MaximumTextAdTitleLength",
+          "path": [
+            "text",
+            "fields",
+            "TextAd.Title",
+            "max_length"
+          ]
+        },
+        {
+          "name": "MaximumTextAdTitle2Length",
+          "path": [
+            "text",
+            "fields",
+            "TextAd.Title2",
+            "max_length"
+          ]
+        },
+        {
+          "name": "MaximumTextAdTextLength",
+          "path": [
+            "text",
+            "fields",
+            "TextAd.Text",
+            "max_length"
+          ]
+        },
+        {
+          "name": "MaximumDynamicTextAdTextLength",
+          "path": [
+            "text",
+            "fields",
+            "DynamicTextAd.Text",
+            "max_length"
+          ]
+        },
+        {
+          "name": "MaximumMobileAppAdTitleLength",
+          "path": [
+            "text",
+            "fields",
+            "MobileAppAd.Title",
+            "max_length"
+          ]
+        },
+        {
+          "name": "MaximumMobileAppAdTextLength",
+          "path": [
+            "text",
+            "fields",
+            "MobileAppAd.Text",
+            "max_length"
+          ]
+        },
+        {
+          "name": "MaximumSitelinkTextLength",
+          "path": [
+            "text",
+            "fields",
+            "Sitelink.Title",
+            "max_length"
+          ]
+        },
+        {
+          "name": "MaximumSitelinkDescriptionLength",
+          "path": [
+            "text",
+            "fields",
+            "Sitelink.Description",
+            "max_length"
+          ]
+        },
+        {
+          "name": "MaximumSitelinksNumber",
+          "path": [
+            "collections",
+            "SitelinksSet.Sitelinks",
+            "max"
+          ]
+        },
+        {
+          "name": "MaximumAdTitleWordLength",
+          "path": [
+            "text",
+            "fields",
+            "TextAd.Title",
+            "max_word_length"
+          ]
+        },
+        {
+          "name": "MaximumAdTitleWordLength",
+          "path": [
+            "text",
+            "fields",
+            "TextAd.Title2",
+            "max_word_length"
+          ]
+        },
+        {
+          "name": "MaximumAdTextWordLength",
+          "path": [
+            "text",
+            "fields",
+            "TextAd.Text",
+            "max_word_length"
+          ]
+        },
+        {
+          "name": "MaximumNumberOfNarrowCharacters",
+          "path": [
+            "text",
+            "fields",
+            "TextAd.Title2",
+            "narrow_max"
+          ]
+        },
+        {
+          "name": "MaximumNumberOfNarrowCharacters",
+          "path": [
+            "text",
+            "fields",
+            "TextAd.Text",
+            "narrow_max"
+          ]
+        }
+      ]
+    },
+    "callouts_total": {
+      "desktop": 132,
+      "mobile": 76,
+      "single_line": 66,
+      "comment": "Справка Директа требует суммарно не более 132 символов для десктопов и не более 76 для мобильных; отдельно от этого при показе отображается столько уточнений, сколько умещается в строку 66 символов. Проверяет ли суммы 132 и 76 API при записи, документация не говорит, и кода ошибки для них не называет."
+    }
+  },
+  "keywords": {
+    "keyword_max_length": 4096,
+    "keyword_max_words": 7,
+    "keyword_max_word_length": 35,
+    "keyword_length_comment": "Длина считается с минус-словами, пробелами и операторами. Оператор ! перед минус-словом не учитывается, последовательность -! считается одним символом. Слова считаются без стоп-слов и минус-слов.",
+    "autotargetings_per_adgroup": 1,
+    "negative_keywords": {
+      "adgroup_total_length": 4096,
+      "campaign_total_length": 20000,
+      "shared_set_total_length": 4096,
+      "max_words": 7,
+      "max_word_length": 35,
+      "length_comment": "Пробелы, дефисы и операторы в суммарную длину не входят. Минус-фраза указывается без минуса перед первым словом."
+    },
+    "shared_sets_per_adgroup": 3,
+    "shared_sets_per_campaign": 3,
+    "shared_sets_per_client": 30
+  },
+  "collections": {
+    "ResponsiveAd.Titles": {
+      "min": 1,
+      "max": 7,
+      "required_on_add": true,
+      "required_on_update": true,
+      "comment": "Обязателен и при обновлении: частичное обновление комплекта документацией не предусмотрено, переслать нужно все заголовки."
+    },
+    "ResponsiveAd.Texts": {
+      "min": 1,
+      "max": 3,
+      "required_on_add": true,
+      "required_on_update": true,
+      "comment": "То же, что у Titles: обновление требует полного набора текстов."
+    },
+    "ResponsiveAd.AdImageHashes": {
+      "min": 1,
+      "max": 5,
+      "required_on_add": false,
+      "required_on_update": false,
+      "comment": "min ограничивает переданный массив; сам массив необязателен."
+    },
+    "ResponsiveAd.VideoExtensionIds": {
+      "min": 1,
+      "max": 6,
+      "required_on_add": false,
+      "required_on_update": false,
+      "comment": "min ограничивает переданный массив; сам массив необязателен."
+    },
+    "AdExtensionIds": {
+      "max": 50,
+      "required_on_add": false,
+      "required_on_update": false
+    },
+    "SitelinksSet.Sitelinks": {
+      "min": 1,
+      "max": 8,
+      "comment": "Комментарий к коду ошибки 7000 в документации всё ещё называет 4 — устаревший текст: журнал изменений фиксирует подъём предела до 8.",
+      "required_on_add": true
+    },
+    "Campaign.BlockedIps": {
+      "max": 25,
+      "required_on_add": false,
+      "required_on_update": false
+    },
+    "Campaign.ExcludedSites": {
+      "max": 1000,
+      "required_on_add": false,
+      "required_on_update": false
+    },
+    "Campaign.Schedule": {
+      "max": 7,
+      "items_per_element": 25,
+      "required_on_add": false,
+      "required_on_update": false
+    },
+    "Strategy.PriorityGoals": {
+      "min": 1,
+      "max": 30,
+      "min_for_multiple_goals_strategies": 2,
+      "multiple_goals_strategies": [
+        "AVERAGE_CPA_MULTIPLE_GOALS",
+        "PAY_FOR_CONVERSION_MULTIPLE_GOALS"
+      ],
+      "comment": "Массив обязателен не всегда, а при стратегиях из required_when_strategy_in — тогда и в add, и в update. Признаки required_on_add и required_on_update остаются булевыми и описывают безусловный случай; условие задаёт отдельный список.",
+      "required_on_add": false,
+      "required_on_update": false,
+      "required_when_strategy_in": [
+        "AVERAGE_CPA_MULTIPLE_GOALS",
+        "PAY_FOR_CONVERSION_MULTIPLE_GOALS",
+        "MAX_PROFIT"
+      ]
+    },
+    "FeedFilterConditions": {
+      "max": 30,
+      "max_total_bytes_json": 66560,
+      "required_on_add": false,
+      "required_on_update": false
+    },
+    "ShoppingAd.DefaultTexts": {
+      "min": 1,
+      "max": 1,
+      "required_on_update": true,
+      "comment": "Ровно одно значение; обязателен и при обновлении.",
+      "required_on_add": true
+    },
+    "ListingAd.DefaultTexts": {
+      "min": 1,
+      "max": 1,
+      "required_on_update": true,
+      "comment": "Ровно одно значение; обязателен и при обновлении.",
+      "required_on_add": true
+    },
+    "TrackingPixels": {
+      "max": 2,
+      "required_on_add": false,
+      "required_on_update": false
+    },
+    "_semantics": "min и max ограничивают массив, который передан, и обязательности не выражают: AdImageHashes с min 1 остаётся необязательным. Присутствие массива задают отдельные признаки required_on_add и required_on_update. Отсутствие признака означает, что массив передавать не обязательно."
+  },
+  "objects": {
+    "campaigns_per_client": {
+      "default": 3000,
+      "restriction": "CAMPAIGNS_TOTAL_PER_CLIENT"
+    },
+    "unarchived_campaigns_per_client": {
+      "default": 1000,
+      "restriction": "CAMPAIGNS_UNARCHIVED_PER_CLIENT"
+    },
+    "adgroups_per_campaign": {
+      "default": 1000,
+      "restriction": "ADGROUPS_TOTAL_PER_CAMPAIGN"
+    },
+    "ads_per_adgroup": {
+      "default": 50,
+      "restriction": "ADS_TOTAL_PER_ADGROUP"
+    },
+    "keywords_per_adgroup": {
+      "default": 200,
+      "restriction": "KEYWORDS_TOTAL_PER_ADGROUP"
+    },
+    "ad_extensions_per_client": {
+      "default": null,
+      "restriction": "AD_EXTENSIONS_TOTAL",
+      "comment": "Числа в документации нет, значение известно только из кабинета."
+    },
+    "responsive_ads_per_adgroup_unarchived": 3,
+    "responsive_ads_per_adgroup_total": 10,
+    "shopping_ads_per_adgroup_unarchived": 1,
+    "listing_ads_per_adgroup_unarchived": 1,
+    "callouts_per_ad": 50,
+    "sitelink_sets_per_ad": 1,
+    "images_per_ad_except_responsive": 1,
+    "videos_per_ad_except_responsive": 1,
+    "images_per_client_formula": "1000 + 2 * количество объявлений",
+    "images_per_client_formula_comment": "Остаток пула изображений готовым значением недоступен. Старый AdImage.GetLimits не работает; AdImages v501 не содержит аналога. Если нужна оценка, различайте рассчитанный предел и фактически занятый объём.",
+    "feeds_per_client": 50,
+    "retargeting_lists_per_client": 2000,
+    "retargeting_rules_per_list": {
+      "min": 1,
+      "max": 50
+    },
+    "retargeting_goals_per_rule": {
+      "min": 1,
+      "max": 250
+    },
+    "retargeting_interest_rules_per_list": 3,
+    "retargeting_interests_per_rule": 10,
+    "audience_targets_per_text_or_mobile_adgroup": 50,
+    "audience_targets_type_audience_per_text_adgroup": 1,
+    "audience_targets_per_cpm_banner_user_profile_adgroup": 1,
+    "audience_targets_per_cpm_video_adgroup": 1,
+    "campaigns_per_package_strategy": 100,
+    "package_strategies_per_client": 1500,
+    "unarchived_package_strategies_per_client": 500,
+    "priority_goals_per_package_strategy": 30,
+    "retargeting_membership_life_span_days": {
+      "min": 1,
+      "max": 540,
+      "comment": "Только для целей Яндекс Метрики. Для сегментов Метрики и сегментов Аудиторий переданное значение игнорируется."
+    },
+    "excluded_sites_for_video_ads": {
+      "default": 100,
+      "restriction": "VIDEO_DOMAIN_BLACKLIST_SIZE",
+      "comment": "Массив ExcludedSitesForVideoAds медийной кампании."
+    },
+    "excluded_sites": {
+      "default": 1000,
+      "restriction": "GENERAL_DOMAIN_BLACKLIST_SIZE",
+      "comment": "Массив ExcludedSites кампании."
+    }
+  },
+  "bid_modifiers": {
+    "counts": {
+      "mobile_per_campaign_or_adgroup": 1,
+      "video_extension_per_campaign_or_adgroup": 1,
+      "demographics_per_campaign_or_adgroup": 12,
+      "retargeting_per_campaign_or_adgroup": 100
+    },
+    "value_ranges_percent": {
+      "mobile": {
+        "min": 0,
+        "max": 1300
+      },
+      "desktop_tablet_smarttv": {
+        "min": 0,
+        "max": 1300
+      },
+      "demographics": {
+        "min": 0,
+        "max": 1300
+      },
+      "retargeting": {
+        "min": 0,
+        "max": 1300
+      },
+      "serp_layout_income_grade_adgroup": {
+        "min": 1,
+        "max": 1300
+      },
+      "regional": {
+        "min": 10,
+        "max": 1300
+      },
+      "smart_banner": {
+        "min": 20,
+        "max": 1300
+      },
+      "video_extension": {
+        "min": 50,
+        "max": 1300
+      }
+    },
+    "formula": "итоговая ставка = ставка * BidModifier / 100",
+    "level_rules": {
+      "REGIONAL_ADJUSTMENT": "только на уровне кампании",
+      "cpm_banner_campaign": "в медийных кампаниях корректировки только на уровне группы"
+    },
+    "incompatible": [
+      [
+        "DESKTOP_ADJUSTMENT",
+        "TABLET_ADJUSTMENT"
+      ],
+      [
+        "DESKTOP_ADJUSTMENT",
+        "DESKTOP_ONLY_ADJUSTMENT"
+      ]
+    ],
+    "forbidden_zero_pairs": {
+      "scope": "одна группа объявлений",
+      "pairs": [
+        [
+          "MOBILE_ADJUSTMENT",
+          "DESKTOP_ADJUSTMENT"
+        ],
+        [
+          "MOBILE_ADJUSTMENT",
+          "DESKTOP_ONLY_ADJUSTMENT"
+        ]
+      ],
+      "comment": "Обе корректировки пары нельзя одновременно установить равными 0. Относится к корректировке на мобильных без указания OperatingSystemType; с заданной операционной системой запрет не документирован."
+    }
+  },
+  "schedule": {
+    "hourly_coefficient": {
+      "min": 0,
+      "max": 200,
+      "step": 10
+    },
+    "holiday_bid_percent": {
+      "min": 10,
+      "max": 200,
+      "step": 10
+    },
+    "holiday_start_hour": {
+      "min": 0,
+      "max": 23
+    },
+    "holiday_end_hour": {
+      "min": 1,
+      "max": 24
+    },
+    "holiday_rules": [
+      "BidPercent, StartHour и EndHour допустимы только при SuspendOnHolidays: NO",
+      "запрет показов в праздники задаётся SuspendOnHolidays: YES, а не нулевым коэффициентом",
+      "день недели, отсутствующий в массиве Schedule, получает все коэффициенты равными 100",
+      "при автоматической стратегии 0 запрещает показы, любой другой коэффициент эквивалентен 100"
+    ]
+  },
+  "media": {
+    "image": {
+      "formats": [
+        "JPG",
+        "PNG",
+        "GIF"
+      ],
+      "formats_comment": "API принимает GIF, JPEG и PNG; WEBP отклоняется кодом 5004.",
+      "image_ad": {
+        "max_bytes": 524288,
+        "comment": "Для графических объявлений размер берётся из этого списка целиком, а не из диапазона: проверять по side_min и side_max нельзя. Пары — ширина и высота в пикселях.",
+        "sizes": [
+          [
+            240,
+            400
+          ],
+          [
+            300,
+            250
+          ],
+          [
+            300,
+            500
+          ],
+          [
+            300,
+            600
+          ],
+          [
+            320,
+            50
+          ],
+          [
+            320,
+            100
+          ],
+          [
+            320,
+            480
+          ],
+          [
+            336,
+            280
+          ],
+          [
+            480,
+            320
+          ],
+          [
+            480,
+            800
+          ],
+          [
+            600,
+            500
+          ],
+          [
+            600,
+            1000
+          ],
+          [
+            600,
+            1200
+          ],
+          [
+            640,
+            100
+          ],
+          [
+            640,
+            200
+          ],
+          [
+            640,
+            960
+          ],
+          [
+            672,
+            560
+          ],
+          [
+            720,
+            1200
+          ],
+          [
+            728,
+            90
+          ],
+          [
+            900,
+            750
+          ],
+          [
+            900,
+            1500
+          ],
+          [
+            900,
+            1800
+          ],
+          [
+            960,
+            150
+          ],
+          [
+            960,
+            300
+          ],
+          [
+            960,
+            640
+          ],
+          [
+            960,
+            1440
+          ],
+          [
+            960,
+            1600
+          ],
+          [
+            970,
+            250
+          ],
+          [
+            1008,
+            840
+          ],
+          [
+            1200,
+            1000
+          ],
+          [
+            1200,
+            2000
+          ],
+          [
+            1200,
+            2400
+          ],
+          [
+            1280,
+            200
+          ],
+          [
+            1280,
+            400
+          ],
+          [
+            1280,
+            1920
+          ],
+          [
+            1344,
+            1120
+          ],
+          [
+            1440,
+            960
+          ],
+          [
+            1456,
+            180
+          ],
+          [
+            1920,
+            1280
+          ],
+          [
+            1940,
+            500
+          ],
+          [
+            2184,
+            270
+          ],
+          [
+            2910,
+            750
+          ],
+          [
+            2912,
+            360
+          ],
+          [
+            3880,
+            1000
+          ]
+        ]
+      },
+      "other_ad_types": {
+        "max_bytes": 10485760,
+        "measured_comment": "Изображения с отношением сторон между допустимыми обычным и широкоформатным диапазонами могут отклоняться кодом 5004 даже при допустимых размерах сторон.",
+        "comment": "Два непересекающихся правила, а не одно. Изображение проходит, если выполнено ровно одно из них целиком: стороны в диапазоне при соотношении из ratio_range, либо соотношение 16:9 с размером в границах ratio_16_9. Проверка только по side_min и side_max пропускает, например, 450×700: стороны в диапазоне, а соотношение 0.643 вне 3:4.",
+        "rules": [
+          {
+            "name": "square_to_4_3",
+            "ratio_range": {
+              "min": 0.75,
+              "max": 1.3333333333333333
+            },
+            "ratio_range_comment": "от 3:4 до 4:3 включительно; отношение считается как ширина / высота",
+            "side_min": 450,
+            "side_max": 5000
+          },
+          {
+            "name": "wide_16_9",
+            "ratio_nominal": 1.7777777777777777,
+            "ratio_min": 1.7728,
+            "ratio_max": 1.7828,
+            "ratio_comment": "16:9 с допуском ±0.005, границы посчитаны заранее, чтобы потребитель не выбирал их сам. Допуск не декоративный: документированный минимум 1080x607 даёт 1.77924, и проверка на точное равенство отклонила бы саму границу из документации.",
+            "min_width": 1080,
+            "min_height": 607,
+            "max_width": 5000,
+            "max_height": 2812
+          }
+        ]
+      },
+      "type_autodetect": {
+        "values": [
+          "REGULAR",
+          "WIDE",
+          "FIXED_IMAGE",
+          "AUTO"
+        ],
+        "comment": "Тип определяется автоматически, только если Type не передан или равен AUTO. При совпадении FIXED_IMAGE с REGULAR/WIDE автоопределение выбирает REGULAR/WIDE, поэтому для графических объявлений FIXED_IMAGE передаётся явно.",
+        "ambiguous_sizes": [
+          [
+            600,
+            500
+          ],
+          [
+            672,
+            560
+          ],
+          [
+            900,
+            750
+          ],
+          [
+            1008,
+            840
+          ],
+          [
+            1200,
+            1000
+          ],
+          [
+            1344,
+            1120
+          ]
+        ]
+      }
+    },
+    "video": {
+      "formats": [
+        "MP4",
+        "WebM",
+        "MOV",
+        "QT",
+        "FLV",
+        "AVI"
+      ],
+      "max_bytes": 104857600,
+      "duration_seconds": {
+        "min": 5,
+        "max": 60
+      },
+      "duration_seconds_non_skippable_max": 15,
+      "resolution_min": "360p",
+      "resolution_recommended": "1080p",
+      "fps": {
+        "min": 20,
+        "max": 30
+      },
+      "video_tracks": 1,
+      "audio_tracks": {
+        "min": 0,
+        "max": 1
+      },
+      "audio_min_quality": "44 кГц, 16 Кбит/с, стерео",
+      "aspect_ratios": [
+        [
+          3,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          19,
+          10
+        ],
+        [
+          16,
+          9
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          191,
+          100
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          9,
+          16
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ]
+      ],
+      "aspect_ratios_comment": "Закрытый список, пары «ширина к высоте». 19:10 — это 1,9:1, 191:100 — 1,91:1; в документации это два разных значения, а не опечатка в одном. Промежуточных значений нет.",
+      "product_video": {
+        "comment": "Видео про товар в ЕПК и товарной кампании: источник — фид, а не AdVideos.add.",
+        "formats": [
+          "MP4"
+        ],
+        "duration_seconds": {
+          "min": 5,
+          "max": 45
+        },
+        "recommended_aspect_ratios": [
+          [
+            16,
+            9
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            9,
+            16
+          ]
+        ]
+      }
+    },
+    "feed": {
+      "max_bytes": 52428800,
+      "comment": "Размер фида ограничен общим размером запроса."
+    }
+  },
+  "api": {
+    "concurrent_requests_per_advertiser": 5,
+    "get_max_objects_per_response": 10000,
+    "page": {
+      "limit_min": 0,
+      "limit_max": 10000,
+      "limit_default": 10000,
+      "offset_default": 0,
+      "continue_with": "LimitedBy",
+      "comment": "Значение LimitedBy передаётся в Offset следующего запроса с теми же SelectionCriteria. Отсутствие LimitedBy означает последнюю страницу."
+    },
+    "bid_modifiers_limit_plus_offset_max": 120000,
+    "bid_modifiers_offset_max_without_limit": 110000,
+    "units": {
+      "error_call_flat": 50,
+      "error_call_over_call": 20,
+      "error_operation_cost": 20,
+      "error_cost_comment": "Стоимость отказа зависит от его уровня. Для планирования сохранены наблюдавшиеся варианты: фиксированная стоимость и надбавка к стоимости вызова. Ошибочные операции внутри частично успешного пакета учитываются отдельно; предупреждение ошибкой не считается.",
+      "error_measured_comment": "Наблюдавшаяся стоимость ошибок: код, метод, число успешных и неуспешных операций и списанные баллы. Это примеры поведения, а не гарантия одинаковой цены для любого отказа.",
+      "error_measured": [
+        {
+          "level": "call",
+          "code": 8000,
+          "method": "AdExtensions.get",
+          "rejected": 0,
+          "accepted": 0,
+          "charged": 50
+        },
+        {
+          "level": "call",
+          "code": 8000,
+          "method": "Campaigns.get",
+          "rejected": 0,
+          "accepted": 0,
+          "charged": 50
+        },
+        {
+          "level": "call",
+          "code": 8000,
+          "method": "Sitelinks.get",
+          "rejected": 0,
+          "accepted": 0,
+          "charged": 50
+        },
+        {
+          "level": "call",
+          "code": 8800,
+          "method": "Dictionaries.get",
+          "rejected": 0,
+          "accepted": 0,
+          "charged": 50
+        },
+        {
+          "level": "call",
+          "code": 4001,
+          "method": "AudienceTargets.get",
+          "rejected": 0,
+          "accepted": 0,
+          "charged": 21
+        },
+        {
+          "level": "call",
+          "code": 4001,
+          "method": "Businesses.get",
+          "rejected": 0,
+          "accepted": 0,
+          "charged": 30
+        },
+        {
+          "level": "call",
+          "code": 4001,
+          "method": "AdGroups.get",
+          "rejected": 0,
+          "accepted": 0,
+          "charged": 35
+        },
+        {
+          "level": "call",
+          "code": 4001,
+          "method": "Ads.get",
+          "rejected": 0,
+          "accepted": 0,
+          "charged": 35
+        },
+        {
+          "level": "call",
+          "code": 4001,
+          "method": "Keywords.get",
+          "rejected": 0,
+          "accepted": 0,
+          "charged": 35
+        },
+        {
+          "level": "operation",
+          "code": 8301,
+          "method": "AdGroups.delete",
+          "rejected": 1,
+          "accepted": 0,
+          "charged": 30
+        },
+        {
+          "level": "operation",
+          "code": 5004,
+          "method": "AdImages.add",
+          "rejected": 1,
+          "accepted": 0,
+          "charged": 40
+        },
+        {
+          "level": "operation",
+          "code": 5004,
+          "method": "AdImages.add",
+          "rejected": 1,
+          "accepted": 0,
+          "charged": 40
+        },
+        {
+          "level": "operation",
+          "code": 5004,
+          "method": "AdImages.add",
+          "rejected": 1,
+          "accepted": 0,
+          "charged": 40
+        },
+        {
+          "level": "operation",
+          "code": 5004,
+          "method": "AdImages.add",
+          "rejected": 1,
+          "accepted": 0,
+          "charged": 40
+        },
+        {
+          "level": "operation",
+          "code": 5004,
+          "method": "AdImages.add",
+          "rejected": 1,
+          "accepted": 0,
+          "charged": 40
+        },
+        {
+          "level": "operation",
+          "code": 5004,
+          "method": "AdImages.add",
+          "rejected": 1,
+          "accepted": 0,
+          "charged": 40
+        },
+        {
+          "level": "operation",
+          "code": 5004,
+          "method": "AdImages.add",
+          "rejected": 1,
+          "accepted": 0,
+          "charged": 40
+        },
+        {
+          "level": "operation",
+          "code": 5010,
+          "method": "AdImages.add",
+          "rejected": 1,
+          "accepted": 0,
+          "charged": 40
+        },
+        {
+          "level": "operation",
+          "code": 5140,
+          "method": "Keywords.add",
+          "rejected": 1,
+          "accepted": 0,
+          "charged": 40
+        },
+        {
+          "level": "operation",
+          "code": 5140,
+          "method": "Keywords.add",
+          "rejected": 2,
+          "accepted": 0,
+          "charged": 60
+        },
+        {
+          "level": "operation",
+          "code": 5140,
+          "method": "Keywords.add",
+          "rejected": 3,
+          "accepted": 0,
+          "charged": 80
+        },
+        {
+          "level": "operation",
+          "code": 5140,
+          "method": "Keywords.add",
+          "rejected": 1,
+          "accepted": 3,
+          "charged": 46
+        },
+        {
+          "level": "operation",
+          "code": 5142,
+          "method": "Keywords.add",
+          "rejected": 1,
+          "accepted": 0,
+          "charged": 40
+        },
+        {
+          "level": "operation",
+          "code": 5002,
+          "method": "Keywords.add",
+          "rejected": 1,
+          "accepted": 0,
+          "charged": 40
+        }
+      ],
+      "server_errors_free": true,
+      "warnings_free": true,
+      "daily_limit_restriction": "API_POINTS",
+      "accrual": "1/24 суточного лимита в начале каждого часового интервала, скользящее окно на 24 часа",
+      "response_header": "Units: израсходовано/остаток/суточный лимит",
+      "methods_comment": "Стоимость успешного вызова и объектов. per_objects задаёт число объектов на одну плату; для частично неуспешного пакета учитывайте ошибки отдельно. Вызовы, которых нет в таблице, не следует считать бесплатными.",
+      "methods": {
+        "AdExtensions.add": {
+          "per_call": 5,
+          "per_object": 1
+        },
+        "AdExtensions.delete": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "AdExtensions.get": {
+          "per_call": 5,
+          "per_object": 1
+        },
+        "AdGroups.add": {
+          "per_call": 20,
+          "per_object": 20
+        },
+        "AdGroups.delete": {
+          "per_call": 10,
+          "per_object": 0
+        },
+        "AdGroups.get": {
+          "per_call": 15,
+          "per_object": 1
+        },
+        "AdGroups.update": {
+          "per_call": 20,
+          "per_object": 20
+        },
+        "AdImages.add": {
+          "per_call": 20,
+          "per_object": 20
+        },
+        "AdImages.delete": {
+          "per_call": 10,
+          "per_object": 0
+        },
+        "AdImages.get": {
+          "per_call": 15,
+          "per_object": 1
+        },
+        "Ads.add": {
+          "per_call": 20,
+          "per_object": 20
+        },
+        "Ads.archive": {
+          "per_call": 15,
+          "per_object": 0
+        },
+        "Ads.delete": {
+          "per_call": 10,
+          "per_object": 0
+        },
+        "Ads.get": {
+          "per_call": 15,
+          "per_object": 1
+        },
+        "Ads.moderate": {
+          "per_call": 15,
+          "per_object": 0
+        },
+        "Ads.resume": {
+          "per_call": 15,
+          "per_object": 0
+        },
+        "Ads.suspend": {
+          "per_call": 15,
+          "per_object": 0
+        },
+        "Ads.unarchive": {
+          "per_call": 40,
+          "per_object": 0
+        },
+        "Ads.update": {
+          "per_call": 20,
+          "per_object": 20
+        },
+        "AgencyClients.add": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "AgencyClients.get": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "AgencyClients.update": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "AudienceTargets.add": {
+          "per_call": 10,
+          "per_object": 2
+        },
+        "AudienceTargets.delete": {
+          "per_call": 10,
+          "per_object": 2
+        },
+        "AudienceTargets.get": {
+          "per_call": 1,
+          "per_object": 1
+        },
+        "AudienceTargets.resume": {
+          "per_call": 10,
+          "per_object": 2
+        },
+        "AudienceTargets.setBids": {
+          "per_call": 10,
+          "per_object": 2
+        },
+        "AudienceTargets.suspend": {
+          "per_call": 10,
+          "per_object": 2
+        },
+        "Bids.get": {
+          "per_call": 15,
+          "per_object": 3,
+          "per_objects": 2000,
+          "per_object_note": "3 за каждые 2000 фраз"
+        },
+        "Bids.set": {
+          "per_call": 25,
+          "per_object": 0
+        },
+        "Bids.setAuto": {
+          "per_call": 25,
+          "per_object": 0
+        },
+        "BidModifiers.add": {
+          "per_call": 15,
+          "per_object": 1
+        },
+        "BidModifiers.delete": {
+          "per_call": 15,
+          "per_object": 0
+        },
+        "BidModifiers.get": {
+          "per_call": 1,
+          "per_object": 0
+        },
+        "BidModifiers.set": {
+          "per_call": 2,
+          "per_object": 0
+        },
+        "Businesses.get": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "Campaigns.add": {
+          "per_call": 10,
+          "per_object": 5
+        },
+        "Campaigns.archive": {
+          "per_call": 10,
+          "per_object": 5
+        },
+        "Campaigns.delete": {
+          "per_call": 10,
+          "per_object": 2
+        },
+        "Campaigns.get": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "Campaigns.resume": {
+          "per_call": 10,
+          "per_object": 5
+        },
+        "Campaigns.suspend": {
+          "per_call": 10,
+          "per_object": 5
+        },
+        "Campaigns.unarchive": {
+          "per_call": 10,
+          "per_object": 5
+        },
+        "Campaigns.update": {
+          "per_call": 10,
+          "per_object": 3
+        },
+        "Changes.check": {
+          "per_call": 10,
+          "per_object": 0
+        },
+        "Changes.checkCampaigns": {
+          "per_call": 10,
+          "per_object": 0
+        },
+        "Changes.checkDictionaries": {
+          "per_call": 10,
+          "per_object": 0
+        },
+        "Clients.get": {
+          "per_call": 10,
+          "per_object": 0
+        },
+        "Clients.update": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "Creatives.get": {
+          "per_call": 15,
+          "per_object": 1
+        },
+        "Dictionaries.get": {
+          "per_call": 1,
+          "per_object": 0
+        },
+        "DynamicTextAdTargets.add": {
+          "per_call": 20,
+          "per_object": 5
+        },
+        "DynamicTextAdTargets.delete": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "DynamicTextAdTargets.get": {
+          "per_call": 15,
+          "per_object": 1
+        },
+        "DynamicTextAdTargets.resume": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "DynamicTextAdTargets.setBids": {
+          "per_call": 25,
+          "per_object": 0
+        },
+        "DynamicTextAdTargets.suspend": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "Feeds.add": {
+          "per_call": 20,
+          "per_object": 20
+        },
+        "Feeds.delete": {
+          "per_call": 10,
+          "per_object": 0
+        },
+        "Feeds.get": {
+          "per_call": 15,
+          "per_object": 1
+        },
+        "Feeds.update": {
+          "per_call": 20,
+          "per_object": 20
+        },
+        "KeywordBids.get": {
+          "per_call": 15,
+          "per_object": 3,
+          "per_objects": 2000,
+          "per_object_note": "3 за каждые 2000 фраз"
+        },
+        "KeywordBids.set": {
+          "per_call": 25,
+          "per_object": 0
+        },
+        "KeywordBids.setAuto": {
+          "per_call": 25,
+          "per_object": 0
+        },
+        "Keywords.add": {
+          "per_call": 20,
+          "per_object": 2
+        },
+        "Keywords.delete": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "Keywords.get": {
+          "per_call": 15,
+          "per_object": 3,
+          "per_objects": 2000,
+          "per_object_note": "3 за каждые 2000 фраз при запросе `Productivity`, `StatisticsSearch` или `StatisticsNetwork`; иначе 1 за каждые 2000"
+        },
+        "Keywords.resume": {
+          "per_call": 15,
+          "per_object": 0
+        },
+        "Keywords.suspend": {
+          "per_call": 15,
+          "per_object": 0
+        },
+        "Keywords.update": {
+          "per_call": 20,
+          "per_object": 2
+        },
+        "KeywordsResearch.deduplicate": {
+          "per_call": 10,
+          "per_object": 0
+        },
+        "KeywordsResearch.hasSearchVolume": {
+          "per_call": 1,
+          "per_object": 0
+        },
+        "Leads.get": {
+          "per_call": 1,
+          "per_object": 1
+        },
+        "NegativeKeywordSharedSets.add": {
+          "per_call": 20,
+          "per_object": 20
+        },
+        "NegativeKeywordSharedSets.delete": {
+          "per_call": 10,
+          "per_object": 0
+        },
+        "NegativeKeywordSharedSets.get": {
+          "per_call": 15,
+          "per_object": 1
+        },
+        "NegativeKeywordSharedSets.update": {
+          "per_call": 20,
+          "per_object": 20
+        },
+        "RetargetingLists.add": {
+          "per_call": 10,
+          "per_object": 2
+        },
+        "RetargetingLists.delete": {
+          "per_call": 10,
+          "per_object": 2
+        },
+        "RetargetingLists.get": {
+          "per_call": 1,
+          "per_object": 1
+        },
+        "RetargetingLists.update": {
+          "per_call": 10,
+          "per_object": 2
+        },
+        "Sitelinks.add": {
+          "per_call": 20,
+          "per_object": 20
+        },
+        "Sitelinks.delete": {
+          "per_call": 10,
+          "per_object": 0
+        },
+        "Sitelinks.get": {
+          "per_call": 15,
+          "per_object": 1
+        },
+        "SmartAdTargets.add": {
+          "per_call": 20,
+          "per_object": 5
+        },
+        "SmartAdTargets.delete": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "SmartAdTargets.get": {
+          "per_call": 15,
+          "per_object": 1
+        },
+        "SmartAdTargets.resume": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "SmartAdTargets.setBids": {
+          "per_call": 10,
+          "per_object": 0
+        },
+        "SmartAdTargets.suspend": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "SmartAdTargets.update": {
+          "per_call": 10,
+          "per_object": 1
+        },
+        "TurboPages.get": {
+          "per_call": 15,
+          "per_object": 1
+        },
+        "VCards.add": {
+          "per_call": 20,
+          "per_object": 20
+        },
+        "VCards.delete": {
+          "per_call": 10,
+          "per_object": 0
+        },
+        "VCards.get": {
+          "per_call": 15,
+          "per_object": 1
+        }
+      }
+    }
+  },
+  "batch": {
+    "AdExtensions.add": 1000,
+    "AdExtensions.delete": 10000,
+    "AdGroups.add": 1000,
+    "AdGroups.update": 1000,
+    "AdGroups.delete": 10000,
+    "AdImages.add": 100,
+    "AdImages.delete": 10000,
+    "Ads.add": 1000,
+    "Ads.update": 1000,
+    "Ads.delete": 10000,
+    "Ads.archive": 10000,
+    "Ads.unarchive": 10000,
+    "Ads.suspend": 10000,
+    "Ads.resume": 10000,
+    "Ads.moderate": 10000,
+    "AgencyClients.update": 1000,
+    "AudienceTargets.add": 1000,
+    "AudienceTargets.delete": 10000,
+    "AudienceTargets.suspend": 10000,
+    "AudienceTargets.resume": 10000,
+    "BidModifiers.add": 1000,
+    "BidModifiers.set": 1000,
+    "BidModifiers.delete": 1000,
+    "Campaigns.add": 10,
+    "Creatives.add": 10,
+    "Campaigns.update": 10,
+    "Campaigns.delete": 1000,
+    "Campaigns.archive": 1000,
+    "Campaigns.unarchive": 1000,
+    "Campaigns.suspend": 1000,
+    "Campaigns.resume": 1000,
+    "Changes.check.CampaignIds": 3000,
+    "Changes.check.AdGroupIds": 10000,
+    "Changes.check.AdIds": 50000,
+    "Feeds.add": 50,
+    "Feeds.update": 50,
+    "Feeds.delete": 50,
+    "Keywords.add": 1000,
+    "Keywords.update": 1000,
+    "Keywords.delete": 10000,
+    "Keywords.suspend": 10000,
+    "Keywords.resume": 10000,
+    "KeywordsResearch.deduplicate": 400000,
+    "NegativeKeywordSharedSets.add": 30,
+    "NegativeKeywordSharedSets.update": 30,
+    "NegativeKeywordSharedSets.delete": 30,
+    "RetargetingLists.add": 1000,
+    "RetargetingLists.update": 1000,
+    "RetargetingLists.delete": 1000,
+    "Sitelinks.add": 1000,
+    "Sitelinks.delete": 1000,
+    "Strategies.archive": 10000,
+    "Strategies.unarchive": 10000
+  },
+  "batch_special": {
+    "AdImages.add": {
+      "recommended_per_call": 3,
+      "comment": "Только рекомендация справочника — «Рекомендуем загружать не более 3 изображений в одном вызове». Жёсткий предел вызова лежит в batch и здесь намеренно не повторяется: два места с одним числом расходятся на первой правке."
+    },
+    "AdVideos.add": {
+      "urls": 10,
+      "binary": 1,
+      "comment": "Либо до 10 ссылок, либо одно видео в бинарном виде."
+    },
+    "AgencyClients.add": {
+      "per_day": 100,
+      "comment": "Ограничение суточное, а не на вызов."
+    },
+    "Bids.set": {
+      "campaigns": 10,
+      "adgroups": 1000,
+      "keywords": 10000,
+      "comment": "Объекты в одном запросе только однородные; CampaignId, AdGroupId и KeywordId взаимоисключающие."
+    },
+    "KeywordBids.set": {
+      "campaigns": 10,
+      "adgroups": 1000,
+      "keywords": 10000,
+      "comment": "То же правило однородности, что и у Bids.set."
+    }
+  },
+  "selection": {
+    "Ads.get.Ids": {
+      "min": 1,
+      "max": 10000
+    },
+    "Ads.get.AdGroupIds": {
+      "min": 1,
+      "max": 1000
+    },
+    "Ads.get.CampaignIds": {
+      "min": 1,
+      "max": 10
+    },
+    "Ads.get.VCardIds": {
+      "min": 1,
+      "max": 50
+    },
+    "Ads.get.SitelinkSetIds": {
+      "min": 1,
+      "max": 50
+    },
+    "Ads.get.AdImageHashes": {
+      "min": 1,
+      "max": 50
+    },
+    "AdImages.get.AdImageHashes": {
+      "max": 10000
+    },
+    "Ads.get.AdExtensionIds": {
+      "min": 1,
+      "max": 50
+    },
+    "AdGroups.get.Ids": {
+      "min": 1,
+      "max": 10000
+    },
+    "AdGroups.get.CampaignIds": {
+      "min": 1,
+      "max": 10
+    },
+    "Campaigns.get.Ids": {
+      "max": 1000
+    },
+    "Keywords.get.Ids": {
+      "min": 1,
+      "max": 10000
+    },
+    "Keywords.get.AdGroupIds": {
+      "min": 1,
+      "max": 1000
+    },
+    "Keywords.get.CampaignIds": {
+      "min": 1,
+      "max": 10
+    },
+    "Creatives.get.Ids": {
+      "min": 1,
+      "max": 10000
+    },
+    "AdExtensions.get.Ids": {
+      "max": 10000
+    },
+    "AgencyClients.get.Logins": {
+      "max": 10000
+    },
+    "Strategies.get.Ids": {
+      "max": 1000
+    }
+  },
+  "client_restrictions": [
+    "CAMPAIGNS_TOTAL_PER_CLIENT",
+    "CAMPAIGNS_UNARCHIVED_PER_CLIENT",
+    "ADGROUPS_TOTAL_PER_CAMPAIGN",
+    "ADS_TOTAL_PER_ADGROUP",
+    "KEYWORDS_TOTAL_PER_ADGROUP",
+    "AD_EXTENSIONS_TOTAL",
+    "STAT_REPORTS_TOTAL_IN_QUEUE",
+    "FORECAST_REPORTS_TOTAL_IN_QUEUE",
+    "WORDSTAT_REPORTS_TOTAL_IN_QUEUE",
+    "API_POINTS",
+    "GENERAL_DOMAIN_BLACKLIST_SIZE",
+    "VIDEO_DOMAIN_BLACKLIST_SIZE"
+  ],
+  "client_restrictions_comment": "Читаются методом Clients.get; при получении параметров агентства массив не возвращается — лимиты запрашиваются по каждому клиенту отдельно.",
+  "sources": {
+    "errors_list": "https://yandex.ru/dev/direct/doc/ru/concepts/errors-list",
+    "units": "https://yandex.ru/dev/direct/doc/ru/concepts/units",
+    "paging": "https://yandex.ru/dev/direct/doc/ru/best-practice/get",
+    "clients_get": "https://yandex.ru/dev/direct/doc/ru/clients/get",
+    "technical_restrictions": "https://yandex.ru/support/direct/ru/moderation/technical-restrictions",
+    "text_and_title": "https://yandex.ru/support/direct/ru/efficiency/text-and-title"
+  }
+}

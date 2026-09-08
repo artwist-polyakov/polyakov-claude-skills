@@ -68,6 +68,12 @@
       "category": "productivity"
     },
     {
+      "name": "yandex-direct",
+      "description": "Яндекс Директ: статистика по ценным целям, позиции в поиске и управление рекламой с показом до/после",
+      "source": "./plugins/yandex-direct",
+      "category": "productivity"
+    },
+    {
       "name": "telegraph-publisher",
       "description": "Publish pages to Telegraph with images, YouTube embeds, and diagrams",
       "source": "./plugins/telegraph-publisher",

@@ -1,0 +1,17 @@
+config/*
+!config/README.md
+!config/API_ACCESS.md
+!config/.env.example
+.env
+.env.*
+!.env.example
+*.token
+cache/
+journal/
+logs/
+settings/
+*.log
+*.snapshot.json
+__pycache__/
+*.py[cod]
+.DS_Store

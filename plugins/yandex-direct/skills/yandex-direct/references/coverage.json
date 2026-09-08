@@ -1,0 +1,4701 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-08-25",
+  "reference": "API_MAP.md",
+  "readme": "Возможности API и ручные действия. Для выполнения проверьте наличие готовой команды, актуальные поля API и ограничения конкретного типа кампании.",
+  "sources": [
+    {
+      "title": "Карта интерфейса",
+      "path": "UI_MAP.md"
+    },
+    {
+      "title": "Карта методов API",
+      "path": "API_MAP.md"
+    },
+    {
+      "title": "Объекты API",
+      "path": "API_OBJECTS.md"
+    },
+    {
+      "title": "Reports API",
+      "path": "REPORTS.md"
+    }
+  ],
+  "buckets": {
+    "api": "покрыта официальным API целиком — делается скриптом",
+    "partial": "покрыта частично — скрипт плюс хендофф на остаток",
+    "handoff": "через официальный API недоступна — хендофф-ранбук"
+  },
+  "areas": {
+    "campaign_lifecycle": "Кампания: создание и жизненный цикл",
+    "campaign_settings": "Кампания: настройки",
+    "adgroup": "Группа объявлений",
+    "ads": "Объявления",
+    "ad_elements": "Дополнительные элементы объявления",
+    "keywords": "Ключевые фразы, автотаргетинг, минус-фразы",
+    "bids": "Ставки и корректировки",
+    "audiences": "Аудитории, ретаргетинг, фиды",
+    "bulk": "Массовые действия",
+    "library": "Библиотека кабинета",
+    "reports": "Статистика и отчёты",
+    "moderation": "Модерация",
+    "money": "Деньги: счёт, платежи, документы",
+    "account": "Аккаунт, доступы, представители, агентство",
+    "tools": "Инструменты и альтернативные интерфейсы",
+    "master": "Мастер кампаний и Простой старт",
+    "other_campaigns": "Другие типы кампаний"
+  },
+  "reasons": {
+    "no_method": "метода нет",
+    "read_only": "поле только на чтение",
+    "no_field": "поля нет в структуре записи",
+    "no_reference": "справочника нет",
+    "platform": "ограничение платформы",
+    "undocumented": "документация не описывает поведение",
+    "r011": "Скилл поддерживает запись объявлений только в формате ResponsiveAd через v501."
+  },
+  "reasons_note": "Причина указывает, почему часть действия нужно выполнить в интерфейсе или проверить по актуальной документации.",
+  "methods_note": "Поле methods перечисляет связанные методы API; наличие метода не означает, что для него есть готовая команда скилла.",
+  "totals": {
+    "api": 128,
+    "partial": 57,
+    "handoff": 139
+  },
+  "operations": [
+    {
+      "id": "campaign_create_upc",
+      "title": "Создать единую перфоманс-кампанию",
+      "area": "campaign_lifecycle",
+      "ui": "Добавить → Кампанию → Режим эксперта",
+      "bucket": "api",
+      "api": "Campaigns.add — структура UnifiedCampaign",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_edit_open",
+      "title": "Открыть кампанию на редактирование",
+      "area": "campaign_lifecycle",
+      "ui": "«…» → Редактировать",
+      "bucket": "api",
+      "api": "Campaigns.get, Campaigns.update",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.get",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_list_view",
+      "title": "Посмотреть список кампаний",
+      "area": "campaign_lifecycle",
+      "ui": "Кампании",
+      "bucket": "partial",
+      "api": "Campaigns.get",
+      "manual": "кампании Мастера кампаний: в списке кабинета они есть, а в ответ Campaigns.get не попадают вовсе; доступность Простой старт проверьте отдельно. Список кабинета и список API сверяет человек",
+      "why": "Campaigns.get может успешно ответить без кампаний Мастера кампаний, даже при отборе по их ID. Статистика доступна через Reports; состав и настройки проверяются в интерфейсе.",
+      "methods": [
+        "Campaigns.get"
+      ],
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_list_filter",
+      "title": "Отфильтровать список: оплата за показы, архивные, остановленные",
+      "area": "campaign_lifecycle",
+      "ui": "Кампании → фильтры над таблицей",
+      "bucket": "api",
+      "api": "Campaigns.get — SelectionCriteria.Types и States",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_start",
+      "title": "Запустить кампанию",
+      "area": "campaign_lifecycle",
+      "ui": "«…» → Запустить",
+      "bucket": "api",
+      "api": "Campaigns.resume",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.resume"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_stop",
+      "title": "Остановить кампанию",
+      "area": "campaign_lifecycle",
+      "ui": "«…» → Остановить",
+      "bucket": "api",
+      "api": "Campaigns.suspend",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.suspend"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_archive",
+      "title": "Отправить кампанию в архив",
+      "area": "campaign_lifecycle",
+      "ui": "«…» → Отправить в архив",
+      "bucket": "api",
+      "api": "Campaigns.archive",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.archive"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_unarchive",
+      "title": "Разархивировать кампанию",
+      "area": "campaign_lifecycle",
+      "ui": "«…» → Разархивировать",
+      "bucket": "api",
+      "api": "Campaigns.unarchive",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.unarchive"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_delete",
+      "title": "Удалить кампанию",
+      "area": "campaign_lifecycle",
+      "ui": "«…» → Удалить",
+      "bucket": "api",
+      "api": "Campaigns.delete",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.delete"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_moderate",
+      "title": "Отправить кампанию на модерацию",
+      "area": "campaign_lifecycle",
+      "ui": "«…» → Отправить на модерацию",
+      "bucket": "api",
+      "api": "Ads.get — выбрать объявления кампании и отсеять негодные к отправке, затем Ads.moderate пакетом: метода «отправить кампанию» нет, Ads.moderate работает по идентификаторам объявлений",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.get",
+        "Ads.moderate"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_export_xls",
+      "title": "Выгрузить кампанию в XLS/XLSX",
+      "area": "campaign_lifecycle",
+      "ui": "«…» → Выгрузить в XLS/XLSX",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса выгрузки и загрузки файлов кампаний в API не существует; методы get отдают те же данные, но не тот файл, который Директ принимает обратно",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_read_funds",
+      "title": "Посмотреть остаток и расход по кампании",
+      "area": "campaign_lifecycle",
+      "ui": "Кампании → колонка бюджета",
+      "bucket": "api",
+      "api": "Campaigns.get — Funds; баланс общего счёта — операция Get метода AccountManagement (live/v4): при подключённом общем счёте Campaigns.get возвращает SharedAccountFundsParam всего с двумя полями, Refund и Spend",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AccountManagement",
+        "Campaigns.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_name",
+      "title": "Задать название кампании",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — Name",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_dates",
+      "title": "Задать даты проведения кампании",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Даты проведения",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — StartDate, EndDate",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_timezone",
+      "title": "Задать часовой пояс кампании",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — TimeZone; справочник — Dictionaries.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update",
+        "Dictionaries.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_schedule",
+      "title": "Задать расписание показов",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Расписание показов",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — TimeTargeting",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_hourly_modifier",
+      "title": "Задать почасовую корректировку в расписании",
+      "area": "campaign_settings",
+      "ui": "Расписание показов → почасовая корректировка",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — почасовые коэффициенты внутри TimeTargeting",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "strategy_max_conversions",
+      "title": "Задать стратегию «Максимум конверсий»",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Стратегия",
+      "bucket": "partial",
+      "api": "Campaigns.add, Campaigns.update — BiddingStrategy с AVERAGE_CPA, AVERAGE_CPA_MULTIPLE_GOALS, WB_MAXIMUM_CONVERSION_RATE, AVERAGE_CRR, PAY_FOR_CONVERSION и родственными",
+      "manual": "параметры самой стратегии пишутся через API целиком — тип, цена конверсии, ДРР, ограничение ставки, бюджет; руками остаются сопутствующие настройки того же экрана: адаптация бюджета и сезонный рост конверсионности, полей под них нет ни в одной структуре стратегии",
+      "why": "поля нет в структуре записи: состав структур стратегий выписан в справочник объектов из схемы сервиса и страниц параметров по типам кампаний, вместе с обязательностью полей в записи; целевая цена конверсии, ДРР и ограничение ставки в нём есть, а полей под сопутствующие настройки того же экрана нет",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "strategy_max_clicks",
+      "title": "Задать стратегию «Максимум кликов»",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Стратегия",
+      "bucket": "partial",
+      "api": "Campaigns.add, Campaigns.update — BiddingStrategy с WB_MAXIMUM_CLICKS, AVERAGE_CPC или HIGHEST_POSITION для ручных ставок; WEEKLY_CLICK_PACKAGE — у текстово-графической, динамической и рекламы приложений",
+      "manual": "ограничение по пакету кликов в единой перфоманс-кампании: типа WEEKLY_CLICK_PACKAGE у неё нет ни в поисковой половине стратегии, ни в сетевой",
+      "why": "поля нет в структуре записи: допустимые типы стратегий по каждому типу кампании выписаны в справочник объектов из схемы сервиса, и прежнее «ни тип кампании, ни допустимая пара не документированы» этим снято. WEEKLY_CLICK_PACKAGE есть у трёх типов из шести и отсутствует у единой перфоманс-кампании — той, которую скилл создаёт",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "strategy_max_profit",
+      "title": "Задать стратегию «Максимум прибыли» (бета)",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Стратегия",
+      "bucket": "partial",
+      "api": "Campaigns.add, Campaigns.update — BiddingStrategy с MAX_PROFIT и PriorityGoals",
+      "manual": "параметры самой стратегии пишутся через API целиком — тип, цена конверсии, ДРР, ограничение ставки, бюджет; руками остаются сопутствующие настройки того же экрана: адаптация бюджета и сезонный рост конверсионности, полей под них нет ни в одной структуре стратегии",
+      "why": "поля нет в структуре записи: состав MaxProfit выписан в справочник объектов из схемы сервиса — недельный бюджет, бюджет за период, бюджет на исследование; маржа с конверсии задаётся полем Value структуры PriorityGoals, а полей под сопутствующие настройки того же экрана нет",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "strategy_manual",
+      "title": "Задать ручное управление ставками",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Стратегия",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — HIGHEST_POSITION для ЕПК, MANUAL_CPM для медийной кампании",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "strategy_media_impressions",
+      "title": "Задать медийную стратегию по показам",
+      "area": "campaign_settings",
+      "ui": "Параметры медийной кампании → Стратегия",
+      "bucket": "partial",
+      "api": "Campaigns.add, Campaigns.update — WB_MAXIMUM_IMPRESSIONS, CP_MAXIMUM_IMPRESSIONS, WB_DECREASED_PRICE_FOR_REPEATED_IMPRESSIONS, CP_DECREASED_PRICE_FOR_REPEATED_IMPRESSIONS",
+      "manual": "параметры самой стратегии пишутся через API целиком — цена показа или просмотра, предел расхода, даты и автопродление; руками остаются стратегии роста того же экрана: их кодов нет ни в одном перечислении стратегий схемы сервиса",
+      "why": "поля нет в структуре записи: состав четырёх структур выписан в справочник объектов из схемы сервиса — средняя цена показа и предел расхода у обеих недельных, плюс даты и автопродление у обеих за период; кодов стратегий роста в перечислениях медийной кампании нет",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "strategy_media_cpv",
+      "title": "Задать медийную стратегию «Оплата за просмотры»",
+      "area": "campaign_settings",
+      "ui": "Параметры медийной кампании → Стратегия",
+      "bucket": "partial",
+      "api": "Campaigns.add, Campaigns.update — WB_AVERAGE_CPV, CP_AVERAGE_CPV",
+      "manual": "параметры самой стратегии пишутся через API целиком — цена показа или просмотра, предел расхода, даты и автопродление; руками остаются стратегии роста того же экрана: их кодов нет ни в одном перечислении стратегий схемы сервиса",
+      "why": "поля нет в структуре записи: состав WbAverageCpv и CpAverageCpv выписан в справочник объектов из схемы сервиса — цена просмотра и предел расхода, у второй плюс даты и автопродление; кодов стратегий роста в перечислениях медийной кампании нет",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "strategy_media_growth",
+      "title": "Задать медийную стратегию роста",
+      "area": "campaign_settings",
+      "ui": "Параметры медийной кампании → Стратегия",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: типов, соответствующих «Росту целевых действий на сайте», «Росту визитов на сайте» и «Росту запросов в Поиске», нет ни в таблице совместимости, ни в справочнике типов стратегий",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "strategy_media_brand",
+      "title": "Задать стратегию «Рост брендовых метрик» (бета)",
+      "area": "campaign_settings",
+      "ui": "Параметры медийной кампании → Стратегия",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: типа стратегии в справочнике нет, а прикрепить исследование Brand Lift нечем — сервиса под него в API не существует",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_weekly_budget",
+      "title": "Задать недельный бюджет кампании",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Стратегия",
+      "bucket": "partial",
+      "api": "Campaigns.add, Campaigns.update — WeeklySpendLimit у двадцати двух структур стратегий из тридцати и обязательный SpendLimit у трёх недельных медийных: WbMaximumImpressions, WbDecreasedPriceForRepeatedImpressions, WbAverageCpv. У трёх соседних — CpMaximumImpressions, CpDecreasedPriceForRepeatedImpressions, CpAverageCpv — одноимённое поле задаёт лимит на период вместе с StartDate и EndDate, недельным бюджетом оно не является. Бюджет за период — CustomPeriodBudget",
+      "manual": "сама величина недельного бюджета пишется через API у любой стратегии, где поле есть; руками остаётся адаптация бюджета — процент возможного роста на следующей неделе, поля под неё нет ни в одной структуре стратегии",
+      "why": "поля нет в структуре записи: WeeklySpendLimit есть у двадцати двух структур стратегий из тридцати, у трёх недельных медийных ту же роль играет обязательный SpendLimit, а у трёх периодических одноимённое поле задаёт лимит на срок из StartDate и EndDate и недельным бюджетом не является; бюджет за период — CustomPeriodBudget. Состав выписан в справочник объектов из схемы сервиса. Не покрыта соседняя настройка того же экрана, адаптация бюджета",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_priority_goals",
+      "title": "Задать целевые действия и их ценность",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Стратегия",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — PriorityGoals",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_attribution",
+      "title": "Выбрать модель атрибуции",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Стратегия",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — AttributionModel",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_counters",
+      "title": "Привязать счётчики Яндекс Метрики",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Счётчики Метрики",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — CounterIds; текущее значение читается Campaigns.get — поле заменяется целиком, и записывать надо слитый список, а не одну правку",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.get",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_tracking_params",
+      "title": "Задать параметры URL кампании",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Параметры URL",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — TrackingParams",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_negative_keywords",
+      "title": "Задать минус-фразы кампании",
+      "area": "campaign_settings",
+      "ui": "Дополнительные настройки → Минус-фразы",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — NegativeKeywords",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_negative_sets",
+      "title": "Подключить наборы минус-фраз из библиотеки",
+      "area": "campaign_settings",
+      "ui": "Дополнительные настройки → Минус-фразы",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — NegativeKeywordSharedSetIds; текущее значение читается Campaigns.get — поле заменяется целиком, и записывать надо слитый список, а не одну правку",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.get",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_excluded_sites",
+      "title": "Запретить показы на площадках",
+      "area": "campaign_settings",
+      "ui": "Дополнительные настройки → Площадки, на которых запрещены показы",
+      "bucket": "partial",
+      "api": "Campaigns.add, Campaigns.update — ExcludedSites, до 1000 площадок; текущее значение читается Campaigns.get — поле заменяется целиком, и записывать надо слитый список, а не одну правку",
+      "manual": "отдельный список запрещённых площадок для видеообъявлений (до 100) в единой перфоманс-кампании",
+      "why": "поля нет в структуре записи: ExcludedSitesForVideoAds принадлежит структуре CpmBannerCampaign и в перечне параметров UnifiedCampaign не значится, хотя кабинет предлагает оба списка на одном экране",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.get",
+        "Campaigns.update"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_blocked_ips",
+      "title": "Отключить показы по IP-адресам",
+      "area": "campaign_settings",
+      "ui": "Дополнительные настройки → Отключение показов по IP",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — BlockedIps; текущее значение читается Campaigns.get — поле заменяется целиком, и записывать надо слитый список, а не одну правку",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.get",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_notifications",
+      "title": "Настроить уведомления по кампании",
+      "area": "campaign_settings",
+      "ui": "Дополнительные настройки → Уведомления",
+      "bucket": "partial",
+      "api": "Campaigns.add, Campaigns.update — Notification",
+      "manual": "номер телефона для SMS: он живёт в объекте Client, приходит только на чтение и задаётся в профиле Яндекс ID, а не в Директе",
+      "why": "поля нет в структуре записи: состав Notification кампании — SmsSettings с событиями и временем и EmailSettings с адресом, интервалом проверки позиций, порогом остатка и двумя подписками; номера телефона среди них нет. Где он живёт, теперь известно: SmsPhoneNumber в структуре чтения объекта Client, куда он приходит из профиля Яндекс ID. Структура записи NotificationUpdate этого поля не объявляет, и через API номер не меняется ни у кампании, ни у кабинета",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": "no_field",
+      "reason_also": [
+        "read_only"
+      ]
+    },
+    {
+      "id": "campaign_site_monitoring",
+      "title": "Включить мониторинг сайта",
+      "area": "campaign_settings",
+      "ui": "Дополнительные настройки → Мониторинг сайта",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — Settings ENABLE_SITE_MONITORING",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_package_strategy",
+      "title": "Привязать кампанию к пакетной стратегии",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Стратегия → Пакетная",
+      "bucket": "api",
+      "api": "Campaigns.update — PackageBiddingStrategy; Strategies.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.update",
+        "Strategies.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "strategy_package_manage",
+      "title": "Создать, изменить и архивировать пакетную стратегию",
+      "area": "campaign_settings",
+      "ui": "Добавить → Пакетную стратегию",
+      "bucket": "api",
+      "api": "Strategies.add, Strategies.update, Strategies.get, Strategies.archive, Strategies.unarchive",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Strategies.add",
+        "Strategies.archive",
+        "Strategies.get",
+        "Strategies.unarchive",
+        "Strategies.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_frequency_cap",
+      "title": "Ограничить частоту показов медийной кампании",
+      "area": "campaign_settings",
+      "ui": "Параметры медийной кампании → Ограничить частоту показов",
+      "bucket": "api",
+      "api": "Campaigns.add, Campaigns.update — FrequencyCap структуры CpmBannerCampaign",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_placements",
+      "title": "Выбрать места показа кампании",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Места показа",
+      "bucket": "partial",
+      "api": "Campaigns.add, Campaigns.update — пара Search × Network структуры UnifiedCampaignStrategy, значение SERVING_OFF выключает половину; из мест показа кодом пишутся два — SearchResults и ProductGallery, поля структуры PlacementTypes поисковой половины",
+      "manual": "четыре переключателя блока из шести. «Мессенджеры»: значения в перечне PlacementTypes нет вовсе. «Динамические места на поиске»: значение DynamicPlaces есть, а управления им API не даёт — при создании кампании оно повторяет SearchResults. «Яндекс Карты»: кабинетному флажку отвечают два поля Maps, в поисковой половине стратегии и в сетевой, и сетевое Campaigns.get не возвращает — сверка после записи проверит половину пары. «Список организаций, отели и галерея услуг»: флажок шире поля SearchOrganizationList, и что именно включит его запись, документация не говорит",
+      "why": "поля нет в структуре записи: соответствие всех пяти значений PlacementTypes переключателям блока «Места показа» установлено — «Динамические места на поиске» и «Яндекс Карты» документация называет дословно, остальные три сходятся поэлементным перебором закрытого перечня, разбор в разделе 6.6 справочника объектов. Записи установленное соответствие разрешает не всем: мессенджеров в перечне нет, DynamicPlaces Директ принимает и не применяет, у флажка «Яндекс Карты» вторая половина пары Maps в чтении недоступна и сверить записанное целиком нечем, а объём флажка со списком организаций документацией не назван",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_promoted_url",
+      "title": "Указать ссылку на продвигаемую страницу кампании",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Ссылка на продвигаемую страницу",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поле только на чтение: ссылка кампании существует — UnifiedCampaign.AdvertisedItem приходит объектом с полем Href, — но имя принимает только живой UnifiedCampaignFieldNames: ни документация, ни схема сервиса его не называют, и структуры записи под него нет. Подтягивание счётчиков, целей и адресов организации по ссылке — поведение интерфейса",
+      "reason": "read_only",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_org_contacts",
+      "title": "Подключить контактную информацию организации",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Контактная информация",
+      "bucket": "partial",
+      "api": "Businesses.get; Ads.add, Ads.update — BusinessId объявления",
+      "manual": "выбор организации на уровне кампании — поля BusinessId у кампании нет, профиль привязывается к каждому объявлению отдельно",
+      "why": "поля нет в структуре записи: BusinessId у кампании нет, профиль привязывается к каждому объявлению отдельно. Прежнее основание — противоречие справочника про ENABLE_COMPANY_INFO — снято: у единой перфоманс-кампании настройка есть и в схеме сервиса, и в живом чтении, а колонки для этого типа в матрице документации просто нет",
+      "methods": [
+        "Ads.add",
+        "Ads.update",
+        "Businesses.get"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_extensions",
+      "title": "Задать дополнительные элементы объявлений на уровне кампании",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Дополнительные элементы объявлений",
+      "bucket": "partial",
+      "api": "Sitelinks.add, AdExtensions.add; привязка — Ads.add, Ads.update; совпавшее уточнение ищется AdExtensions.get и переиспользуется по идентификатору — идентичное при добавлении даёт ошибку на каждое; перечень объявлений даёт Ads.get — метод работает по идентификаторам, и собрать их надо до записи",
+      "manual": "привязка дополнений одним действием на всю кампанию и наследование её группами; доставка и резервная посадочная страница",
+      "why": "поля нет в структуре записи: у кампании полей дополнительных элементов нет — в API они существуют только как SitelinkSetId и AdExtensionIds объявления, поэтому наследование «кампания → группа → объявление» не воспроизводится",
+      "methods": [
+        "AdExtensions.add",
+        "AdExtensions.get",
+        "Ads.add",
+        "Ads.get",
+        "Ads.update",
+        "Sitelinks.add"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_promo",
+      "title": "Назначить промоакцию на кампанию",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Дополнительные элементы объявлений → Промоакция",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса промоакций в API нет, и справочник объектов прямо называет промоакцию среди того, чего в структуре комбинаторного объявления «нет и не появится обходным путём»",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_delivery",
+      "title": "Задать условия доставки",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Дополнительные элементы объявлений → Доставка",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: тип, стоимость и срок доставки не описаны ни у кампании, ни у объявления",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_fallback_landing",
+      "title": "Задать резервную посадочную страницу",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Дополнительные элементы объявлений",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: резервной посадочной страницы нет ни в одной структуре API",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_ad_prioritization",
+      "title": "Выбрать приоритизацию объявлений",
+      "area": "campaign_settings",
+      "ui": "Дополнительные настройки → Приоритизация объявлений",
+      "bucket": "partial",
+      "api": "Campaigns.update — Settings CAMPAIGN_EXACT_PHRASE_MATCHING_ENABLED",
+      "manual": "ничего: обе опции кабинетного блока — «С лучшим сочетанием показателей» и «По фразе, наиболее близкой к запросу» — задаются одним значением настройки.",
+      "why": "документация не описывает поведение — основание снято: приложение «Настройки кампаний (параметр Option)» ссылается на Справку «Выбор объявлений по точному соответствию фразе», а та называет и блок, и вариант выбора дословно; разбор в разделе 2.5 справочника объектов. Причина в срезе устарела вместе с корзиной и снимается тем же проходом поддержки",
+      "methods": [
+        "Campaigns.update"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_personalization",
+      "title": "Настроить персонализацию и фразы-исключения",
+      "area": "campaign_settings",
+      "ui": "Дополнительные настройки → Персонализация",
+      "bucket": "partial",
+      "api": "Campaigns.update — Settings ALTERNATIVE_TEXTS_ENABLED",
+      "manual": "список фраз-исключений: поля под него в объекте кампании нет, а в кабинете исключения общие на весь кабинет и применяются ко всем кампаниям с включённой настройкой",
+      "why": "поля нет в структуре записи: соответствие настройки ALTERNATIVE_TEXTS_ENABLED интерфейсной персонализации установлено — приложение «Настройки кампаний (параметр Option)» ссылается на Справку «Персонализация», а та называет блок «Дополнительные настройки → Персонализация» дословно и добавляет, что опция включается в том числе через API Директа. Поля со списком фраз-исключений в объекте кампании нет вовсе",
+      "methods": [
+        "Campaigns.update"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_auto_recommendations",
+      "title": "Включить автоприменение рекомендаций",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Автоприменение рекомендаций",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: автоприменения рекомендаций нет ни среди параметров кампании, ни в перечне Settings; сервиса рекомендаций в API тоже нет. Настройка меняет кампанию без участия пользователя, поэтому её состояние придётся снимать глазами при сверке",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_seasonal_cr",
+      "title": "Задать сезонный рост конверсионности",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Стратегия",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: период повышенного спроса и ожидаемый рост CR передать некуда — ни среди общих параметров кампании, ни в UnifiedCampaign, ни в Settings",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_budget_adaptation",
+      "title": "Включить адаптацию бюджета",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Стратегия → Адаптация бюджета",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: процента возможного роста бюджета нет ни в одной структуре стратегии",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_dynamic_search_places",
+      "title": "Включить динамические места на поиске (бета)",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Места показа",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поле только на чтение: соответствие установлено дословно — документация API называет место показа «Динамические места на поиске» тем же именем, что и опцию кабинета. Управления им API не даёт и говорит это прямо: при создании кампании тип принимает такое же значение, что и «Поисковая выдача» — поле SearchResults, — а управление появится позже. Значение читается, а отправленное в записи заменяется значением соседа; отвечает ли Директ при этом отказом, документация не говорит, и на исход это не влияет — управления нет ни при каком ответе",
+      "reason": "read_only",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_extended_url_matching",
+      "title": "Настроить расширенное сопоставление URL",
+      "area": "campaign_settings",
+      "ui": "Дополнительные настройки → Расширенное сопоставление URL",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "справочника нет: ближайший механизм — фильтры страниц сервиса DynamicTextAdTargets, у которого отняли справочник: запрос собрать можно, а убедиться, что записалось задуманное, нечем",
+      "reason": "no_reference",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_yandex_discounts",
+      "title": "Включить персональные скидки от Яндекса",
+      "area": "campaign_settings",
+      "ui": "Дополнительные настройки → Персональные скидки",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: поля нет ни среди параметров кампании, ни в Settings; возможность привязана к оплате через Яндекс Пэй",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_ab_experiment",
+      "title": "Добавить кампанию в A/B-эксперимент",
+      "area": "campaign_settings",
+      "ui": "Дополнительные настройки → A/B-эксперименты",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса A/B-экспериментов в API нет, поля привязки кампании к эксперименту в объекте кампании тоже нет",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_audience_experiments",
+      "title": "Посмотреть эксперименты на сегментах Яндекс Аудиторий",
+      "area": "campaign_settings",
+      "ui": "Дополнительные настройки → Эксперименты (у старых кампаний)",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: блока экспериментов на сегментах Аудиторий нет в объекте кампании даже на чтение; в самих Аудиториях новые эксперименты больше не создаются",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_frequency_increase",
+      "title": "Включить увеличение частоты показов (бета)",
+      "area": "campaign_settings",
+      "ui": "Параметры медийной кампании",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: настройки нет ни среди параметров медийной кампании, ни в перечне Settings; включение только при создании и невозможность повторного включения после отключения справочником API тоже не описаны",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_brand_lift",
+      "title": "Подключить Brand Lift к медийной кампании",
+      "area": "campaign_settings",
+      "ui": "Параметры медийной кампании → Brand Lift",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса опросных исследований в API нет, поля Brand Lift среди параметров медийной кампании не описано",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_calltracking",
+      "title": "Подключить динамический коллтрекинг (бета)",
+      "area": "campaign_settings",
+      "ui": "Параметры кампании → Динамический коллтрекинг",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: настройки коллтрекинга нет среди полей кампании, а второе место подключения — Простой старт — через API не управляется вовсе",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "campaign_labels",
+      "title": "Проставить метки кампании",
+      "area": "campaign_settings",
+      "ui": "Кампании → Метки",
+      "bucket": "api",
+      "api": "UpdateCampaignsTags, GetCampaignsTags (live/v4)",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "GetCampaignsTags",
+        "UpdateCampaignsTags"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "adgroup_create",
+      "title": "Создать группу объявлений",
+      "area": "adgroup",
+      "ui": "Кампания → Добавить группу",
+      "bucket": "api",
+      "api": "AdGroups.add",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdGroups.add"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "adgroup_view",
+      "title": "Посмотреть группы выбранных кампаний",
+      "area": "adgroup",
+      "ui": "Кампании → вкладка «Группы»",
+      "bucket": "api",
+      "api": "AdGroups.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdGroups.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "adgroup_rename",
+      "title": "Изменить название группы",
+      "area": "adgroup",
+      "ui": "Редактирование группы",
+      "bucket": "api",
+      "api": "AdGroups.update — Name",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdGroups.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "adgroup_delete",
+      "title": "Удалить группу объявлений",
+      "area": "adgroup",
+      "ui": "Редактирование группы → Удалить",
+      "bucket": "api",
+      "api": "AdGroups.delete",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdGroups.delete"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "adgroup_geo",
+      "title": "Задать географию показов группы",
+      "area": "adgroup",
+      "ui": "Редактирование группы → География показов",
+      "bucket": "partial",
+      "api": "AdGroups.add, AdGroups.update — RegionIds; справочник — Dictionaries.getGeoRegions",
+      "manual": "точки на карте с выбором «бывает регулярно / живёт / работает / сейчас здесь»",
+      "why": "поля нет в структуре записи: RegionIds принимает только идентификаторы регионов из справочника; полигонов, точек и режима присутствия в объекте группы нет",
+      "methods": [
+        "AdGroups.add",
+        "AdGroups.update",
+        "Dictionaries.getGeoRegions"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "adgroup_negative_keywords",
+      "title": "Задать минус-фразы группы",
+      "area": "adgroup",
+      "ui": "Редактирование группы → Тематические слова",
+      "bucket": "api",
+      "api": "AdGroups.add, AdGroups.update — NegativeKeywords",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdGroups.add",
+        "AdGroups.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "adgroup_negative_sets",
+      "title": "Подключить наборы минус-фраз к группе",
+      "area": "adgroup",
+      "ui": "Редактирование группы → Библиотеки минус-фраз",
+      "bucket": "api",
+      "api": "AdGroups.add, AdGroups.update — NegativeKeywordSharedSetIds; текущее значение читается AdGroups.get — поле заменяется целиком, и записывать надо слитый список, а не одну правку",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdGroups.add",
+        "AdGroups.get",
+        "AdGroups.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "adgroup_tracking_params",
+      "title": "Задать параметры URL группы",
+      "area": "adgroup",
+      "ui": "Редактирование группы → Параметры URL",
+      "bucket": "api",
+      "api": "AdGroups.add, AdGroups.update — TrackingParams",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdGroups.add",
+        "AdGroups.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "adgroup_extensions",
+      "title": "Переопределить дополнительные элементы на уровне группы",
+      "area": "adgroup",
+      "ui": "Редактирование группы → Дополнительные элементы объявлений",
+      "bucket": "partial",
+      "api": "Sitelinks.add, AdExtensions.add; привязка — Ads.add, Ads.update; совпавшее уточнение ищется AdExtensions.get и переиспользуется по идентификатору — идентичное при добавлении даёт ошибку на каждое; перечень объявлений даёт Ads.get — метод работает по идентификаторам, и собрать их надо до записи",
+      "manual": "переопределение на уровне группы и наследование от кампании; промоакция недоступна вовсе",
+      "why": "поля нет в структуре записи: в перечне параметров группы полей дополнительных элементов нет — наборы привязываются к каждому объявлению отдельно",
+      "methods": [
+        "AdExtensions.add",
+        "AdExtensions.get",
+        "Ads.add",
+        "Ads.get",
+        "Ads.update",
+        "Sitelinks.add"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "adgroup_labels",
+      "title": "Проставить метки группе",
+      "area": "adgroup",
+      "ui": "Редактирование группы → Метки",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: методы меток остались только в версии 4 и покрывают кампании и объявления; меток уровня группы нет ни в v5, ни в v4",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "adgroup_scenario",
+      "title": "Выбрать сценарий группы",
+      "area": "adgroup",
+      "ui": "Редактирование группы → Сценарий группы",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: «Вся заинтересованная аудитория» / «Новая аудитория» / «Новые покупатели» — поля в объекте группы нет ни на запись, ни на чтение",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "adgroup_content_type",
+      "title": "Ограничить тип контента площадок группы",
+      "area": "adgroup",
+      "ui": "Редактирование группы → Тип контента площадок",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: ближайшее по смыслу поле — ExcludedSites кампании — перечисляет конкретные площадки, а не категории контента",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "adgroup_read_restricted_regions",
+      "title": "Посмотреть регионы, где показ запрещён законом",
+      "area": "adgroup",
+      "ui": "Редактирование группы → География показов",
+      "bucket": "api",
+      "api": "AdGroups.get — RestrictedRegionIds",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdGroups.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_create_responsive",
+      "title": "Создать комбинаторное объявление",
+      "area": "ads",
+      "ui": "Группа → Добавить объявление → Комбинаторное",
+      "bucket": "partial",
+      "api": "Ads.add — ResponsiveAdAdd: Titles, Texts, Href, AdImageHashes, VideoExtensionIds, SitelinkSetId, AdExtensionIds, PriceExtension, DisplayUrlPath, BusinessId",
+      "manual": "кнопка действия, промоакция и карусель — каждая отдельной строкой ниже; комплект без них собирается кодом целиком",
+      "why": "поля нет в структуре записи: справочник перечисляет прямо, чего в структуре записи «нет и не появится обходным путём» — дополнительного заголовка, Турбо-страницы, визитки, признака мобильного объявления, кнопки действия, промоакции. Карусели там тоже нет, хотя Ads.get её отдаёт: прочитать чужую настройку можно, задать свою нечем",
+      "methods": [
+        "Ads.add"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "ad_update_responsive",
+      "title": "Изменить комплект заголовков и текстов",
+      "area": "ads",
+      "ui": "Вкладка «Объявления» → Редактировать",
+      "bucket": "api",
+      "api": "Ads.get с ResponsiveAdFieldNames, затем Ads.update — ResponsiveAdUpdate",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.get",
+        "Ads.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_view",
+      "title": "Посмотреть объявления выбранных кампаний",
+      "area": "ads",
+      "ui": "Кампании → вкладка «Объявления»",
+      "bucket": "api",
+      "api": "Ads.get с ResponsiveAdFieldNames",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_moderate",
+      "title": "Отправить объявление на модерацию",
+      "area": "ads",
+      "ui": "Вкладка «Объявления» → Отправить на модерацию",
+      "bucket": "api",
+      "api": "Ads.moderate",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.moderate"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_suspend",
+      "title": "Остановить показы объявления",
+      "area": "ads",
+      "ui": "Вкладка «Объявления» → Остановить",
+      "bucket": "api",
+      "api": "Ads.suspend",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.suspend"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_resume",
+      "title": "Возобновить показы объявления",
+      "area": "ads",
+      "ui": "Вкладка «Объявления» → Запустить",
+      "bucket": "api",
+      "api": "Ads.resume",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.resume"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_archive",
+      "title": "Архивировать объявление",
+      "area": "ads",
+      "ui": "Вкладка «Объявления» → В архив",
+      "bucket": "api",
+      "api": "Ads.archive",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.archive"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_unarchive",
+      "title": "Разархивировать объявление",
+      "area": "ads",
+      "ui": "Вкладка «Объявления» → Разархивировать",
+      "bucket": "api",
+      "api": "Ads.unarchive",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.unarchive"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_delete",
+      "title": "Удалить объявление",
+      "area": "ads",
+      "ui": "Вкладка «Объявления» → Удалить",
+      "bucket": "api",
+      "api": "Ads.delete",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.delete"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_create_shopping",
+      "title": "Создать товарное объявление",
+      "area": "ads",
+      "ui": "Группа → Добавить объявление → Товарное",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "единственный путь записи объявлений в скилле — ResponsiveAd через v501, и ветки, которая выбрала бы другую структуру, не существует. Закрыт путь, а не метод: API этот тип объявления отдаёт — структура ShoppingAd, и справочник объектов перечисляет её среди типов, отличных от RESPONSIVE_AD",
+      "reason": "r011",
+      "reason_also": []
+    },
+    {
+      "id": "ad_create_listing",
+      "title": "Создать объявление для страниц каталога",
+      "area": "ads",
+      "ui": "Группа → Добавить объявление → Для страниц каталога",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "единственный путь записи объявлений в скилле — ResponsiveAd через v501, и ветки, которая выбрала бы другую структуру, не существует. Закрыт путь, а не метод: API этот тип объявления отдаёт — структура ListingAd",
+      "reason": "r011",
+      "reason_also": []
+    },
+    {
+      "id": "ad_change_feed",
+      "title": "Сменить фид у товарного объявления",
+      "area": "ads",
+      "ui": "Редактирование товарного объявления",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "единственный путь записи объявлений в скилле — ResponsiveAd через v501, и ветки, которая выбрала бы другую структуру, не существует. Закрыт путь, а не метод: API этот тип объявления отдаёт. Даже будь путь открыт, смена фида требует пересоздания: FeedId есть только в структурах add, в update его нет",
+      "reason": "r011",
+      "reason_also": []
+    },
+    {
+      "id": "ad_create_image",
+      "title": "Создать графическое объявление",
+      "area": "ads",
+      "ui": "Группа → Добавить объявление → Графическое",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "единственный путь записи объявлений в скилле — ResponsiveAd через v501, и ветки, которая выбрала бы другую структуру, не существует. Закрыт путь, а не метод: API этот тип объявления отдаёт — структуры TextImageAd и TextAdBuilderAd. Сверх того креатив собирается только в конструкторе: Creatives.add умеет ровно один вид — видеодополнение по идентификатору видео",
+      "reason": "r011",
+      "reason_also": []
+    },
+    {
+      "id": "ad_replace_creative",
+      "title": "Заменить креатив графического объявления",
+      "area": "ads",
+      "ui": "Редактирование графического объявления",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "единственный путь записи объявлений в скилле — ResponsiveAd через v501, и ветки, которая выбрала бы другую структуру, не существует. Закрыт путь, а не метод: API этот тип объявления отдаёт. Сверх того креативы, кроме видеодополнений, через API не создаются, а после сохранения объявление принимает только креатив того же размера",
+      "reason": "r011",
+      "reason_also": []
+    },
+    {
+      "id": "ad_edit_text_ad",
+      "title": "Отредактировать текстово-графическое объявление",
+      "area": "ads",
+      "ui": "Вкладка «Объявления» → Редактировать",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: update со структурой TextAd над комбинаторным объявлением оставляет один заголовок, текст, изображение и видео, а день автоконвертации Яндекс выбирает для каждого аккаунта случайно — тип объявления меняется сам, без уведомления. Отсюда же : ветки записи через TextAd в скилле нет",
+      "reason": "platform",
+      "reason_also": [
+        "r011"
+      ]
+    },
+    {
+      "id": "ad_create_neuro",
+      "title": "Сгенерировать нейрообъявление (бета)",
+      "area": "ads",
+      "ui": "Группа → Добавить объявление → Нейрообъявление",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: типа «нейрообъявление» в API нет — ни структуры, ни значения Type; генерация по странице, разделу, сайту или списку из CSV справочником не описана",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "ad_neuro_excluded_words",
+      "title": "Задать слова-исключения для нейрообъявления",
+      "area": "ads",
+      "ui": "Блок «Тексты» нейрообъявления",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: объекта, к которому относится настройка, в API нет",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "ad_read_element_moderation",
+      "title": "Посмотреть статус модерации каждого элемента комплекта",
+      "area": "ads",
+      "ui": "Вкладка «Объявления» → статус рядом с элементом",
+      "bucket": "api",
+      "api": "Ads.get с ResponsiveAdFieldNames — Titles[].Status, Texts[].Status, AdImages[].Status, VideoExtensions[].Status, Carousel.Items[].Status; пятый сигнал стоит особняком: карусель в комплект записи не входит, её поля нет ни в ResponsiveAdAdd, ни в ResponsiveAdUpdate, и отклонённый слайд читается, но не заменяется — правка уходит в хендофф строкой «Собрать карусель из 2–10 слайдов»",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_age_label",
+      "title": "Проставить возрастное ограничение объявления",
+      "area": "ads",
+      "ui": "Редактирование объявления → Возрастные ограничения",
+      "bucket": "partial",
+      "api": "Ads.add, Ads.update — AgeLabel",
+      "manual": "добавление и снятие метки — через поддержку Яндекса",
+      "why": "ограничение платформы: менять значение поля можно, а добавить или снять метку через API нельзя",
+      "methods": [
+        "Ads.add",
+        "Ads.update"
+      ],
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "ad_categories",
+      "title": "Изменить категорию объявления",
+      "area": "ads",
+      "ui": "Модерация объявления",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поле только на чтение: справочник говорит прямо — «изменение, присвоение или снятие категории через API недоступно»",
+      "reason": "read_only",
+      "reason_also": []
+    },
+    {
+      "id": "ad_labels",
+      "title": "Проставить метки объявлению",
+      "area": "ads",
+      "ui": "Вкладка «Объявления» → Метки",
+      "bucket": "api",
+      "api": "UpdateBannersTags, GetBannersTags (live/v4)",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "GetBannersTags",
+        "UpdateBannersTags"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_erir_description",
+      "title": "Задать описание объекта рекламы для ЕРИР",
+      "area": "ads",
+      "ui": "Редактирование объявления",
+      "bucket": "partial",
+      "api": "Ads.add, Ads.update — ErirAdDescription",
+      "manual": "автоописание, которое генерирует Яндекс, и его проверка перед отправкой в ЕРИР; у товарного объявления и объявления для страниц каталога поля нет вовсе",
+      "why": "поле только на чтение: AutogeneratedErirAdDescription доступно только на чтение, а у ShoppingAd и ListingAd нет ни того поля, ни другого",
+      "methods": [
+        "Ads.add",
+        "Ads.update"
+      ],
+      "reason": "read_only",
+      "reason_also": []
+    },
+    {
+      "id": "sitelinks_create",
+      "title": "Создать набор быстрых ссылок",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Быстрые ссылки",
+      "bucket": "api",
+      "api": "Sitelinks.add; чтение — Sitelinks.get, удаление — Sitelinks.delete",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Sitelinks.add",
+        "Sitelinks.delete",
+        "Sitelinks.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "sitelinks_attach",
+      "title": "Привязать набор быстрых ссылок к объявлению",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Быстрые ссылки",
+      "bucket": "api",
+      "api": "Ads.add, Ads.update — SitelinkSetId",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.add",
+        "Ads.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "sitelinks_edit",
+      "title": "Изменить быстрые ссылки объявления",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Быстрые ссылки",
+      "bucket": "api",
+      "api": "Sitelinks.add (новый набор) и Ads.update; старый набор удаляется Sitelinks.delete только после Ads.get по его SitelinkSetId, показавшего, что других ссылающихся объявлений нет: наборы переиспользуются, и безусловное удаление снесло бы ссылки у чужих; содержимое набора читается Sitelinks.get — правится содержимое набора, а Ads.get отдаёт только SitelinkSetId",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.get",
+        "Ads.update",
+        "Sitelinks.add",
+        "Sitelinks.delete",
+        "Sitelinks.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "callouts_create",
+      "title": "Создать уточнения",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Уточнения",
+      "bucket": "api",
+      "api": "AdExtensions.add; чтение — AdExtensions.get, удаление — AdExtensions.delete",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdExtensions.add",
+        "AdExtensions.delete",
+        "AdExtensions.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "callouts_attach",
+      "title": "Привязать уточнения к объявлению",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Уточнения",
+      "bucket": "api",
+      "api": "Ads.add — AdExtensionIds; Ads.update — CalloutSetting с ADD / REMOVE / SET",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.add",
+        "Ads.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "display_url",
+      "title": "Задать отображаемую ссылку",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Отображаемая ссылка",
+      "bucket": "api",
+      "api": "Ads.add, Ads.update — DisplayUrlPath",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.add",
+        "Ads.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_price",
+      "title": "Указать цену в объявлении",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Цена",
+      "bucket": "api",
+      "api": "Ads.add, Ads.update — PriceExtension",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.add",
+        "Ads.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_image_upload",
+      "title": "Загрузить изображение",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Изображение",
+      "bucket": "api",
+      "api": "AdImages.add, AdImages.get, AdImages.delete",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdImages.add",
+        "AdImages.delete",
+        "AdImages.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_image_attach",
+      "title": "Добавить изображения в объявление",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Изображение",
+      "bucket": "api",
+      "api": "Ads.add, Ads.update — AdImageHashes, от 1 до 5; текущее значение читается Ads.get — поле заменяется целиком, и записывать надо слитый список, а не одну правку",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.add",
+        "Ads.get",
+        "Ads.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_image_smart_centers",
+      "title": "Настроить смарт-центры изображения",
+      "area": "ad_elements",
+      "ui": "Загрузка изображения → смарт-центры",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: главная область изображения в структуре AdImages не описана — изображение опознаётся хэшем, и других параметров у него нет",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "ad_carousel",
+      "title": "Собрать карусель из 2–10 слайдов",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Карусель",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поле только на чтение: в структурах записи ResponsiveAdAdd и ResponsiveAdUpdate карусели нет, а Ads.get отдаёт её полем Carousel — с Items и поэлементной модерацией, встречены карусели на 2, 6 и 10 изображений (раздел 5.1 справочника объектов, сверка с живым API). AdImageHashes карусель не ограничивает: это разные поля, у одного объявления бывают одно изображение в AdImages и шесть в Carousel",
+      "reason": "read_only",
+      "reason_also": []
+    },
+    {
+      "id": "ad_video_upload",
+      "title": "Загрузить видео",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Видео",
+      "bucket": "api",
+      "api": "AdVideos.add, AdVideos.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdVideos.add",
+        "AdVideos.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_video_attach",
+      "title": "Добавить видеодополнения в объявление",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Видео",
+      "bucket": "api",
+      "api": "Creatives.add — креатив видеодополнения; Ads.add, Ads.update — VideoExtensionIds, от 1 до 6; текущее значение читается Ads.get — поле заменяется целиком, и записывать надо слитый список, а не одну правку",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.add",
+        "Ads.get",
+        "Ads.update",
+        "Creatives.add"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_video_logo",
+      "title": "Загрузить логотип видеообъявления медийной кампании",
+      "area": "ad_elements",
+      "ui": "Редактирование медийного видеообъявления → Логотип",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: медийное видеообъявление собирается из креатива, а креативы, кроме видеодополнений, через API не создаются",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "ad_action_button",
+      "title": "Настроить кнопку действия",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Кнопка",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поле только на чтение: «нет и не появится обходным путём» справочник говорит про структуры записи ResponsiveAdAdd и ResponsiveAdUpdate, и там кнопки действительно нет. Ads.get её отдаёт полем ButtonExtension — Href, CustomActionText, Action — вместе с ButtonExtensionModeration (раздел 5.1 справочника объектов, сверка с живым API). Прочитать чужую настройку можно, задать свою нечем",
+      "reason": "read_only",
+      "reason_also": []
+    },
+    {
+      "id": "ad_business_attach",
+      "title": "Привязать организацию из Яндекс Бизнеса к объявлению",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Контакты",
+      "bucket": "api",
+      "api": "Businesses.get; Ads.add, Ads.update — BusinessId",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.add",
+        "Ads.update",
+        "Businesses.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_phone",
+      "title": "Указать номер телефона организации в объявлении",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Номер телефона",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "справочника нет: контакты живут в VCards, у которого удалили страницы справочника — схему WSDL эндпоинт отдаёт, а смысл полей и допустимые значения исчезли, и сверить результат записи нечем; в самом объявлении VCardId помечен «параметр устарел, переданное значение не будет сохранено»",
+      "reason": "no_reference",
+      "reason_also": []
+    },
+    {
+      "id": "ad_keyword_template",
+      "title": "Использовать шаблон #фраза# и фразу по умолчанию",
+      "area": "ad_elements",
+      "ui": "Заголовок, текст, ссылки объявления",
+      "bucket": "api",
+      "api": "Ads.add, Ads.update — шаблон внутри Titles, Texts и Href",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.add",
+        "Ads.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "ad_turbo_page",
+      "title": "Привязать Турбо-страницу к объявлению",
+      "area": "ad_elements",
+      "ui": "Редактирование объявления → Турбо-страница",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поле только на чтение: TurboPageId помечен «параметр устарел, переданное значение не будет сохранено», а в структуре комбинаторного объявления Турбо-страницы нет вовсе. TurboPages.get читает параметры страницы и ни одной части привязки не выполняет",
+      "reason": "read_only",
+      "reason_also": []
+    },
+    {
+      "id": "ad_audience_pixel",
+      "title": "Добавить пиксель Яндекс Аудиторий в охватное объявление",
+      "area": "ad_elements",
+      "ui": "Редактирование охватного объявления → Пиксель",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: поля пикселя нет ни в одной описанной структуре объявления",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "ad_impression_counters",
+      "title": "Подключить сторонние счётчики показов",
+      "area": "ad_elements",
+      "ui": "Редактирование охватного объявления → Счётчики показов",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поле записи как раз есть — TrackingPixels описан в структурах CpmBannerAdBuilderAd и CpmVideoAdBuilderAd и на add, и на update, — но это медийные объявления, а скилл пишет только ResponsiveAd, где такого поля нет",
+      "reason": "r011",
+      "reason_also": []
+    },
+    {
+      "id": "ad_external_data",
+      "title": "Отключить дополнение объявлений данными из внешних источников",
+      "area": "ad_elements",
+      "ui": "Настройки пользователя → Дополнять объявления данными",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "Clients.update описывает настройку DISPLAY_STORE_RATING: дополнение объявлений данными из внешних источников. Для её применения нужна поддержка конкретного объекта и готовая команда либо отдельная работа с API.",
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "keywords_add",
+      "title": "Добавить ключевые фразы в группу",
+      "area": "keywords",
+      "ui": "Редактирование группы → Тематические слова",
+      "bucket": "api",
+      "api": "Keywords.add",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Keywords.add"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "keywords_view",
+      "title": "Посмотреть ключевые фразы и их статус",
+      "area": "keywords",
+      "ui": "Кампании → вкладка «Ставки и фразы»",
+      "bucket": "api",
+      "api": "Keywords.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Keywords.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "keywords_update",
+      "title": "Изменить ключевые фразы",
+      "area": "keywords",
+      "ui": "Вкладка «Ставки и фразы» → редактирование",
+      "bucket": "api",
+      "api": "Keywords.update",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Keywords.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "keywords_delete",
+      "title": "Удалить ключевые фразы",
+      "area": "keywords",
+      "ui": "Вкладка «Ставки и фразы» → Удалить",
+      "bucket": "api",
+      "api": "Keywords.delete",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Keywords.delete"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "keywords_suspend",
+      "title": "Приостановить показы по ключевой фразе",
+      "area": "keywords",
+      "ui": "Вкладка «Ставки и фразы» → Остановить",
+      "bucket": "api",
+      "api": "Keywords.suspend",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Keywords.suspend"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "keywords_resume",
+      "title": "Возобновить показы по ключевой фразе",
+      "area": "keywords",
+      "ui": "Вкладка «Ставки и фразы» → Запустить",
+      "bucket": "api",
+      "api": "Keywords.resume",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Keywords.resume"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "keywords_operators",
+      "title": "Применить операторы к ключевым фразам",
+      "area": "keywords",
+      "ui": "Вкладка «Ставки и фразы» → Добавление операторов",
+      "bucket": "api",
+      "api": "Keywords.add, Keywords.update — операторы входят в текст фразы",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Keywords.add",
+        "Keywords.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "keywords_negative_words",
+      "title": "Задать минус-слова у конкретной фразы",
+      "area": "keywords",
+      "ui": "Ключевая фраза → минус-слова через -",
+      "bucket": "api",
+      "api": "Keywords.add, Keywords.update — минус-слова входят в текст фразы",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Keywords.add",
+        "Keywords.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "keywords_case",
+      "title": "Изменить регистр ключевых фраз",
+      "area": "keywords",
+      "ui": "Вкладка «Ставки и фразы» → Изменение регистра",
+      "bucket": "api",
+      "api": "Keywords.update",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Keywords.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "autotargeting_toggle",
+      "title": "Включить автотаргетинг в группе",
+      "area": "keywords",
+      "ui": "Редактирование группы → Автотаргетинг",
+      "bucket": "partial",
+      "api": "Keywords.update, Keywords.get — автотаргетинг живёт тем же сервисом; настройки задаёт структура AutotargetingSettings — пять категорий запросов и три признака упоминания брендов, все со значениями YES и NO. Нормально созданной группе объект заводит сам Директ, и правится он на месте: настройка, не названная в запросе, сохраняет прежнее значение",
+      "manual": "включение автотаргетинга в группе, где его нет: замерена только правка уже заведённого объекта",
+      "why": "документация не описывает поведение: создаётся ли автотаргетинг вызовом там, где его нет, справочник не говорит",
+      "methods": [
+        "Keywords.get",
+        "Keywords.update"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "keywords_dedupe",
+      "title": "Отсеять дубли и фразы без показов при подборе",
+      "area": "keywords",
+      "ui": "Добавить → Ключевые фразы",
+      "bucket": "api",
+      "api": "KeywordsResearch.deduplicate, KeywordsResearch.hasSearchVolume",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "KeywordsResearch.deduplicate",
+        "KeywordsResearch.hasSearchVolume"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "keywords_wordstat",
+      "title": "Подобрать слова и посмотреть частотность",
+      "area": "keywords",
+      "ui": "Инструменты → Подбор слов",
+      "bucket": "api",
+      "api": "GetKeywordsSuggestion (v4), CreateNewWordstatReport, GetWordstatReport, GetWordstatReportList, DeleteWordstatReport (v4); в первой версии семантику собирает соседний скилл yandex-wordstat — так предписывает S-02",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "CreateNewWordstatReport",
+        "DeleteWordstatReport",
+        "GetKeywordsSuggestion",
+        "GetWordstatReport",
+        "GetWordstatReportList"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "keywords_combinator",
+      "title": "Подобрать фразы комбинатором",
+      "area": "keywords",
+      "ui": "Добавить → Ключевые фразы",
+      "bucket": "api",
+      "api": "KeywordsResearch.deduplicate, KeywordsResearch.hasSearchVolume — отсев результата; сама комбинация списков считается на своей стороне, метода под неё в API нет и совпадения с кабинетом скилл не обещает",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "KeywordsResearch.deduplicate",
+        "KeywordsResearch.hasSearchVolume"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "keywords_by_description",
+      "title": "Подобрать фразы по описанию или ссылке",
+      "area": "keywords",
+      "ui": "Тематические слова → Подобрать по описанию или ссылке",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: нейросетевого подбора фраз по описанию в API нет — GetKeywordsSuggestion даёт подсказки по фразам, а не по тексту описания",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "bids_set",
+      "title": "Назначить ставку фразе или автотаргетингу",
+      "area": "bids",
+      "ui": "Вкладка «Ставки и фразы»",
+      "bucket": "api",
+      "api": "KeywordBids.set; равнозначно Bids.set",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Bids.set",
+        "KeywordBids.set"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bids_set_auto",
+      "title": "Рассчитать ставки по объёму трафика или доле аудитории",
+      "area": "bids",
+      "ui": "Вкладка «Ставки и фразы» → автоматический расчёт",
+      "bucket": "api",
+      "api": "KeywordBids.setAuto; равнозначно Bids.setAuto",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Bids.setAuto",
+        "KeywordBids.setAuto"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bids_read_auction",
+      "title": "Посмотреть данные торгов и списываемые цены",
+      "area": "bids",
+      "ui": "Вкладка «Ставки и фразы» → колонки аукциона",
+      "bucket": "api",
+      "api": "KeywordBids.get; равнозначно Bids.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Bids.get",
+        "KeywordBids.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bid_wizard",
+      "title": "Назначить ставку Мастером ставок",
+      "area": "bids",
+      "ui": "«…» → Мастер ставок; вкладка «Ставки и фразы» → Мастер ставок",
+      "bucket": "partial",
+      "api": "KeywordBids.set, KeywordBids.setAuto",
+      "manual": "воспроизведение самого алгоритма Мастера ставок: если нужен именно его результат, ставку назначает человек",
+      "why": "документация не описывает поведение: методы назначения ставок документированы, а алгоритм Мастера ставок — нет; сверка после записи опирается на знание, чему результат должен равняться, и здесь его нет",
+      "methods": [
+        "KeywordBids.set",
+        "KeywordBids.setAuto"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "bid_mod_demographics",
+      "title": "Задать корректировку по полу и возрасту",
+      "area": "bids",
+      "ui": "Дополнительные настройки → Корректировки; редактирование группы",
+      "bucket": "api",
+      "api": "BidModifiers.add, BidModifiers.set, BidModifiers.delete, BidModifiers.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "BidModifiers.add",
+        "BidModifiers.delete",
+        "BidModifiers.get",
+        "BidModifiers.set"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bid_mod_devices",
+      "title": "Задать корректировку по типам устройств",
+      "area": "bids",
+      "ui": "Корректировки → Устройства",
+      "bucket": "api",
+      "api": "BidModifiers.add, BidModifiers.set — DESKTOP_ADJUSTMENT, DESKTOP_ONLY_ADJUSTMENT, MOBILE_ADJUSTMENT, TABLET_ADJUSTMENT",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "BidModifiers.add",
+        "BidModifiers.set"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bid_mod_audience",
+      "title": "Задать корректировку по целевой аудитории",
+      "area": "bids",
+      "ui": "Корректировки → Целевая аудитория",
+      "bucket": "api",
+      "api": "BidModifiers.add, BidModifiers.set — тип по условию ретаргетинга",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "BidModifiers.add",
+        "BidModifiers.set"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bid_mod_region",
+      "title": "Задать корректировку по региону показа",
+      "area": "bids",
+      "ui": "Корректировки → Регион показа (только кампания)",
+      "bucket": "api",
+      "api": "BidModifiers.add, BidModifiers.set — REGIONAL_ADJUSTMENT",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "BidModifiers.add",
+        "BidModifiers.set"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bid_mod_video",
+      "title": "Задать корректировку по видеодополнениям",
+      "area": "bids",
+      "ui": "Корректировки → Видеодополнения",
+      "bucket": "api",
+      "api": "BidModifiers.add, BidModifiers.set — корректировка для видеодополнений",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "BidModifiers.add",
+        "BidModifiers.set"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bid_mod_stencils",
+      "title": "Задать корректировку по трафаретам",
+      "area": "bids",
+      "ui": "Корректировки → Трафареты (только кампания)",
+      "bucket": "partial",
+      "api": "BidModifiers.add, BidModifiers.set — корректировка эксклюзивного размещения",
+      "manual": "корректировка саджеста, если она окажется отдельным типом",
+      "why": "документация не описывает поведение: справочник называет тип «эксклюзивное размещение», а интерфейс — «Трафареты» с эксклюзивным размещением и саджестом; соответствия документация не даёт",
+      "methods": [
+        "BidModifiers.add",
+        "BidModifiers.set"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "bid_mod_solvency",
+      "title": "Задать корректировку по платёжеспособности",
+      "area": "bids",
+      "ui": "Корректировки → Платёжеспособность",
+      "bucket": "api",
+      "api": "BidModifiers.add, BidModifiers.set — корректировка платежеспособности",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "BidModifiers.add",
+        "BidModifiers.set"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bid_mod_weather",
+      "title": "Задать корректировку по погоде",
+      "area": "bids",
+      "ui": "Редактирование группы → Корректировки → Погода",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: типа корректировки по погоде в перечне BidModifiers нет — температуры, осадков и облачности API не принимает",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "bid_mod_category_spend",
+      "title": "Задать корректировку по уровню трат в категории",
+      "area": "bids",
+      "ui": "Корректировки → Уровень трат в категории",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: типа корректировки по уровню трат в категории в перечне BidModifiers нет",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "bid_mod_group_cpa",
+      "title": "Задать корректировку цены конверсии, ДРР или цены клика в группе",
+      "area": "bids",
+      "ui": "Редактирование группы → Корректировки",
+      "bucket": "partial",
+      "api": "BidModifiers.add, BidModifiers.set — корректировка на группу",
+      "manual": "различение того, к чему именно применяется коэффициент — к цене конверсии, ДРР или цене клика",
+      "why": "документация не описывает поведение: справочник называет тип «на группу» без указания, какую именно величину он корректирует",
+      "methods": [
+        "BidModifiers.add",
+        "BidModifiers.set"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "bid_mod_exclude_audience",
+      "title": "Исключить аудиторию из показов корректировкой −100%",
+      "area": "bids",
+      "ui": "Корректировки → коэффициент −100%",
+      "bucket": "api",
+      "api": "BidModifiers.set — коэффициент 0",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "BidModifiers.set"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "retargeting_create",
+      "title": "Создать условие ретаргетинга и подбора аудитории",
+      "area": "audiences",
+      "ui": "Библиотека → Сегменты аудитории",
+      "bucket": "api",
+      "api": "RetargetingLists.add, RetargetingLists.update, RetargetingLists.delete, RetargetingLists.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "RetargetingLists.add",
+        "RetargetingLists.delete",
+        "RetargetingLists.get",
+        "RetargetingLists.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "audience_target_attach",
+      "title": "Привязать условие к группе объявлений",
+      "area": "audiences",
+      "ui": "Редактирование группы → Сегменты аудитории",
+      "bucket": "partial",
+      "api": "AudienceTargets.add, AudienceTargets.get, AudienceTargets.delete, AudienceTargets.setBids, AudienceTargets.suspend, AudienceTargets.resume",
+      "manual": "привязка условий, которые Директ к группе ЕПК не принимает: условие на интересах Крипты задаётся в кабинете, и у него своя строка в handoff. Перечень таких условий может оказаться шире: условие профиля пробовалось один раз и было отвергнуто",
+      "why": "ограничение платформы: условие типа RETARGETING группа UNIFIED_AD_GROUP принимает — проверено живьём, — а условие типа AUDIENCE на сегменте интересов отвергнуто кодом 6000 «Недопустимое условие в профиле пользователя, используемого для нацеливания в группе текстово-графических объявлений». Таблица ограничений AudienceTargets про UNIFIED_AD_GROUP молчит, и перечень AvailableForTargetsInAdGroupTypes у принятого условия её тоже не называет",
+      "methods": [
+        "AudienceTargets.add",
+        "AudienceTargets.delete",
+        "AudienceTargets.get",
+        "AudienceTargets.resume",
+        "AudienceTargets.setBids",
+        "AudienceTargets.suspend"
+      ],
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "interests_set",
+      "title": "Задать таргетинг «Интересы и привычки»",
+      "area": "audiences",
+      "ui": "Редактирование группы → Интересы и привычки",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком: интересы Крипты выбираются и привязываются к группе в кабинете",
+      "why": "ограничение платформы: правило на сегменте интересов Директ отвергает в условии типа RETARGETING — код 6000, «Сегменты аудиторий нельзя использовать с данным типом», — а принятое с типом AUDIENCE условие возвращается со Scope: FOR_TARGETS_ONLY и списком групп CPM_BANNER_AD_GROUP, CPM_VIDEO_AD_GROUP; привязка такого условия к группе UNIFIED_AD_GROUP отвергнута кодом 6000 «Недопустимое условие в профиле пользователя, используемого для нацеливания в группе текстово-графических объявлений»",
+      "methods": [],
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "user_profile_targeting",
+      "title": "Настроить условия показа по профилю пользователя",
+      "area": "audiences",
+      "ui": "Кампании → вкладка «Профили пользователей»",
+      "bucket": "partial",
+      "api": "RetargetingLists.add, AudienceTargets.add; Dictionaries.get — сегменты Крипты",
+      "manual": "признаки профиля — семейное положение, дети, профессия, поведенческие, — которых не окажется среди допустимых правил условия либо чьё условие группа ЕПК не примет: их задают в кабинете",
+      "why": "документация не описывает поведение: справочник приводит только количественные пределы правил («по каждой социально-демографической характеристике или поведенческому признаку допустимо не более одного правила»), перечня самих признаков не давая. Общая применимость условий нацеливания к группе единой перфоманс-кампании причиной здесь больше не является — она проверена живьём. Остаётся неизвестным другое: какие признаки профиля выражаются правилом условия и какое из таких условий группа примет. Единственное пробованное условие профиля она отвергла, и отвергла на правиле об интересах",
+      "methods": [
+        "AudienceTargets.add",
+        "Dictionaries.get",
+        "RetargetingLists.add"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "offer_retargeting",
+      "title": "Включить офферный ретаргетинг",
+      "area": "audiences",
+      "ui": "Редактирование группы → Сегменты аудитории",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: офферного ретаргетинга нет в структуре группы; о его существовании в API известно только по значению OFFER_RETARGETING поля CriterionType в отчётах",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "feed_add",
+      "title": "Добавить фид товаров",
+      "area": "audiences",
+      "ui": "Библиотека → Фиды",
+      "bucket": "partial",
+      "api": "Feeds.add, Feeds.update, Feeds.delete, Feeds.get",
+      "manual": "фид крупнее размера запроса: кабинет принимает файл до 200 МБ и ссылку до 512 МБ, а запрос API ограничен 50 МБ",
+      "why": "ограничение платформы: размер фида в API упирается в размер запроса, а кабинет принимает заметно больше",
+      "methods": [
+        "Feeds.add",
+        "Feeds.delete",
+        "Feeds.get",
+        "Feeds.update"
+      ],
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "feed_utm_strip",
+      "title": "Включить автоматическое удаление UTM-меток у фида",
+      "area": "audiences",
+      "ui": "Библиотека → Фиды → параметры фида",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: опции удаления UTM-меток среди описанных полей фида нет",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "feed_filters",
+      "title": "Задать правила отбора товаров",
+      "area": "audiences",
+      "ui": "Редактирование товарного объявления → Фильтры",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "фильтры живут полем FeedFilterConditions структур ShoppingAd и ListingAd, а единственный путь записи объявлений в скилле — ResponsiveAd через v501; задать их, не создавая товарное объявление, нечем",
+      "reason": "r011",
+      "reason_also": []
+    },
+    {
+      "id": "turbo_pages_read",
+      "title": "Посмотреть параметры Турбо-страниц",
+      "area": "audiences",
+      "ui": "Библиотека",
+      "bucket": "api",
+      "api": "TurboPages.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "TurboPages.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "leads_read",
+      "title": "Прочитать заявки с Турбо-страниц и лендингов",
+      "area": "audiences",
+      "ui": "Библиотека → Лендинги",
+      "bucket": "api",
+      "api": "Leads.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Leads.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bulk_metrika_counters",
+      "title": "Массово заменить, добавить или удалить счётчики Метрики",
+      "area": "bulk",
+      "ui": "Кампании → Действия → Счётчики Метрики",
+      "bucket": "api",
+      "api": "Campaigns.update — CounterIds, батчем до 10 кампаний за вызов; текущее значение читается Campaigns.get — поле заменяется целиком, и записывать надо слитый список, а не одну правку",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.get",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bulk_schedule_dates",
+      "title": "Массово задать расписание показов и даты кампаний",
+      "area": "bulk",
+      "ui": "Кампании → Действия → Расписание показов; Начало и окончание",
+      "bucket": "api",
+      "api": "Campaigns.update — TimeTargeting, StartDate, EndDate",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bulk_negative_keywords",
+      "title": "Массово добавить, заменить, исключить или удалить минус-фразы",
+      "area": "bulk",
+      "ui": "Кампании → Действия → Минус-фразы",
+      "bucket": "api",
+      "api": "Campaigns.get и Campaigns.update — NegativeKeywords: операции вроде CalloutSetting с ADD / REMOVE / SET у минус-фраз нет, поле заменяется целиком, поэтому режимы «добавить», «исключить» и «удалить» собираются чтением и слиянием",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.get",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bulk_negative_sets",
+      "title": "Массово привязать или отвязать наборы минус-фраз",
+      "area": "bulk",
+      "ui": "Кампании → Действия → Библиотека минус-фраз",
+      "bucket": "api",
+      "api": "Campaigns.update — NegativeKeywordSharedSetIds; текущее значение читается Campaigns.get — поле заменяется целиком, и записывать надо слитый список, а не одну правку",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.get",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bulk_promo",
+      "title": "Массово заменить или отвязать промоакцию",
+      "area": "bulk",
+      "ui": "Кампании → Действия → Промоакция",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса промоакций в API нет, поля промоакции нет ни у кампании, ни у объявления",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "bulk_url_params",
+      "title": "Массово задать параметры URL",
+      "area": "bulk",
+      "ui": "Кампании → Действия → Параметры URL",
+      "bucket": "api",
+      "api": "Campaigns.update, AdGroups.update — TrackingParams",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdGroups.update",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bulk_strategies",
+      "title": "Массово сменить стратегию кампаний",
+      "area": "bulk",
+      "ui": "Кампании → Действия → Стратегии",
+      "bucket": "api",
+      "api": "Campaigns.update",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bulk_ab_experiments",
+      "title": "Массово добавить кампании в A/B-эксперименты",
+      "area": "bulk",
+      "ui": "Кампании → Действия → A/B-эксперименты",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса A/B-экспериментов в API нет",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "bulk_personalization",
+      "title": "Массово включить персонализацию",
+      "area": "bulk",
+      "ui": "Кампании → Действия → Персонализация",
+      "bucket": "partial",
+      "api": "Campaigns.update — Settings ALTERNATIVE_TEXTS_ENABLED",
+      "manual": "фразы-исключения того же инструмента: поля под них в объекте кампании нет. Ограничение «не более 100 кампаний за раз» — свойство кабинета, а не API",
+      "why": "поля нет в структуре записи: соответствие настройки ALTERNATIVE_TEXTS_ENABLED массовому действию установлено — Справка «Персонализация» называет путь «Кампании → Действия → Персонализация» дословно и там же приводит предел в сто кампаний за раз. Поля со списком фраз-исключений в объекте кампании нет",
+      "methods": [
+        "Campaigns.update"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "bulk_discounts",
+      "title": "Массово подключить персональные скидки от Яндекса",
+      "area": "bulk",
+      "ui": "Кампании → Действия → Персональные скидки",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: поля скидок нет ни среди параметров кампании, ни в Settings",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "bulk_brand_lift",
+      "title": "Массово запустить Brand Lift",
+      "area": "bulk",
+      "ui": "Кампании → Действия → Запустить Brand Lift",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса опросных исследований в API нет",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "bulk_seasonal",
+      "title": "Массово задать сезонный рост конверсионности",
+      "area": "bulk",
+      "ui": "Кампании → Действия → Сезонный рост конверсионности",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: периода повышенного спроса и ожидаемого роста CR в структурах кампании нет",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "bulk_favorites",
+      "title": "Массово добавить кампании в «самые важные»",
+      "area": "bulk",
+      "ui": "Кампании → Действия → Добавить в самые важные",
+      "bucket": "partial",
+      "api": "Campaigns.update — Settings ADD_TO_FAVORITES",
+      "manual": "ничего: кабинетная пометка задаётся одним значением настройки.",
+      "why": "документация не описывает поведение — основание снято: приложение «Настройки кампаний (параметр Option)» описывает ADD_TO_FAVORITES словами «Добавить кампанию в самые важные для применения фильтра в веб-интерфейсе по этому признаку», и это дословно то самое действие кабинета. Причина в срезе устарела вместе с корзиной и снимается тем же проходом поддержки",
+      "methods": [
+        "Campaigns.update"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "bulk_adgroup_regions",
+      "title": "Массово задать регионы показа и автотаргетинг групп",
+      "area": "bulk",
+      "ui": "Группы → Действия → Регионы показа; Автотаргетинг",
+      "bucket": "partial",
+      "api": "AdGroups.update — RegionIds; Keywords.update — автотаргетинг структурой AutotargetingSettings",
+      "manual": "точки на карте с выбором «бывает регулярно / живёт / работает / сейчас здесь» — остаток половины про регионы; у автотаргетинга — включение в группе, где его нет",
+      "why": "поля нет в структуре записи: RegionIds принимает только идентификаторы регионов из справочника; полигонов, точек и режима присутствия в объекте группы нет. Плюс документация не описывает поведение: создаётся ли автотаргетинг вызовом там, где его нет, справочник не говорит",
+      "methods": [
+        "AdGroups.update",
+        "Keywords.update"
+      ],
+      "reason": "no_field",
+      "reason_also": [
+        "undocumented"
+      ]
+    },
+    {
+      "id": "bulk_adgroup_labels_scenario",
+      "title": "Массово проставить метки и сменить сценарий групп",
+      "area": "bulk",
+      "ui": "Группы → Действия → Метки; Сценарий группы",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: меток уровня группы нет ни в версии 5, ни в версии 4; поля сценария группы в объекте группы нет вовсе",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "bulk_ads_find_replace",
+      "title": "Выполнить поиск и замену в объявлениях",
+      "area": "bulk",
+      "ui": "Объявления → Действия → Поиск и замена",
+      "bucket": "api",
+      "api": "Ads.get с ResponsiveAdFieldNames, Ads.update — ResponsiveAdUpdate; замена внутри быстрых ссылок и уточнений — Sitelinks.add и AdExtensions.add с предварительным AdExtensions.get: идентичное уточнение при добавлении даёт ошибку, поэтому совпавшее переиспользуется по идентификатору, а дубли убираются из запроса; далее перепривязкой через SitelinkSetId и CalloutSetting: редактирования справочник не предусматривает ни у наборов ссылок, ни у уточнений, создаётся новое — но ведут они себя по-разному, совпавшие наборы ссылок Директ схлопывает в один, а идентичные уточнения дают ошибку на каждое, и совпадение надо ловить до отправки; содержимое набора читается Sitelinks.get — замена ищется внутри заголовков и ссылок, а Ads.get отдаёт только SitelinkSetId",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdExtensions.add",
+        "AdExtensions.get",
+        "Ads.get",
+        "Ads.update",
+        "Sitelinks.add",
+        "Sitelinks.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bulk_ads_media",
+      "title": "Массово заменить изображения, карусель, креативы и видео",
+      "area": "bulk",
+      "ui": "Объявления → Действия → Изображения; Карусель; Креативы; Видео",
+      "bucket": "partial",
+      "api": "AdImages.add, AdVideos.add, Creatives.add; Ads.update — AdImageHashes, VideoExtensionIds; текущее значение читается Ads.get — поле заменяется целиком, и записывать надо слитый список, а не одну правку",
+      "manual": "карусель и подмена готового креатива",
+      "why": "поля нет в структуре записи, плюс ограничение платформы: поля карусели в API нет, а креативы, кроме видеодополнений, собираются только в конструкторе Директа",
+      "methods": [
+        "AdImages.add",
+        "AdVideos.add",
+        "Ads.get",
+        "Ads.update",
+        "Creatives.add"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "bulk_ads_extensions",
+      "title": "Массово задать быстрые ссылки и уточнения",
+      "area": "bulk",
+      "ui": "Объявления → Действия → Быстрые ссылки; Уточнения",
+      "bucket": "api",
+      "api": "Sitelinks.add, AdExtensions.add; Ads.update — SitelinkSetId, CalloutSetting; совпавшее уточнение ищется AdExtensions.get и переиспользуется по идентификатору — идентичное при добавлении даёт ошибку на каждое; перечень объявлений даёт Ads.get — метод работает по идентификаторам, и собрать их надо до записи",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdExtensions.add",
+        "AdExtensions.get",
+        "Ads.get",
+        "Ads.update",
+        "Sitelinks.add"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bulk_ads_prices",
+      "title": "Массово задать цены в объявлениях",
+      "area": "bulk",
+      "ui": "Объявления → Действия → Цены",
+      "bucket": "api",
+      "api": "Ads.update — PriceExtension",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bulk_ads_age",
+      "title": "Массово задать возрастные ограничения",
+      "area": "bulk",
+      "ui": "Объявления → Действия → Возрастные ограничения",
+      "bucket": "partial",
+      "api": "Ads.update — AgeLabel",
+      "manual": "добавление и снятие метки — через поддержку Яндекса",
+      "why": "ограничение платформы: через API меняется только значение метки",
+      "methods": [
+        "Ads.update"
+      ],
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "bulk_ads_contacts",
+      "title": "Массово подставить кнопку, организацию и номер телефона",
+      "area": "bulk",
+      "ui": "Объявления → Действия → Кнопка; Организации; Номер телефона",
+      "bucket": "partial",
+      "api": "Ads.update — BusinessId",
+      "manual": "кнопка действия и номер телефона: на запись их в структурах объявления нет",
+      "why": "поле только на чтение, плюс справочника нет: кнопки нет в ResponsiveAdAdd и ResponsiveAdUpdate, хотя Ads.get отдаёт её полем ButtonExtension. Подменный номер тоже виден прямо в объявлении — полем TrackingPhoneId, а не только через VCards, у которого отняли справочник; VCardId при этом помечен «параметр устарел»",
+      "methods": [
+        "Ads.update"
+      ],
+      "reason": "read_only",
+      "reason_also": []
+    },
+    {
+      "id": "bulk_ads_pixels",
+      "title": "Массово задать пиксель Аудиторий и счётчики показов",
+      "area": "bulk",
+      "ui": "Объявления → Действия → Пиксель; Счётчики показов",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "TrackingPixels описан в структурах записи медийных объявлений, но медийные объявления скилл не пишет; в ResponsiveAd ни пикселя, ни счётчиков нет",
+      "reason": "r011",
+      "reason_also": []
+    },
+    {
+      "id": "bulk_keywords_operators",
+      "title": "Массово добавить операторы к ключевым фразам",
+      "area": "bulk",
+      "ui": "Ставки и фразы → Действия → Добавление операторов",
+      "bucket": "api",
+      "api": "Keywords.get, Keywords.update",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Keywords.get",
+        "Keywords.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bulk_keywords_case",
+      "title": "Массово изменить регистр ключевых фраз",
+      "area": "bulk",
+      "ui": "Ставки и фразы → Действия → Изменение регистра",
+      "bucket": "api",
+      "api": "Keywords.get, Keywords.update",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Keywords.get",
+        "Keywords.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "bulk_keywords_find_replace",
+      "title": "Выполнить поиск и замену в ключевых фразах",
+      "area": "bulk",
+      "ui": "Ставки и фразы → Действия → Поиск и замена",
+      "bucket": "api",
+      "api": "Keywords.get, Keywords.update",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Keywords.get",
+        "Keywords.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "library_negative_sets",
+      "title": "Создать и изменить набор минус-фраз",
+      "area": "library",
+      "ui": "Библиотека → Минус-фразы",
+      "bucket": "api",
+      "api": "NegativeKeywordSharedSets.add, NegativeKeywordSharedSets.update, NegativeKeywordSharedSets.delete, NegativeKeywordSharedSets.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "NegativeKeywordSharedSets.add",
+        "NegativeKeywordSharedSets.delete",
+        "NegativeKeywordSharedSets.get",
+        "NegativeKeywordSharedSets.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "library_promotions",
+      "title": "Создать, изменить или удалить промоакцию",
+      "area": "library",
+      "ui": "Библиотека → Промоакции",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса промоакций в API нет",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "library_mobile_apps",
+      "title": "Добавить мобильное приложение",
+      "area": "library",
+      "ui": "Библиотека → Мобильные приложения",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса мобильных приложений кабинета в API нет",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "library_landings",
+      "title": "Создать лендинг Директа",
+      "area": "library",
+      "ui": "Библиотека → Лендинги",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса лендингов в API нет; API умеет только читать заявки, которые лендинг собрал (Leads.get)",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "library_ab_experiments",
+      "title": "Создать A/B-эксперимент и посмотреть отчёт по нему",
+      "area": "library",
+      "ui": "Библиотека → A/B-эксперименты",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса экспериментов в API нет, а среди типов отчётов Reports разреза по варианту эксперимента не предусмотрено",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "report_build",
+      "title": "Построить отчёт с нужными группировками и метриками",
+      "area": "reports",
+      "ui": "Статистика → Мастер отчётов",
+      "bucket": "api",
+      "api": "Reports — ReportType и FieldNames",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Reports"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "report_period",
+      "title": "Задать период отчёта",
+      "area": "reports",
+      "ui": "Мастер отчётов → период",
+      "bucket": "api",
+      "api": "Reports — DateRangeType, DateFrom, DateTo",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Reports"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "report_filters",
+      "title": "Задать фильтры отчёта",
+      "area": "reports",
+      "ui": "Мастер отчётов → фильтры",
+      "bucket": "partial",
+      "api": "Reports — SelectionCriteria.Filter",
+      "manual": "фильтр по пятнадцати полям (PurchaseRevenue, PurchaseProfit, PurchaseGoalsRoi, CPV, AvgVideoCompleteCost и десяти Video*) — в Мастере отчётов кабинета: они помечены фильтруемыми, но операторов для них документация не называет, и собрать запрос вслепую скилл не станет",
+      "why": "документация не описывает поведение: в машиночитаемом срезе у этих полей filter_operators: null — проверить такой фильтр до отправки нечем, и скилл предупреждает вместо молчаливого пропуска",
+      "methods": [
+        "Reports"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "report_goals",
+      "title": "Выбрать цели Метрики для отчёта",
+      "area": "reports",
+      "ui": "Мастер отчётов → цели",
+      "bucket": "api",
+      "api": "Reports — Goals; список доступных целей — GetStatGoals (live/v4)",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "GetStatGoals",
+        "Reports"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "report_attribution",
+      "title": "Выбрать модель атрибуции в отчёте",
+      "area": "reports",
+      "ui": "Мастер отчётов → атрибуция",
+      "bucket": "partial",
+      "api": "Reports — AttributionModels (FCCD, LC, LSCCD, AUTO)",
+      "manual": "модели медийных кампаний «Первый показ из Директа» и «Последний показ из Директа» с окном 1–30 дней",
+      "why": "поля нет в структуре записи: перечень моделей в API закрыт четырьмя кодами по визитам, моделей по показам и настройки окна атрибуции в нём нет",
+      "methods": [
+        "Reports"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "report_vat",
+      "title": "Включить учёт НДС в отчёте",
+      "area": "reports",
+      "ui": "Мастер отчётов → Учёт НДС",
+      "bucket": "api",
+      "api": "Reports — IncludeVAT; ставка — Clients.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Clients.get",
+        "Reports"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "report_compare_periods",
+      "title": "Сравнить два периода",
+      "area": "reports",
+      "ui": "Мастер отчётов → сравнение периодов",
+      "bucket": "api",
+      "api": "Reports — две выгрузки с разными DateFrom и DateTo: параметра второго периода в ReportDefinition нет, сведение и расчёт разницы делаются на своей стороне",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Reports"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "report_download",
+      "title": "Скачать отчёт файлом",
+      "area": "reports",
+      "ui": "Мастер отчётов → Скачать (XLSX, CSV)",
+      "bucket": "api",
+      "api": "Reports — ответ в TSV: других значений Format сервис не поддерживает, в XLSX или CSV файл переводится на своей стороне",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Reports"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "report_search_queries",
+      "title": "Посмотреть отчёт «Поисковые запросы»",
+      "area": "reports",
+      "ui": "Статистика → Библиотека отчётов → Поисковые запросы",
+      "bucket": "api",
+      "api": "Reports — SEARCH_QUERY_PERFORMANCE_REPORT, только офлайн-режим",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Reports"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "report_query_to_negative",
+      "title": "Добавить поисковый запрос в минус-фразы из отчёта",
+      "area": "reports",
+      "ui": "Отчёт «Поисковые запросы» → в минус-фразы",
+      "bucket": "api",
+      "api": "Campaigns.update, AdGroups.update — NegativeKeywords; текущее значение читается Campaigns.get и AdGroups.get — поле заменяется целиком, и записывать надо слитый список, а не одну правку",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AdGroups.get",
+        "AdGroups.update",
+        "Campaigns.get",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "report_query_to_keywords",
+      "title": "Добавить поисковый запрос в ключевые фразы из отчёта",
+      "area": "reports",
+      "ui": "Отчёт «Поисковые запросы» → в ключевые фразы",
+      "bucket": "api",
+      "api": "Keywords.add",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Keywords.add"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "report_placements",
+      "title": "Посмотреть отчёт «Площадки»",
+      "area": "reports",
+      "ui": "Статистика → Библиотека отчётов → Площадки",
+      "bucket": "api",
+      "api": "Reports — CUSTOM_REPORT с полями Placement и AdNetworkType",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Reports"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "report_block_placement",
+      "title": "Запретить или разрешить показы на площадке из отчёта",
+      "area": "reports",
+      "ui": "Отчёт «Площадки» → запретить показы",
+      "bucket": "api",
+      "api": "Campaigns.update — ExcludedSites; текущее значение читается Campaigns.get — поле заменяется целиком, и записывать надо слитый список, а не одну правку",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.get",
+        "Campaigns.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "report_campaign_stats",
+      "title": "Посмотреть статистику по кампании",
+      "area": "reports",
+      "ui": "«…» → Статистика",
+      "bucket": "api",
+      "api": "Reports — CAMPAIGN_PERFORMANCE_REPORT; для медийных — REACH_AND_FREQUENCY_PERFORMANCE_REPORT",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Reports"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "report_by_accounts",
+      "title": "Сгруппировать отчёт по аккаунтам",
+      "area": "reports",
+      "ui": "Мастер отчётов в управляющем аккаунте → группировка «Аккаунты»",
+      "bucket": "partial",
+      "api": "Reports — ClientLogin в FieldNames и в Filter",
+      "manual": "выбор целей подопечных аккаунтов: справочник описывает Goals как цели того кабинета, к которому адресован запрос",
+      "why": "документация не описывает поведение: управляющего аккаунта в справочнике API нет вовсе — есть только агентский случай с заголовком Client-Login",
+      "methods": [
+        "Reports"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "report_ad_elements",
+      "title": "Посмотреть эффективность элементов комбинаторного объявления",
+      "area": "reports",
+      "ui": "Мастер отчётов → группировки «Заголовок», «Текст», «Изображение»",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: в таблице допустимых полей Reports нет ни заголовка, ни текста, ни изображения, ни превью видео — поэлементная оценка существует только в интерфейсном Мастере отчётов. Кодом доступен единственный поэлементный сигнал — статус модерации элемента; возврат выгрузки из кабинета —",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "report_overview",
+      "title": "Посмотреть Обзор результатов продвижения",
+      "area": "reports",
+      "ui": "Статистика → Обзор",
+      "bucket": "partial",
+      "api": "Reports — ACCOUNT_PERFORMANCE_REPORT",
+      "manual": "виджеты сквозной аналитики из Метрики и отчёт по индустрии в PDF",
+      "why": "метода нет: среди восьми типов отчётов нет ни виджетов Обзора, ни отраслевого отчёта; Reports отдаёт строки статистики, а не готовые виджеты",
+      "methods": [
+        "Reports"
+      ],
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "report_save",
+      "title": "Сохранить отчёт в «Мои отчёты» и открыть его позже",
+      "area": "reports",
+      "ui": "Статистика → Мои отчёты",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: хранилища конфигураций отчётов в API нет — ReportDefinition передаётся в каждом запросе, а имя отчёта служит ключом пятичасового кэша",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "report_share",
+      "title": "Поделиться отчётом по ссылке",
+      "area": "reports",
+      "ui": "Мастер отчётов → Поделиться отчётом",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: отчёт возвращается телом ответа, адреса готового отчёта сервис не предусматривает",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "report_invalid_traffic",
+      "title": "Посмотреть отчёт «Недействительный трафик»",
+      "area": "reports",
+      "ui": "Библиотека отчётов → Недействительный трафик",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: такого типа в перечне ReportType нет, а отсеянные антифродом события из остальных отчётов удаляются",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "report_call_log",
+      "title": "Посмотреть Журнал звонков и записи разговоров",
+      "area": "reports",
+      "ui": "Конверсии → Журнал звонков; Библиотека отчётов → Журнал звонков",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса звонков в API нет, типа отчёта под журнал звонков в Reports тоже нет",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "report_dynamic_places",
+      "title": "Посмотреть отчёт «Динамические места на поиске» (бета)",
+      "area": "reports",
+      "ui": "Библиотека отчётов → Динамические места на поиске",
+      "bucket": "partial",
+      "api": "Reports — CUSTOM_REPORT с полями Slot, AvgTrafficVolume",
+      "manual": "точное воспроизведение преднастроенного отчёта: его состав полей документация не публикует",
+      "why": "документация не описывает поведение: отдельного типа отчёта под динамические места в перечне нет",
+      "methods": [
+        "Reports"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "report_by_campaign_type",
+      "title": "Посмотреть готовые отчёты по типам кампаний и стратегиям",
+      "area": "reports",
+      "ui": "Библиотека отчётов",
+      "bucket": "partial",
+      "api": "Reports — CUSTOM_REPORT с сегментом CampaignType",
+      "manual": "разрез по стратегиям и точное повторение готовых отчётов кабинета",
+      "why": "поля нет в структуре записи: поля стратегии в таблице допустимых полей Reports нет, а состав полей преднастроенных отчётов кабинета не опубликован",
+      "methods": [
+        "Reports"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "report_acts",
+      "title": "Посмотреть отчёт по актам",
+      "area": "reports",
+      "ui": "Библиотека отчётов → Специализированные отчёты → Акты",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: документов не выгружает ни один из действующих финансовых методов версии 4",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "report_kpi",
+      "title": "Посмотреть отчёт по KPI",
+      "area": "reports",
+      "ui": "Страница «Отчёт по KPI» (агентствам)",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: отчётности по подключённым функциональностям и премии в API нет",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "report_industry_pdf",
+      "title": "Скачать отчёт по индустрии в PDF",
+      "area": "reports",
+      "ui": "Статистика → Обзор",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: отраслевого отчёта в перечне ReportType нет, а формат ответа Reports — только TSV",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "report_columns",
+      "title": "Настроить колонки таблицы кампаний",
+      "area": "reports",
+      "ui": "Кампании → шестерёнка → Колонки кампаний",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: это настройка отображения таблицы кабинета, а не свойство рекламных объектов; сервиса настроек интерфейса в API нет",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "report_ai_assistant",
+      "title": "Построить отчёт через ИИ-помощника",
+      "area": "reports",
+      "ui": "Значок ИИ-помощника в кабинете",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса ИИ-помощника в API нет — ни построения отчёта по текстовому запросу, ни ссылки с суммаризацией",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "conversions_upload",
+      "title": "Загрузить офлайн-конверсии и настроить их источник",
+      "area": "reports",
+      "ui": "Конверсии → Центр конверсий",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса конверсий в API Директа нет; Leads.get возвращает только данные форм на Турбо-страницах и лендингах",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "conversions_ozon",
+      "title": "Подключить источник конверсий Ozon Performance API",
+      "area": "reports",
+      "ui": "Конверсии → Центр конверсий",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: интеграций со сторонними кабинетами в перечне сервисов нет",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "changes_check",
+      "title": "Узнать, что изменилось в кабинете с прошлого чтения",
+      "area": "reports",
+      "ui": "—",
+      "bucket": "api",
+      "api": "Changes.check, Changes.checkCampaigns, Changes.checkDictionaries",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Changes.check",
+        "Changes.checkCampaigns",
+        "Changes.checkDictionaries"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "change_history",
+      "title": "Посмотреть историю изменений",
+      "area": "reports",
+      "ui": "Инструменты → История изменений; «…» → История изменений",
+      "bucket": "partial",
+      "api": "Changes.check, Changes.checkCampaigns; GetEventsLog (live/v4)",
+      "manual": "сам журнал — кто, что и на что поменял: Changes отдаёт только перечень изменившихся объектов и время",
+      "why": "документация не описывает поведение: Changes по определению сообщает о наличии изменений, а не об их содержании; у GetEventsLog в справочнике версии 4 одна строка назначения и ни одного описанного поля",
+      "methods": [
+        "Changes.check",
+        "Changes.checkCampaigns",
+        "GetEventsLog"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "moderation_status",
+      "title": "Посмотреть статус модерации и причину остановки показов",
+      "area": "moderation",
+      "ui": "Кампании → статус; страница кампании",
+      "bucket": "partial",
+      "api": "Campaigns.get — Status, State, StatusPayment, StatusClarification; Ads.get — Status, State",
+      "manual": "различение статусов кабинета «Обрабатывается», «Идёт активизация» и остановки из-за данных для закона о маркировке",
+      "why": "документация не описывает поведение: перечни State и Status закрыты и короче набора статусов кабинета, а состав StatusClarification справочник не описывает",
+      "methods": [
+        "Ads.get",
+        "Campaigns.get"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "moderation_comment",
+      "title": "Посмотреть комментарий модератора к отклонённому элементу",
+      "area": "moderation",
+      "ui": "Вкладка «Объявления» → комментарий рядом с элементом",
+      "bucket": "partial",
+      "api": "Ads.get с ResponsiveAdFieldNames — StatusClarification, поэлементные статусы комплекта Titles[].Status, Texts[].Status, AdImages[].Status, VideoExtensions[].Status, у слайда карусели — свои Carousel.Items[].Status и Carousel.Items[].StatusClarification, а также SitelinksModeration и DisplayUrlPathModeration; сигнал карусели стоит особняком: карусель в комплект записи не входит, её поля нет ни в ResponsiveAdAdd, ни в ResponsiveAdUpdate, и отклонённый слайд читается, но не заменяется — правка уходит в хендофф строкой «Собрать карусель из 2–10 слайдов»",
+      "manual": "сам текст комментария модератора: API отдаёт статус элемента, а состав StatusClarification в справочнике не описан",
+      "why": "документация не описывает поведение: поля модерации элементов доступны только на чтение и содержат статус, а не причину",
+      "methods": [
+        "Ads.get"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "moderation_sms",
+      "title": "Включить уведомления о результатах модерации",
+      "area": "moderation",
+      "ui": "Настройки пользователя → уведомления",
+      "bucket": "partial",
+      "api": "Campaigns.add, Campaigns.update — Notification",
+      "manual": "аккаунтные уведомления: у кабинета их три и все почтовые — новости и рекомендации, кампании персонального менеджера, снижение прогноза трафика; события модерации среди них нет",
+      "why": "поля нет в структуре записи: событие «результат модерации» задаётся у кампании — схема сервиса объявляет SmsEventsEnum из пяти значений: MONITORING, MODERATION, MONEY_IN, MONEY_OUT, FINISHED. Аккаунтные уведомления теперь разобраны и модерации не содержат: Notification объекта Client несёт язык, адрес почты, нередактируемый SmsPhoneNumber и ровно три подписки EmailSubscriptions — RECEIVE_RECOMMENDATIONS, TRACK_MANAGED_CAMPAIGNS, TRACK_POSITION_CHANGES",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "moderation_support",
+      "title": "Обратиться в клиентский сервис по отклонённому объявлению",
+      "area": "moderation",
+      "ui": "Чат в кабинете, форма обращения, телефон",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: форм и каналов клиентского сервиса API не обслуживает",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "moderation_pin",
+      "title": "Получить PIN-код аккаунта для телефонного обращения",
+      "area": "moderation",
+      "ui": "логин → Получить PIN-код",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: разовый код доступа выдаёт интерфейс кабинета",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "moderation_appeal_topic",
+      "title": "Оспорить отнесение тематики к запрещённой",
+      "area": "moderation",
+      "ui": "Форма справки «Тематику ошибочно отнесли к запрещённой»",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: обжалование подаётся формой; Ads.moderate умеет только отправить объявление на проверку заново",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "moderation_documents",
+      "title": "Отправить документы по тематике продвижения",
+      "area": "moderation",
+      "ui": "Форма отправки документов",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: единственные методы загрузки файлов — AdImages.add и AdVideos.add, оба принимают только креативы",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "moderation_guarantee_letter",
+      "title": "Оформить и отправить гарантийное письмо",
+      "area": "moderation",
+      "ui": "Форма отправки документов",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: бумажный процесс с подписью, печатью и прошивкой; объекта, к которому письмо привязывается, в API нет",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "moderation_disclaimer",
+      "title": "Нанести предупреждение и возрастную метку на креатив",
+      "area": "moderation",
+      "ui": "Подготовка креатива до загрузки",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: методы загрузки принимают готовый файл и содержимое не проверяют; требования к доле площади дисклеймера справочник API не описывает",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "moderation_remove_age_label",
+      "title": "Снять ошибочно добавленную возрастную метку",
+      "area": "moderation",
+      "ui": "Форма обратной связи",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: поле AgeLabel допускает только смену значения — добавление и снятие метки идут через поддержку",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "moderation_gosuslugi",
+      "title": "Пройти верификацию через Госуслуги при блокировке",
+      "area": "moderation",
+      "ui": "Уведомление о блокировке",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: подтверждение личности выполняется вне Директа, операций с блокировкой аккаунта API не предоставляет",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "moderation_complain",
+      "title": "Пожаловаться на чужое объявление",
+      "area": "moderation",
+      "ui": "Пульт управления рекламой в РСЯ → Пожаловаться",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: API работает только с объявлениями своего кабинета",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "moderation_ip_claim",
+      "title": "Подать претензию по интеллектуальной собственности",
+      "area": "moderation",
+      "ui": "Форма в юридический департамент",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: претензия подаётся формой вне кабинета",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "moderation_agency_forms",
+      "title": "Обратиться через формы партнёрского кабинета",
+      "area": "moderation",
+      "ui": "Партнёрский кабинет агентства",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: партнёрский кабинет — отдельный интерфейс, методов у него в API Директа нет",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "account_balance_read",
+      "title": "Посмотреть баланс и настройки общего счёта",
+      "area": "money",
+      "ui": "логин → сумма → окно общего счёта",
+      "bucket": "api",
+      "api": "операция Get метода AccountManagement (live/v4)",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AccountManagement"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "shared_account_enable",
+      "title": "Подключить общий счёт",
+      "area": "money",
+      "ui": "окно общего счёта",
+      "bucket": "partial",
+      "api": "EnableSharedAccount (live/v4)",
+      "manual": "подключение прямым рекламодателем — в окне общего счёта: метод ему недоступен",
+      "why": "ограничение платформы: справочник версии 4 говорит прямо — «Метод доступен только рекламным агентствам»",
+      "methods": [
+        "EnableSharedAccount"
+      ],
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "invoice_create",
+      "title": "Сформировать счёт на оплату",
+      "area": "money",
+      "ui": "Пополнить → Выписать счёт",
+      "bucket": "api",
+      "api": "операция Invoice метода AccountManagement (live/v4); CreateInvoice (v4, live/v4)",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AccountManagement",
+        "CreateInvoice"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "topup_pay",
+      "title": "Оплатить счёт: перевод, карта, СБП, наличные, ЮMoney",
+      "area": "money",
+      "ui": "Пополнить → способ оплаты",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: перечень действующих финансовых методов версии 4 закрыт — CreateInvoice, PayCampaigns, TransferMoney, GetCreditLimits и операции AccountManagement; работы с платёжными средствами среди них нет, а зачисление средств API не подтверждает",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "topup_from_credit",
+      "title": "Пополнить счёт из кредитного лимита агентства или овердрафта",
+      "area": "money",
+      "ui": "Страница клиента → Пополнить (агентствам)",
+      "bucket": "api",
+      "api": "операция Deposit метода AccountManagement (live/v4); PayCampaigns (v4, live/v4)",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AccountManagement",
+        "PayCampaigns"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "transfer_money",
+      "title": "Перевести средства между кампаниями и между общими счетами",
+      "area": "money",
+      "ui": "окно общего счёта → перевод",
+      "bucket": "api",
+      "api": "TransferMoney (v4, live/v4); операция TransferMoney метода AccountManagement (live/v4)",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AccountManagement",
+        "TransferMoney"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "credit_limits_read",
+      "title": "Посмотреть кредитные лимиты агентства",
+      "area": "money",
+      "ui": "Агентский кабинет",
+      "bucket": "api",
+      "api": "GetCreditLimits (v4)",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "GetCreditLimits"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "autopayment",
+      "title": "Настроить автоплатёж и привязать к нему карту",
+      "area": "money",
+      "ui": "окно общего счёта → Автоплатёж",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: автоплатёж списывает деньги с карты, привязанной в Яндекс ID; работы с картами и списаниями по расписанию среди финансовых методов нет",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "account_weekly_budget",
+      "title": "Задать недельный бюджет аккаунта",
+      "area": "money",
+      "ui": "окно общего счёта → Недельный бюджет аккаунта",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "документация не описывает поведение: у AccountManagement есть операция Update — «обновление настроек общих счетов», — но какие настройки в неё входят, справочник не раскрывает, и недельного бюджета аккаунта среди названных операций нет; WeeklySpendLimit в стратегиях ограничивает кампанию, а не кабинет",
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "overdraft",
+      "title": "Подключить овердрафт и задать порог отключения",
+      "area": "money",
+      "ui": "Пополнить → Овердрафт",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: API умеет тратить уже подключённый овердрафт и показывать доступную сумму, но подключения и порога отключения не задаёт ни один метод",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "deferred_invoice",
+      "title": "Выставить счёт с отложенной оплатой и погасить задолженность",
+      "area": "money",
+      "ui": "Пополнить → Отсроченный платёж; Все настройки → Погасить",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: CreateInvoice и операция Invoice формируют обычный счёт; отсрочка подтверждается SMS-кодом, а погашение выполняется в Яндекс Балансе",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "invoices_list",
+      "title": "Посмотреть список счетов и найти платёж",
+      "area": "money",
+      "ui": "Платежи и документы → Счета",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: API умеет сформировать счёт, но перечня выставленных счетов, их дат, сумм и номеров платёжных поручений не возвращает ни один метод",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "payment_search",
+      "title": "Подать заявку на розыск платежа",
+      "area": "money",
+      "ui": "Платежи и документы → форма розыска",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: это обращение в поддержку через форму, а не операция кабинета",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "balance_documents",
+      "title": "Получить акты, счета-фактуры и УПД",
+      "area": "money",
+      "ui": "Все настройки → Документы (Яндекс Баланс)",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: документы формируются и рассылаются в Яндекс Балансе — отдельном интерфейсе, методов которого карта API не содержит",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "reconciliation_act",
+      "title": "Заказать акт сверки",
+      "area": "money",
+      "ui": "Яндекс Баланс → Акты сверки",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: акт заказывается в Яндекс Балансе и приходит на почту",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "payer_card",
+      "title": "Создать карточку плательщика",
+      "area": "money",
+      "ui": "Яндекс Баланс → Плательщики",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: реквизиты плательщика заводятся в Яндекс Балансе, вне Директа",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "refund",
+      "title": "Подать заявку на возврат средств",
+      "area": "money",
+      "ui": "Форма возврата",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: возврата средств среди действующих финансовых методов версии 4 нет",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "promocode",
+      "title": "Активировать промокод",
+      "area": "money",
+      "ui": "Страница пополнения счёта → промокод",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: поля промокода нет ни у одного метода формирования счёта",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "bonus_program",
+      "title": "Посмотреть бонусы и выгрузить историю начислений",
+      "area": "money",
+      "ui": "окно общего счёта → Бонусная программа",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "Clients.get возвращает Bonuses — ожидаемый бонус с НДС и без. История начислений и управление бонусной программой выполняются в интерфейсе.",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "units_read",
+      "title": "Посмотреть остаток баллов API",
+      "area": "money",
+      "ui": "—",
+      "bucket": "api",
+      "api": "заголовок Units в ответе любого метода; Clients.get — Restrictions API_POINTS; GetClientsUnits (v4)",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Clients.get",
+        "GetClientsUnits"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "client_params_read",
+      "title": "Прочитать параметры рекламодателя и лимиты кабинета",
+      "area": "account",
+      "ui": "логин → Аккаунт и уведомления",
+      "bucket": "api",
+      "api": "Clients.get — Restrictions, AvailableCampaignTypes, Currency, VatRate",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Clients.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "client_params_update",
+      "title": "Изменить настройки рекламодателя",
+      "area": "account",
+      "ui": "логин → Аккаунт и уведомления",
+      "bucket": "partial",
+      "api": "Clients.update",
+      "manual": "показ меток и счётчик Метрики для новых кампаний: полей под них в записываемом срезе Client нет вовсе; номер телефона для SMS приходит только на чтение и задаётся в профиле Яндекс ID",
+      "why": "поля нет в структуре записи: состав ClientUpdateItem выписан в справочник объектов из схемы сервиса и страницы метода — ClientInfo, Phone, Notification, Settings, TinInfo и ErirAttributes, и это весь записываемый срез. Дополнение объявлений внешними данными в нём есть, это настройка DISPLAY_STORE_RATING; показа меток и счётчика для новых кампаний нет ни на запись, ни на чтение, а SmsPhoneNumber объявлен только в структуре чтения",
+      "methods": [
+        "Clients.update"
+      ],
+      "reason": "no_field",
+      "reason_also": [
+        "read_only"
+      ]
+    },
+    {
+      "id": "account_switch",
+      "title": "Переключиться на другой кабинет",
+      "area": "account",
+      "ui": "логин → Доступные аккаунты",
+      "bucket": "partial",
+      "api": "заголовок Client-Login; AgencyClients.get — список клиентов агентства; Clients.get — свой кабинет",
+      "manual": "перечень подопечных кабинетов управляющего аккаунта (MCC)",
+      "why": "документация не описывает поведение: справочник описывает выбор кабинета только для агентского случая; управляющего аккаунта в API нет вовсе",
+      "methods": [
+        "AgencyClients.get",
+        "Clients.get"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "detect_agency_token",
+      "title": "Определить, агентский ли токен",
+      "area": "account",
+      "ui": "—",
+      "bucket": "api",
+      "api": "AgencyClients.get; ответ error_code 54 означает «токен не агентский», дальше — Clients.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AgencyClients.get",
+        "Clients.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "detect_interface_mode",
+      "title": "Определить, базовый Директ в кабинете или Директ Про",
+      "area": "account",
+      "ui": "логин",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ProductMode не описан в официальной схеме. Не используйте его для надёжного определения режима кабинета; проверьте режим в интерфейсе.",
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "switch_direct_pro",
+      "title": "Переключить кабинет в режим Директ Про",
+      "area": "account",
+      "ui": "логин → Директ Про → Перейти в Директ Про",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: записываемый срез объекта Client выписан в справочник объектов и состоит из ClientInfo, Phone, Notification, Settings, TinInfo и ErirAttributes — поля режима интерфейса в нём нет, как нет и сервиса, который бы им управлял. Прежде это было догадкой, теперь это граница разобранного объекта. Переход необратим, поэтому ранбук обязан предупредить до нажатия; читается режим полем ProductMode — парная строка про определение режима",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "switch_theme",
+      "title": "Переключить тему интерфейса",
+      "area": "account",
+      "ui": "Кампании → переключение темы",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: оформление кабинета к рекламным объектам не относится",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "representatives",
+      "title": "Управлять представителями кабинета",
+      "area": "account",
+      "ui": "Инструменты → Ваши представители",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "Clients.get возвращает Representatives: логин, почту и роль. Главному представителю доступен полный список, остальным — сведения о главном. Изменение состава и прав выполняется в интерфейсе.",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "mcc",
+      "title": "Подключить управляющий аккаунт и задать режим доступа",
+      "area": "account",
+      "ui": "Инструменты → Ваши представители → Управляющие аккаунты",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: управляющих аккаунтов нет ни в перечне сервисов версии 5, ни среди действующих методов версии 4",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "agency_clients_read",
+      "title": "Посмотреть список клиентов агентства",
+      "area": "account",
+      "ui": "Агентский кабинет → Мои клиенты",
+      "bucket": "api",
+      "api": "AgencyClients.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AgencyClients.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "agency_client_campaigns",
+      "title": "Посмотреть все кампании клиентов агентства",
+      "area": "account",
+      "ui": "Администрирование → Все кампании моих клиентов",
+      "bucket": "partial",
+      "api": "AgencyClients.get, затем Campaigns.get с заголовком Client-Login",
+      "manual": "кампании Мастера кампаний у клиентов: обход кабинетов собирается тем же Campaigns.get и наследует ту же слепую зону; доступность Простой старт проверьте отдельно",
+      "why": "ограничение платформы: Reports назван «единственным доступом» к кампаниям Мастера, и обход кабинетов наследует ту же слепую зону — в ответ кампании Мастера не попадают вовсе. Замером это и снято: обход шёл именно агентским токеном по 33 кабинетам, и в восьми из них живые кампании Мастера есть, а в ответе нет ни одной (01.09.2026). Ограничение привязано к типу кампании, а не к кабинету: слепая зона у обхода та же, что у одного кабинета, и на числе кабинетов не растёт",
+      "methods": [
+        "AgencyClients.get",
+        "Campaigns.get"
+      ],
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "agency_client_register",
+      "title": "Зарегистрировать нового клиента агентства",
+      "area": "account",
+      "ui": "Мои клиенты → регистрация клиента",
+      "bucket": "partial",
+      "api": "AgencyClients.addPassportOrganization, AgencyClients.addPassportOrganizationMember",
+      "manual": "проверка в кабинете, что бизнес-аккаунт создан и главный представитель добавлен",
+      "why": "документация не описывает поведение: оба метода отсутствуют в оглавлении сервиса и в таблице баллов, состава полей справочник не приводит; AgencyClients.add, на который отсылает страница соответствия, снят с поддержки",
+      "methods": [
+        "AgencyClients.addPassportOrganization",
+        "AgencyClients.addPassportOrganizationMember"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "agency_client_update",
+      "title": "Изменить параметры клиента агентства",
+      "area": "account",
+      "ui": "Мои клиенты → параметры клиента",
+      "bucket": "partial",
+      "api": "AgencyClients.update",
+      "manual": "конкретные параметры клиента и настройки его главного представителя",
+      "why": "документация не описывает поведение: раздела про объект клиента в справочнике объектов нет, состава полей AgencyClients.update он не приводит — та же причина, что у настроек рекламодателя",
+      "methods": [
+        "AgencyClients.update"
+      ],
+      "reason": "undocumented",
+      "reason_also": []
+    },
+    {
+      "id": "agency_client_grant",
+      "title": "Выдать клиенту доступ к его кабинету",
+      "area": "account",
+      "ui": "Мои клиенты → приглашение сотрудника",
+      "bucket": "partial",
+      "api": "AgencyClients.addPassportOrganizationMember",
+      "manual": "второй путь — добавление представителя в кабинете клиента",
+      "why": "метода нет: сервиса представителей клиентского кабинета в API нет, покрыт только путь через приглашение в организацию Яндекс ID",
+      "methods": [
+        "AgencyClients.addPassportOrganizationMember"
+      ],
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "agency_representatives",
+      "title": "Управлять представителями агентства и их ролями",
+      "area": "account",
+      "ui": "Администрирование → Представители агентства",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: AgencyClients управляет клиентами агентства, а не его сотрудниками и их ролями",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "agency_assign_clients",
+      "title": "Назначить клиентов представителям агентства",
+      "area": "account",
+      "ui": "Администрирование → Назначение клиентов представителям",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: распределения клиентов между сотрудниками не выполняет ни один метод",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "agency_rep_params",
+      "title": "Настроить параметры представителя агентства",
+      "area": "account",
+      "ui": "Администрирование → Параметры представителя агентства",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "Clients.get позволяет прочитать параметры агентства. Clients.update документирован для рекламодателя; изменение агентских настроек проверяйте в интерфейсе.",
+      "reason": "read_only",
+      "reason_also": []
+    },
+    {
+      "id": "agency_transfer",
+      "title": "Подать заявку на перенос аккаунта клиента",
+      "area": "account",
+      "ui": "Инструменты → Заявки на перенос",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: заявок на перенос не принимает ни один сервис; перенос выполняется только 1 числа следующего месяца",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "advertiser_data",
+      "title": "Заполнить анкету данных рекламодателя для ЕРИР",
+      "area": "account",
+      "ui": "логин → Данные рекламодателя",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "Clients.update поддерживает TinInfo и ErirAttributes для реквизитов рекламодателя, договора и контрагента. Подачу данных в ЕРИР выполняет Яндекс; версия анкеты и дата её применения требуют интерфейса.",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "erir_description_check",
+      "title": "Проверить описание объекта рекламы перед отправкой в ЕРИР",
+      "area": "account",
+      "ui": "логин → Данные рекламодателя",
+      "bucket": "partial",
+      "api": "Ads.get — AutogeneratedErirAdDescription; Ads.update — ErirAdDescription",
+      "manual": "сама отправка в ЕРИР и проверка анкеты рекламодателя",
+      "why": "поле только на чтение: автоописание доступно только на чтение, а отчётность в ЕРИР выполняет Яндекс как ОРД",
+      "methods": [
+        "Ads.get",
+        "Ads.update"
+      ],
+      "reason": "read_only",
+      "reason_also": []
+    },
+    {
+      "id": "budget_forecast",
+      "title": "Рассчитать прогноз бюджета по регионам и фразам",
+      "area": "tools",
+      "ui": "Инструменты → Прогноз бюджета",
+      "bucket": "api",
+      "api": "CreateNewForecast, GetForecast (v4, live/v4); GetForecastList, DeleteForecastReport (v4)",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "CreateNewForecast",
+        "DeleteForecastReport",
+        "GetForecast",
+        "GetForecastList"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "budget_forecast_xls",
+      "title": "Выгрузить прогноз бюджета в XLS",
+      "area": "tools",
+      "ui": "Прогноз бюджета → выгрузка",
+      "bucket": "api",
+      "api": "GetForecast (v4, live/v4): API возвращает данные прогноза, а не файл — таблица собирается на своей стороне, формата кабинетной выгрузки документация не описывает и повторять его скилл не обещает",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "GetForecast"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "campaign_forecast",
+      "title": "Посмотреть прогноз эффективности кампании",
+      "area": "tools",
+      "ui": "Кампании → значок в столбце «Бюджет и стратегия»",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: прогноз по существующей кампании справочник не описывает, а действующий прогноз версии 4 считает по фразам и регионам",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "excel_management",
+      "title": "Выгрузить и загрузить кампании через XLS/XLSX",
+      "area": "tools",
+      "ui": "Инструменты → Управление с помощью Excel",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса выгрузки и загрузки файлов кампаний в API нет; у этого инструмента и своя система баллов, считающаяся отдельно от баллов API",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "commander",
+      "title": "Массово редактировать объекты в Директ Коммандере",
+      "area": "tools",
+      "ui": "Директ Коммандер",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: Коммандер — отдельная десктопная программа; те же массовые правки в API делаются батчевыми вызовами, но это другой путь",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "mobile_app",
+      "title": "Управлять кампаниями через мобильное приложение",
+      "area": "tools",
+      "ui": "Мобильное приложение Директа",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: операция выполняется человеком на устройстве; сервиса, относящегося к мобильному приложению, в API нет",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "api_agreement",
+      "title": "Принять соглашение и подключить API Директа",
+      "area": "tools",
+      "ui": "Настройки API → пользовательское соглашение",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: соглашение принимает человек на странице настроек, и до этого API недоступен; метода, выдающего доступ к API, в самом API нет",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "dictionaries_read",
+      "title": "Прочитать справочники регионов, часовых поясов и валют",
+      "area": "tools",
+      "ui": "—",
+      "bucket": "api",
+      "api": "Dictionaries.get, Dictionaries.getGeoRegions",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Dictionaries.get",
+        "Dictionaries.getGeoRegions"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "api_ping",
+      "title": "Проверить доступность API и авторизацию",
+      "area": "tools",
+      "ui": "—",
+      "bucket": "api",
+      "api": "PingAPI, GetVersion, GetAvailableVersions (v4)",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "GetAvailableVersions",
+        "GetVersion",
+        "PingAPI"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "recommendations",
+      "title": "Посмотреть рекомендации по кампаниям",
+      "area": "tools",
+      "ui": "Рекомендации",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса рекомендаций в API нет",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "goals_read",
+      "title": "Посмотреть цели Метрики, доступные кампании",
+      "area": "tools",
+      "ui": "Параметры кампании → целевые действия",
+      "bucket": "api",
+      "api": "GetStatGoals (v4, live/v4); GetRetargetingGoals (live/v4)",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "GetRetargetingGoals",
+        "GetStatGoals"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "master_create_traffic",
+      "title": "Создать кампанию «Конверсии и трафик»",
+      "area": "master",
+      "ui": "Добавить → Кампанию → Мастер кампаний",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: Яндекс не отдаёт управление такими кампаниями через API — доступна только статистика через Reports",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "master_create_no_site",
+      "title": "Создать кампанию «Продвижение бизнеса без сайта»",
+      "area": "master",
+      "ui": "Добавить → Кампанию → Мастер кампаний",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: Яндекс не отдаёт управление такими кампаниями через API — доступна только статистика через Reports",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "master_create_product",
+      "title": "Создать Товарную кампанию",
+      "area": "master",
+      "ui": "Добавить → Кампанию → Мастер кампаний",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: Яндекс не отдаёт управление такими кампаниями через API — доступна только статистика через Reports",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "master_create_telegram",
+      "title": "Создать кампанию «Подписчики в телеграм-канал»",
+      "area": "master",
+      "ui": "Добавить → Кампанию → Мастер кампаний",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: Яндекс не отдаёт управление такими кампаниями через API — доступна только статистика через Reports",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "master_create_marketplace",
+      "title": "Создать кампанию «Продажи на маркетплейсах»",
+      "area": "master",
+      "ui": "Добавить → Кампанию → Мастер кампаний",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: Яндекс не отдаёт управление такими кампаниями через API — доступна только статистика через Reports",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "master_create_specialists",
+      "title": "Создать кампанию «Продвижение специалистов»",
+      "area": "master",
+      "ui": "Добавить → Кампанию → Мастер кампаний",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: Яндекс не отдаёт управление такими кампаниями через API — доступна только статистика через Reports",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "master_create_app",
+      "title": "Создать кампанию продвижения приложения в Мастере",
+      "area": "master",
+      "ui": "Добавить → Кампанию → Мастер кампаний",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: Яндекс не отдаёт управление такими кампаниями через API — доступна только статистика через Reports",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "master_create_org",
+      "title": "Создать кампанию продвижения организации в Мастере",
+      "area": "master",
+      "ui": "Добавить → Кампанию → Мастер кампаний",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: Яндекс не отдаёт управление такими кампаниями через API — доступна только статистика через Reports",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "simple_start_create",
+      "title": "Создать кампанию через Простой старт",
+      "area": "master",
+      "ui": "Добавить → Кампанию → Простой старт",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: Яндекс не отдаёт управление такими кампаниями через API — доступна только статистика через Reports; типа кампании, соответствующего Простому старту, в перечне типов нет даже со строкой «только статистика»",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "master_settings",
+      "title": "Задать любую настройку кампании Мастера: страницу, заголовки, тексты, изображения, видео, быстрые ссылки, контакты, регион, время, аудиторию, цель, бюджет",
+      "area": "master",
+      "ui": "Мастер кампаний → шаги визарда",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: Яндекс не отдаёт управление такими кампаниями через API — доступна только статистика через Reports: объектов кампании, группы и объявления у неё в API нет, поэтому не покрыта ни одна настройка из перечня раздела 4.1 карты интерфейса",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "master_lifecycle",
+      "title": "Запустить, остановить, отправить на модерацию, архивировать кампанию Мастера",
+      "area": "master",
+      "ui": "Мастер кампаний → «…»",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: Яндекс не отдаёт управление такими кампаниями через API — Campaigns.resume, suspend, archive работают с типами кампаний из перечня API, а кампаний Мастера в этом перечне нет; статистика при этом доступна через Reports. Удаления запущенной кампании нет и в интерфейсе",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "master_draft",
+      "title": "Сохранить кампанию Мастера как черновик",
+      "area": "master",
+      "ui": "Мастер кампаний → Сохранить как черновик",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: Яндекс не отдаёт управление такими кампаниями через API — доступна только статистика через Reports: черновик в API — это статус DRAFT уже созданного объекта, а не отдельная операция",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "master_stats",
+      "title": "Посмотреть общую статистику кампании Мастера",
+      "area": "master",
+      "ui": "Страница кампании Мастера",
+      "bucket": "partial",
+      "api": "Reports — CAMPAIGN_PERFORMANCE_REPORT, CUSTOM_REPORT",
+      "manual": "разрезы по группам, объявлениям и условиям показа и блок «Элементы объявления» с оценкой каждого заголовка, текста и изображения",
+      "why": "ограничение платформы: пять идентификаторов — AdGroupId, AdGroupName, AdId, CriteriaId, CriterionId — по таким кампаниям не выводятся, а тип, под которым они приходят в CampaignType, документацией не назван: опознавать их приходится по пустым идентификаторам",
+      "methods": [
+        "Reports"
+      ],
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "master_telegram_bot",
+      "title": "Выдать боту yandex_advert_bot права в телеграм-канале",
+      "area": "master",
+      "ui": "Telegram → настройки канала",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: действие выполняется во внешней платформе, сервиса телеграм-каналов в API Директа нет",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "master_ozon_vendor",
+      "title": "Указать префикс метки vendor_org из кабинета Ozon",
+      "area": "master",
+      "ui": "Мастер кампаний → Продажи на маркетплейсах",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "ограничение платформы: Яндекс не отдаёт управление такими кампаниями через API — доступна только статистика через Reports; сама метка берётся в стороннем кабинете Ozon",
+      "reason": "platform",
+      "reason_also": []
+    },
+    {
+      "id": "display_campaign",
+      "title": "Создать медийную кампанию",
+      "area": "other_campaigns",
+      "ui": "Режим эксперта → Охватные кампании",
+      "bucket": "partial",
+      "api": "Campaigns.add — CpmBannerCampaign; AdGroups.add; Creatives.get — чтение готовых креативов",
+      "manual": "сами медийные объявления: их структуры — CpmBannerAdBuilderAd и CpmVideoAdBuilderAd, а не ResponsiveAd; плюс сборка креатива и настройки жанров и тематик площадок",
+      "why": "Скилл не поддерживает запись этого формата; также креатив собирается только в конструкторе — «Все остальные креативы создаются в конструкторе и через API только читаются», а полей жанров и тематик в структурах нет вовсе",
+      "methods": [
+        "AdGroups.add",
+        "Campaigns.add",
+        "Creatives.get"
+      ],
+      "reason": "r011",
+      "reason_also": []
+    },
+    {
+      "id": "display_genres",
+      "title": "Задать таргетинг по жанрам и тематикам площадок",
+      "area": "other_campaigns",
+      "ui": "Параметры медийной кампании",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: жанров и тематик площадок в структурах медийной кампании и группы нет",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "smart_campaign",
+      "title": "Создать кампанию смарт-баннеров",
+      "area": "other_campaigns",
+      "ui": "Режим эксперта",
+      "bucket": "partial",
+      "api": "Campaigns.add — SmartCampaign; AdGroups.add — SMART_AD_GROUP",
+      "manual": "фильтры смарт-баннеров и сами объявления: структура SmartAdBuilderAd не ResponsiveAd, SmartAdTargets остался без справочника, а полей объявления документация даёт только на чтение",
+      "why": "Скилл не поддерживает запись этого формата; также у SmartAdTargets страницы справочника удалены — схему WSDL эндпоинт отдаёт, а смысл полей и допустимые значения исчезли; состав полей SmartCampaign документация тоже не раскрывает",
+      "methods": [
+        "AdGroups.add",
+        "Campaigns.add"
+      ],
+      "reason": "r011",
+      "reason_also": []
+    },
+    {
+      "id": "dynamic_campaign",
+      "title": "Создать кампанию динамических объявлений",
+      "area": "other_campaigns",
+      "ui": "Режим эксперта",
+      "bucket": "partial",
+      "api": "Campaigns.add — DynamicTextCampaign; AdGroups.add — DYNAMIC_TEXT_AD_GROUP",
+      "manual": "условия нацеливания динамических объявлений и сами объявления: структура DynamicTextAd не ResponsiveAd, DynamicTextAdTargets остался без справочника, а поля объявления документация даёт только на чтение",
+      "why": "Скилл не поддерживает запись этого формата; также у DynamicTextAdTargets страницы справочника удалены",
+      "methods": [
+        "AdGroups.add",
+        "Campaigns.add"
+      ],
+      "reason": "r011",
+      "reason_also": []
+    },
+    {
+      "id": "app_campaign",
+      "title": "Создать кампанию продвижения приложения",
+      "area": "other_campaigns",
+      "ui": "Режим эксперта; ЕПК",
+      "bucket": "partial",
+      "api": "Campaigns.add — MobileAppCampaign; AdGroups.add — MOBILE_APP_AD_GROUP",
+      "manual": "сами объявления приложения, трекинговые ссылки, AppMetrica и альтернативные магазины",
+      "why": "Скилл не поддерживает запись этого формата; структуры MobileAppAd, MobileAppImageAd, MobileAppAdBuilderAd и MobileAppCpcVideoAdBuilderAd она приводит только на чтение — обязательность полей при записи из них не выводится",
+      "methods": [
+        "AdGroups.add",
+        "Campaigns.add"
+      ],
+      "reason": "r011",
+      "reason_also": []
+    },
+    {
+      "id": "app_tracker",
+      "title": "Настроить трекер приложения",
+      "area": "other_campaigns",
+      "ui": "Продвижение приложений → трекинговые системы, AppMetrica",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поле только на чтение: TrackingUrl описан только в таблицах get, а сервиса мобильных приложений кабинета в API нет вовсе",
+      "reason": "read_only",
+      "reason_also": []
+    },
+    {
+      "id": "search_banner_campaign",
+      "title": "Создать кампанию «Баннер на поиске»",
+      "area": "other_campaigns",
+      "ui": "Режим эксперта",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: MCBANNER_CAMPAIGN типом сервиса Campaigns не является — его нет ни в перечислении записи, ни в перечислении ответа, ни в живом перечне отбора; единственное место, где значение встречается, — поле CampaignType отчётов",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "cpm_price_campaign",
+      "title": "Создать кампанию с фиксированным CPM",
+      "area": "other_campaigns",
+      "ui": "Режим эксперта → Охватные кампании",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: CPM_PRICE типом сервиса Campaigns не является, значение встречается только в поле CampaignType отчётов",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "cpm_deals_campaign",
+      "title": "Создать медийную кампанию со сделками",
+      "area": "other_campaigns",
+      "ui": "Режим эксперта → Охватные кампании",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: CPM_DEALS_CAMPAIGN типом сервиса Campaigns не является, значение встречается только в поле CampaignType отчётов",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "cpm_frontpage_campaign",
+      "title": "Создать медийную кампанию на Главной",
+      "area": "other_campaigns",
+      "ui": "Режим эксперта → Охватные кампании",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: CPM_FRONTPAGE_CAMPAIGN типом сервиса Campaigns не является, значение встречается только в поле CampaignType отчётов",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "prime_banner_campaign",
+      "title": "Создать кампанию «Прайм-баннер» (бета)",
+      "area": "other_campaigns",
+      "ui": "Режим эксперта → Охватные кампании",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: отдельного типа кампании для Прайм-баннера в API нет, а ближайшие медийные значения — CPM_PRICE, CPM_DEALS_CAMPAIGN, CPM_FRONTPAGE_CAMPAIGN — типами сервиса Campaigns не являются вовсе",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "messenger_campaign",
+      "title": "Создать рекламу в мессенджерах и подобрать каналы",
+      "area": "other_campaigns",
+      "ui": "Режим эксперта → Реклама в мессенджерах; ЕПК с местом показа «Мессенджеры»",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: отдельного типа кампании для мессенджеров в API нет, а в перечне мест показа единой перфоманс-кампании — SearchResults, ProductGallery, DynamicPlaces, Maps, SearchOrganizationList — мессенджеров нет; подбор каналов и публикация поста методами не описаны. Опубликованный пост не редактируется и в интерфейсе",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "outdoor_campaign",
+      "title": "Создать кампанию наружной рекламы (бета)",
+      "area": "other_campaigns",
+      "ui": "Режим эксперта → Охватные кампании → Наружная реклама",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: типа кампании для наружной рекламы в перечне нет, стратегии на максимум OTS нет в справочнике типов стратегий",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "vertical_campaign",
+      "title": "Создать кампанию тематического раздела",
+      "area": "other_campaigns",
+      "ui": "Режим эксперта → тематические разделы",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: тематические разделы работают через партнёрские API вне Директа",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "social_campaign",
+      "title": "Создать кампанию социальной рекламы",
+      "area": "other_campaigns",
+      "ui": "Отдельный порядок",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: отдельного типа кампании для социальной рекламы нет, порядок с грантом и документами API не описывает",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "web_app_campaign",
+      "title": "Создать кампанию Web+App",
+      "area": "other_campaigns",
+      "ui": "ЕПК",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: у единой перфоманс-кампании нет ни параметра приложения, ни параметра трекера, а отдельного типа Web+App в перечне нет",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "service_gallery",
+      "title": "Создать кампанию для галереи услуг (бета)",
+      "area": "other_campaigns",
+      "ui": "ЕПК или Мастер кампаний",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поля нет в структуре записи: полей галереи услуг в структурах API нет",
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "org_promotion_campaign",
+      "title": "Создать кампанию продвижения организации",
+      "area": "other_campaigns",
+      "ui": "Режим эксперта → ЕПК",
+      "bucket": "partial",
+      "api": "Campaigns.add; Businesses.get; Ads.add — BusinessId",
+      "manual": "места показа организации целиком. «Яндекс Карты»: кабинетному флажку отвечают два поля Maps, в поисковой половине стратегии и в сетевой, и сетевое Campaigns.get не возвращает — сверить записанное можно наполовину. «Список организаций, отели и галерея услуг»: флажок шире поля SearchOrganizationList, которое документация называет списком организаций в результатах поиска, и что включит запись поля, она не говорит. Площадок «Отели» и «Яндекс Go» в перечне PlacementTypes нет, а цели Карт «Позвонить», «Переход в мессенджер», «Построить маршрут» местом показа и не являются — это цели счётчика профиля организации в Метрике",
+      "why": "поля нет в структуре записи: соответствие установлено — Maps документация называет «Яндекс Карты» дословно, а SearchOrganizationList отвечает кабинетному флажку «Список организаций, отели и галерея услуг», который шире имени поля. Записи это не разрешает: сетевая половина пары Maps в чтении недоступна, объём второго флажка не назван, а отелей и Яндекс Go в перечне нет вовсе. Само продвижение организации сводится в API к привязке профиля полем BusinessId объявления",
+      "methods": [
+        "Ads.add",
+        "Businesses.get",
+        "Campaigns.add"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "converted_campaign_read",
+      "title": "Прочитать кампанию, переведённую из условных единиц",
+      "area": "other_campaigns",
+      "ui": "Архив кампаний",
+      "bucket": "api",
+      "api": "Campaigns.get с CONVERTED в States или идентификатором в Ids",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Campaigns.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "upgrade_title2_before_conversion",
+      "title": "Перенести дополнительные заголовки до автообновления до комбинаторных",
+      "area": "other_campaigns",
+      "ui": "Вкладка «Объявления»",
+      "bucket": "api",
+      "api": "Ads.get с TextAdFieldNames и ResponsiveAdFieldNames — без второго комбинаторные объявления вернутся усечёнными и это не будет выглядеть ошибкой; затем Ads.update — ResponsiveAdUpdate с перенесённым содержимым",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Ads.get",
+        "Ads.update"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "conversions_calls",
+      "title": "Подключить конверсии по звонкам как цель оптимизации",
+      "area": "reports",
+      "ui": "Конверсии → Центр конверсий; Журнал звонков",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: сервиса Центра конверсий и подключения звонков как цели оптимизации в API нет; в стратегию попадают только идентификаторы целей Метрики",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "default_metrika_counter",
+      "title": "Задать счётчик Метрики для новых кампаний",
+      "area": "account",
+      "ui": "логин → Аккаунт и уведомления",
+      "bucket": "partial",
+      "api": "Campaigns.add, Campaigns.update — CounterIds у каждой создаваемой кампании",
+      "manual": "сама аккаунтная настройка «счётчик для новых кампаний»",
+      "why": "поля нет в структуре записи: счётчики Метрики описаны только как параметр кампании, а записываемый срез объекта Client — ClientInfo, Phone, Notification, Settings, TinInfo и ErirAttributes — значения по умолчанию для новых кампаний не содержит; в Settings таких имён нет ни на запись, ни на чтение. Прежде «API не хранит» было утверждением без разбора, теперь это граница выписанного состава",
+      "methods": [
+        "Campaigns.add",
+        "Campaigns.update"
+      ],
+      "reason": "no_field",
+      "reason_also": []
+    },
+    {
+      "id": "labels_visibility",
+      "title": "Включить или выключить показ меток в интерфейсе",
+      "area": "account",
+      "ui": "логин → Аккаунт и уведомления → Кабинет",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "метода нет: это настройка отображения разделов кабинета; на сами метки она не влияет — они живут отдельными методами версии 4. Разобранный состав Client это подтверждает: в Settings три имени на чтение и два на запись, показа меток среди них нет",
+      "reason": "no_method",
+      "reason_also": []
+    },
+    {
+      "id": "phone_notifications",
+      "title": "Настроить уведомления на телефон и время их отправки",
+      "area": "account",
+      "ui": "логин → Аккаунт и уведомления",
+      "bucket": "handoff",
+      "api": "",
+      "manual": "целиком",
+      "why": "поле только на чтение: номер телефона для SMS в объекте Client есть — SmsPhoneNumber в структуре чтения NotificationGet, — а структура записи NotificationUpdate его не объявляет; значение приходит из профиля пользователя на Яндексе и меняется там. Времени отправки у кабинета нет вовсе: TimeFrom и TimeTo живут в SmsSettings кампании. Из уведомлений кабинета пишутся только язык, адрес почты и три подписки EmailSubscriptions",
+      "reason": "read_only",
+      "reason_also": [
+        "no_field"
+      ]
+    },
+    {
+      "id": "business_profiles_read",
+      "title": "Посмотреть профили организаций Яндекс Бизнеса",
+      "area": "account",
+      "ui": "логин → организации",
+      "bucket": "api",
+      "api": "Businesses.get",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "Businesses.get"
+      ],
+      "reason": null,
+      "reason_also": []
+    },
+    {
+      "id": "audience_target_suspend",
+      "title": "Остановить и возобновить показы по условию нацеливания",
+      "area": "audiences",
+      "ui": "Кампании → вкладка «Ретаргетинг и аудитории»",
+      "bucket": "api",
+      "api": "AudienceTargets.suspend, AudienceTargets.resume",
+      "manual": "",
+      "why": "",
+      "methods": [
+        "AudienceTargets.resume",
+        "AudienceTargets.suspend"
+      ],
+      "reason": null,
+      "reason_also": []
+    }
+  ]
+}

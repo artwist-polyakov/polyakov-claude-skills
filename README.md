@@ -18,6 +18,7 @@
   - [codex-review](#codex-review) — кросс-агентное ревью
   - [fal-ai-image](#fal-ai-image) — генерация изображений
   - [yandex-search-api](#yandex-search-api) — парсинг выдачи Яндекса
+  - [yandex-direct](#yandex-direct) — статистика и управление Яндекс Директом
   - [yandex-metrika](#yandex-metrika) — аналитика Yandex Metrika
   - [yandex-webmaster](#yandex-webmaster) — управление сайтами в Яндекс.Вебмастере
   - [zoomkit](#zoomkit) — баланс, счета, отчёты и настройки Яндекс.Директа через ZoomKit API
@@ -49,6 +50,7 @@
 /plugin install ssh-remote-connection
 /plugin install yandex-wordstat
 /plugin install yandex-search-api
+/plugin install yandex-direct
 /plugin install yandex-metrika
 /plugin install codex-review
 /plugin install fal-ai-image
@@ -260,6 +262,24 @@ SSH подключение к удалённым серверам по ключ�
 **Триггеры (EN):**
 - "yandex search api"
 - "parse yandex serp"
+
+---
+
+### [yandex-direct](plugins/yandex-direct/skills/yandex-direct)
+
+Статистика и управление рекламой через официальный API Яндекс Директа.
+Инструкция объясняет общий порядок анализа, формулы показателей и работу
+с рекламными объектами. Конверсии считаются по целям, выбранным пользователем.
+Доступны аудит, сравнение периодов, анализ спроса и позиций, создание и изменение
+кампаний, объявлений, фраз и ставок с показом «до/после».
+
+Сохранены выгрузка кампании, минус-фразы и кросс-минусовка, работа с несколькими
+кабинетами, подготовка комплектов объявлений и HTML-предпросмотр. Полные данные
+хранятся локально; в диалог выводится краткая сводка. Нужен Python 3.11+ или `uv`,
+сторонних библиотек нет.
+
+[Инструкции](plugins/yandex-direct/skills/yandex-direct/SKILL.md) ·
+[Подключение](plugins/yandex-direct/skills/yandex-direct/config/README.md)
 
 ---
 
@@ -564,6 +584,7 @@ polyakov-claude-skills/
 │   ├── codex-review/         # Плагин для кросс-агентного ревью
 │   ├── fal-ai-image/         # Плагин для генерации изображений
 │   ├── yandex-search-api/    # Плагин для Yandex Search API
+│   ├── yandex-direct/        # Статистика и управление Яндекс Директом
 │   ├── yandex-metrika/       # Плагин для аналитики Yandex Metrika
 │   ├── yandex-webmaster/     # Плагин для Yandex Webmaster API
 │   ├── zoomkit/               # Плагин для ZoomKit API
