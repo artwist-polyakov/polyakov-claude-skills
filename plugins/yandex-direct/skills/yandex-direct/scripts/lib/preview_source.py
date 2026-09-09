@@ -8,6 +8,7 @@ import incoming
 import money
 import objects
 import rendering
+import ad_extensions
 from config import DirectFailure
 from responsive import Kit
 
@@ -59,7 +60,7 @@ def ad_from_record(record: dict, related=None, read=None) -> rendering.Ad:
             "В выгрузке нет полного комплекта заголовков и текстов. "
             "Используйте исходный ответ Ads.get или полную карточку ads.py.")
     related = related or {}
-    notes = []
+    notes = ad_extensions.notes_of(related)
     ad_id = record.get("Id")
     expected = (("AdImages", "VideoExtensions") if record.get("ResponsiveAd")
                 else ("AdImageHash", "VideoExtension"))
@@ -88,7 +89,9 @@ def ad_from_record(record: dict, related=None, read=None) -> rendering.Ad:
     sitelinks = []
     set_id = body.get("SitelinkSetId")
     if set_id:
-        sets = lookup("SitelinksSets", "sitelinks", [set_id], ["Id", "Sitelinks"])
+        params = ad_extensions.READ_PARAMS["sitelinks"]
+        sets = lookup("SitelinksSets", "sitelinks", [set_id], params["FieldNames"],
+                      extra={"SitelinkFieldNames": params["SitelinkFieldNames"]})
         link_set = sets.get(str(set_id))
         if link_set is None:
             notes.append(f"Быстрые ссылки набора {set_id} не загружены; пустой блок не означает их отсутствие.")

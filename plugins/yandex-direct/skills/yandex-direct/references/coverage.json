@@ -1500,7 +1500,7 @@
       "area": "ad_elements",
       "ui": "Редактирование объявления → Быстрые ссылки",
       "bucket": "api",
-      "api": "Sitelinks.add (новый набор) и Ads.update; старый набор удаляется Sitelinks.delete только после Ads.get по его SitelinkSetId, показавшего, что других ссылающихся объявлений нет: наборы переиспользуются, и безусловное удаление снесло бы ссылки у чужих; содержимое набора читается Sitelinks.get — правится содержимое набора, а Ads.get отдаёт только SitelinkSetId",
+      "api": "Sitelinks.get → Sitelinks.add (новый набор) → Ads.update (замена SitelinkSetId выбранных объявлений). Команды: extensions.py sitelinks get/create и extensions.py bind. Старый набор остаётся в библиотеке; отдельный Sitelinks.delete допустим только после снятия всех привязок, иначе API отказывает.",
       "manual": "",
       "why": "",
       "methods": [

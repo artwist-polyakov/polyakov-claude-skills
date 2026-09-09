@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 
 import incoming  # noqa: E402
 import objects  # noqa: E402
+import ad_extensions  # noqa: E402
 from accounts import Accounts, Ambiguous, resolve_account  # noqa: E402
 from cache import (  # noqa: E402
     Cache,
@@ -180,7 +181,7 @@ def detail_line(record: dict, limits) -> str:
 
 
 def report(login: str, where: str, entry, found: list, total: int, spent: int,
-           limits, export=None, notes=()) -> None:
+           limits, export=None, notes=(), related=None, full=None) -> None:
     age = f"из кэша, {human_age(entry.age)}" if entry.hit else "прочитано заново"
     lines = [f"{where} · {age}"]
     kinds = counted(found, "Type")
@@ -194,6 +195,7 @@ def report(login: str, where: str, entry, found: list, total: int, spent: int,
                  f"из {applies}, у кого он вообще бывает")
     lines.append(f"Читалось с {objects.RESPONSIVE}FieldNames — без него "
                  f"комбинаторное вернулось бы одним заголовком.")
+    lines.append(extensions_summary(related))
     lines.append("")
     for record in found[:SHOWN]:
         lines.append(ad_line(record, limits))
@@ -212,11 +214,11 @@ def report(login: str, where: str, entry, found: list, total: int, spent: int,
                      f"доказывает ни того, что он выбыл из ротации, ни того, "
                      f"что объявление показывается: прежний комплект может "
                      f"показываться, а может и нет.")
-    lines.extend(notes)
+    lines.extend([*notes, *ad_extensions.notes_of(related)])
     if spent:
         lines.append(f"Чтение стоило {campaign_command.units_said(spent)}.")
     lines.extend(campaign_command.export_line(export))
-    outline(lines, path=entry.path, total=entry.count)
+    outline(lines, path=full.path if full is not None else entry.path, total=entry.count)
 
 
 def element_lines(kit: dict, part: str, said: str) -> list:
@@ -241,7 +243,43 @@ def element_lines(kit: dict, part: str, said: str) -> list:
     return lines
 
 
-def card_lines(record: dict, limits) -> list:
+def extensions_summary(related) -> str:
+    if related is None:
+        return "Быстрые ссылки и уточнения не раскрыты; добавьте --with-extensions (для одного --ad читаются сразу)."
+    status = related.get("ExtensionsRead") or {}
+    complete = "полное" if status.get("complete") else "неполное, см. ошибки и пропуски"
+    return (f"Дополнения: наборов быстрых ссылок {len(related.get('SitelinksSets') or [])}, "
+            f"уточнений/дополнений {len(related.get('AdExtensions') or [])}; чтение {complete}.")
+
+
+def extension_lines(record, related) -> list:
+    if related is None:
+        return []
+    ids = ad_extensions.ids_of([record])
+    lines = ad_extensions.notes_of(related)
+    sets = {one["Id"]: one for one in related.get("SitelinksSets") or []}
+    extensions = {one["Id"]: one for one in related.get("AdExtensions") or []}
+    for number in ids["sitelink_ids"]:
+        if number not in sets:
+            continue
+        lines.append(f"Быстрые ссылки · набор {number}:")
+        for link in sets[number]["Sitelinks"]:
+            lines.append(f"  {link.get('Title', '')} · {link.get('Description') or 'без описания'}")
+            address = link.get("Href") or "адрес не возвращён"
+            if link.get("TurboPageId") is not None:
+                address += f" · TurboPageId: {link['TurboPageId']}"
+            lines.append(f"    {address}")
+    for number in ids["extension_ids"]:
+        if number not in extensions:
+            continue
+        one = extensions[number]
+        text = (one.get("Callout") or {}).get("CalloutText")
+        lines.append(f"Уточнение {number}: {text}" if text is not None else
+                     f"Дополнение {number}: {one.get('Type')}")
+    return lines
+
+
+def card_lines(record: dict, limits, related=None) -> list:
     """Полная карточка одного объявления."""
     row = objects.ad_row(record, limits)
     kit = objects.composition(record, limits)
@@ -252,6 +290,7 @@ def card_lines(record: dict, limits) -> list:
         f"Комплект: {kit_text(kit)}"
         + (f" · {missing_text(kit)}" if missing_text(kit)
            else " · полон" if kit["complete"] else ""),
+        extensions_summary(related),
     ]
     if not kit["verdict"]:
         # Вопросов про модерацию три, и шапка отвечает на два из них: был ли
@@ -280,28 +319,56 @@ def card_lines(record: dict, limits) -> list:
     if kit["rejected"]:
         lines.append(f"Отклонено элементов {len(kit['rejected'])}: "
                      + ", ".join(item["where"] for item in kit["rejected"][:ELEMENTS]))
+    lines.extend(extension_lines(record, related))
     return lines
 
 
-def store_card(cache: Cache, record: dict, limits):
+def store_card(cache: Cache, record: dict, limits, related=None):
     """Правило «полные данные всегда в файл» держится на том, что файл содержит
     именно показанное: сводка перечень элементов сокращает, и восстановить
     сокращённое было бы неоткуда."""
     payload = {"ad": record, "composition": objects.composition(record, limits),
                "row": objects.ad_row(record, limits)}
+    payload.update(related or {})
     return cache.write(f"ad-{record.get('Id')}", "structure", payload)
 
 
-def report_card(record: dict, entry, spent: int, limits, export=None) -> None:
-    lines = card_lines(record, limits)
+def report_card(record: dict, entry, spent: int, limits, export=None, related=None) -> None:
+    lines = card_lines(record, limits, related=related)
     if spent:
         lines.append(f"Чтение стоило {campaign_command.units_said(spent)}.")
     lines.extend(campaign_command.export_line(export))
     outline(lines, path=entry.path)
 
 
+def related_summary(related, records) -> dict:
+    """Содержимое только показанных объявлений; полнота и количества — общие."""
+    ids = ad_extensions.ids_of(records)
+    selected = {"SitelinksSets": set(ids["sitelink_ids"]),
+                "AdExtensions": set(ids["extension_ids"])}
+    status = related["ExtensionsRead"]
+    result = {name: [one for one in related[name] if one["Id"] in wanted]
+              for name, wanted in selected.items()}
+    summary = {"complete": status["complete"], "totals": {
+        "requested": {name: len(status["requested"][name]) for name in selected},
+        "received": {name: len(related[name]) for name in selected},
+        "missing": {name: len(status["missing"][name]) for name in selected},
+        "errors": len(status["errors"]),
+    }}
+    for field in ("requested", "missing"):
+        summary[field] = {name: [one for one in status[field][name] if one in wanted]
+                          for name, wanted in selected.items()}
+    summary["errors"] = []
+    for error in status["errors"]:
+        relevant = [one for one in error["ids"] if one in selected[error["collection"]]]
+        if relevant:
+            summary["errors"].append({**error, "ids": relevant})
+    result["ExtensionsRead"] = summary
+    return result
+
+
 def as_json(login: str, where: str, entry, found: list, total: int, limits,
-            record=None, card=None, export=None) -> dict:
+            record=None, card=None, export=None, related=None, full=None) -> dict:
     body = {
         "account": login,
         "selection": where,
@@ -313,13 +380,21 @@ def as_json(login: str, where: str, entry, found: list, total: int, limits,
         "states": counted(found, "State"),
         "statuses": counted(found, "Status"),
         "csv": None if export is None else str(export),
+        "extensions_info": extensions_summary(related),
     }
+    if full is not None:
+        body["extensions_file"] = None if full.path is None else short(full.path)
     if record is not None:
+        body.update(related or {})
         body["ad"] = dict(objects.ad_row(record, limits),
                           composition=objects.composition(record, limits),
                           raw=record)
         body["card"] = None if card is None or card.path is None else short(card.path)
         return body
+    if related is not None:
+        body.update(related_summary(related, found[:JSON_LIMIT]))
+        body["extensions_info"] += (" Коллекции и подробности чтения относятся к показанным ads; "
+                                    "complete и totals — ко всей выборке. Полные данные: extensions_file.")
     body["ads"] = [dict(objects.ad_row(record, limits),
                         composition=objects.composition(record, limits),
                         raw=record)
@@ -381,6 +456,9 @@ def main(argv=None) -> int:
                         help="выгрузить отобранное в файл")
     parser.add_argument("--json", action="store_true",
                         help="машиночитаемый вывод")
+    parser.add_argument("--with-extensions", action="store_true",
+                        help="прочитать тексты и адреса быстрых ссылок и уточнений для всей выборки; "
+                             "для одного --ad включено по умолчанию, могут потребоваться дополнительные запросы")
     add_arguments(parser)
     args = parser.parse_args(argv)
 
@@ -457,7 +535,17 @@ def main(argv=None) -> int:
             else:
                 notes.append(f"Объявление {args.ad[0]} в кабинете есть, но под "
                              f"названный отбор не подходит.")
-        card = store_card(cache, record, limits) if record is not None else None
+        related = full = None
+        if record is not None or args.with_extensions:
+            related = ad_extensions.read_related(
+                client, accounts, login, cache=cache, limits=limits,
+                **ad_extensions.ids_of([record] if record is not None else found),
+            )
+            if record is None:
+                payload = {"account": login, "selection": where, "ads": found, **related}
+                name = f"ads-with-extensions-{signature(params)}-{signature([one['Id'] for one in found])}"
+                full = cache.write(name, "structure", payload)
+        card = store_card(cache, record, limits, related=related) if record is not None else None
 
         if args.csv:
             campaign_command.dump_csv(
@@ -467,13 +555,13 @@ def main(argv=None) -> int:
 
         if args.json:
             say(json.dumps(as_json(login, where, entry, found, entry.count,
-                                   limits, record, card, args.csv),
+                                   limits, record, card, args.csv, related=related, full=full),
                            ensure_ascii=False))
         elif record is not None:
-            report_card(record, card, spent, limits, args.csv)
+            report_card(record, card, spent, limits, args.csv, related=related)
         else:
             report(login, where, entry, found, entry.count, spent, limits,
-                   args.csv, notes)
+                   args.csv, notes, related=related, full=full)
     except Ambiguous as failure:
         warn(str(failure))
         for match in failure.matches[:SHOWN]:
