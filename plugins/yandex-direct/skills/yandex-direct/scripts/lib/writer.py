@@ -902,6 +902,11 @@ class Operation:
     def _asked(self, field: str) -> bool:
         """Запрашивает ли чтение это поле."""
         parts = field.split(".")
+        # Sitelinks.get называет массив Sitelinks, а выбор его полей —
+        # SitelinkFieldNames. Обычное правило «путь + FieldNames» здесь не подходит.
+        if self.service == "sitelinks" and parts[0] == "Sitelinks" and "SitelinkFieldNames" in self.read:
+            fields = self.read["SitelinkFieldNames"]
+            return isinstance(fields, list) and bool(fields) and (len(parts) == 1 or parts[1] in fields)
         common = self.read.get("FieldNames")
         if isinstance(common, list) and parts[0] in common:
             return True

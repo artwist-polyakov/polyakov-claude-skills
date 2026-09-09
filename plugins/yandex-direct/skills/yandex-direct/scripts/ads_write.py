@@ -19,6 +19,7 @@ import phrases  # noqa: E402
 import policy as policies  # noqa: E402
 import responsive  # noqa: E402
 from accounts import Accounts, resolve_account  # noqa: E402
+from ad_extensions import notes_of, read_related  # noqa: E402
 from config import (  # noqa: E402
     SKILL_DIR,
     DirectFailure,
@@ -667,29 +668,14 @@ def _read_link_markup(client, account, accounts, campaign, seen) -> None:
 def _read_sitelinks(client, account, accounts, sets, seen) -> None:
     """Адреса быстрых ссылок: у товарного и каталожного объявления они
     единственные адреса, по которым уходит трафик."""
-    need = Limits.load().units_cost("sitelinks", "get")
-    wanted = dict(sets)
-    try:
-        for item in client.get_all("sitelinks", {
-                "SelectionCriteria": {
-                    "Ids": [int(one) for one in sorted(sets)]},
-                "FieldNames": ["Id", "Sitelinks"]}, account=account,
-                use_operator_units=lambda: accounts.use_operator_units(
-                    account, need=need)):
-            if item.get("Id") not in wanted:
-                continue
-            owners = tuple(sorted(one for one in wanted[item["Id"]]
-                                  if one is not None))
-            for link in item.get("Sitelinks") or []:
-                if link.get("Href"):
-                    seen.links.append(
-                        (f"быстрая ссылка набора {item.get('Id')}",
-                         link["Href"], owners))
-    except DirectFailure as failure:
-        seen.unread.append(f"адреса быстрых ссылок наборов "
-                           f"{', '.join(str(one) for one in sorted(sets)[:5])}"
-                           f" — "
-                           f"{failure}")
+    related = read_related(client, accounts, account, sitelink_ids=sets,
+                           cache=cache_module.Cache(account, reuse=False))
+    seen.unread.extend(notes_of(related))
+    for item in related["SitelinksSets"]:
+        owners = tuple(sorted(one for one in sets[item["Id"]] if one is not None))
+        for link in item["Sitelinks"]:
+            if link.get("Href"):
+                seen.links.append((f"быстрая ссылка набора {item['Id']}", link["Href"], owners))
 
 
 def settings_for(account: str) -> Preferences:
