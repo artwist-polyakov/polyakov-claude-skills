@@ -122,6 +122,36 @@ def read_selected(client, accounts, account, kind, identifiers, limits, *, reuse
                         cache=Cache(account, reuse=reuse), **selection)
 
 
+def read_active_callouts(client, accounts, account, limits, identifiers=None):
+    """Действующие уточнения: весь кабинет для поиска текста или выбранные ID."""
+    size = limits.selection("adextensions") or 100
+    chunks = [None] if identifiers is None else [
+        identifiers[start:start + size] for start in range(0, len(identifiers), size)]
+    found = {}
+    for chunk in chunks:
+        # State нельзя запросить в FieldNames. Состояние задаём фильтром,
+        # чтобы не зависеть от наличия этого поля в ответе.
+        selection = {"Types": ["CALLOUT"], "States": ["ON"]}
+        if chunk is not None:
+            selection["Ids"] = chunk
+        need = limits.units_cost("adextensions", "get", len(chunk) if chunk is not None else None)
+        records = client.get_all(
+            "adextensions", {"SelectionCriteria": selection, **READ_PARAMS["adextensions"]},
+            collection="AdExtensions", account=account,
+            use_operator_units=lambda: accounts.use_operator_units(account, need=need))
+        for one in records:
+            identifier = positive(one.get("Id"))
+            if chunk is not None and identifier not in chunk:
+                raise DirectFailure(f"AdExtensions.get вернул незапрошенный ID {identifier}.")
+            callout = one.get("Callout")
+            if (one.get("Type") != "CALLOUT" or one.get("State", "ON") != "ON"
+                    or not isinstance(callout, dict)
+                    or not isinstance(callout.get("CalloutText"), str)):
+                raise DirectFailure(f"Не удалось прочитать действующее уточнение {identifier}.")
+            found[identifier] = one
+    return found
+
+
 def read_ads(client, accounts, account, identifiers, limits):
     records = []
     size = limits.selection("ads") or 1000
@@ -215,7 +245,7 @@ def build_parser():
 
 def run(args):
     limits = Limits.load()
-    operations, plan, notes = [], [], []
+    operations, plan, notes, reused = [], [], [], []
     if args.kind == "bind":
         identifiers = list(dict.fromkeys(positive(one) for one in args.ad))
         sitelink_set = (None if args.clear_sitelinks else positive(args.sitelink_set)
@@ -227,7 +257,6 @@ def run(args):
             raise DirectFailure("Назовите новый набор, итоговые уточнения или поле для очистки.")
     elif args.action == "create":
         values = read_links(args.file) if args.kind == "sitelinks" else args.text
-        operations = [create_operation(args.kind, values)]
     else:
         identifiers = list(dict.fromkeys(positive(one) for one in args.ids))
 
@@ -242,6 +271,12 @@ def run(args):
     if args.kind == "bind":
         records = read_ads(client, accounts, account, identifiers, limits)
         operations = build_binding_operations(records, sitelink_set=sitelink_set, callout_ids=callout_ids)
+        if callout_ids is not UNSET and callout_ids:
+            active = read_active_callouts(client, accounts, account, limits, callout_ids)
+            unavailable = [one for one in callout_ids if one not in active]
+            if unavailable:
+                raise DirectFailure("Уточнения удалены или недоступны в выбранном кабинете: "
+                                    + ", ".join(map(str, unavailable)))
         selection = ids_of(records)
         if sitelink_set is UNSET:
             selection["sitelink_ids"] = []
@@ -253,17 +288,24 @@ def run(args):
             selection["extension_ids"].extend(callout_ids)
         related = require_complete(read_related(client, accounts, account, limits=limits,
                                                 cache=Cache(account, reuse=False), **selection))
-        for one in related["AdExtensions"]:
-            if callout_ids is not UNSET and one["Id"] in callout_ids and (
-                    one.get("Type") != "CALLOUT" or one.get("State") == "DELETED"):
-                raise DirectFailure(f"Дополнение {one['Id']} не является доступным уточнением.")
         plan = binding_plan(records, related, sitelink_set, callout_ids)
         notes = [json.dumps(one, ensure_ascii=False) for one in plan]
         notes.append("Меняются только выбранные объявления. Старые наборы и уточнения остаются в библиотеке. Возможна повторная модерация.")
+    elif args.action == "create":
+        if args.kind == "callouts":
+            active = read_active_callouts(client, accounts, account, limits)
+            by_text = {one["Callout"]["CalloutText"]: identifier for identifier, one in active.items()}
+            values = list(dict.fromkeys(values))
+            reused = [{"Id": by_text[text], "CalloutText": text} for text in values if text in by_text]
+            values = [text for text in values if text not in by_text]
+            notes = [f"Использовать существующее уточнение {one['Id']}: {one['CalloutText']}"
+                     for one in reused]
+        if values:
+            operations = [create_operation(args.kind, values)]
     elif args.action == "delete":
         related = require_complete(read_selected(client, accounts, account, args.kind, identifiers, limits))
         if args.kind == "callouts":
-            identifiers = [one["Id"] for one in related["AdExtensions"] if one.get("State") != "DELETED"]
+            identifiers = list(read_active_callouts(client, accounts, account, limits, identifiers))
         if identifiers:
             operations = [delete_operation(args.kind, identifiers)]
         notes = ["Удаление из библиотеки: " + json.dumps(related[COLLECTIONS[args.kind]], ensure_ascii=False),
@@ -272,7 +314,9 @@ def run(args):
         result = {"ok": True, "applied": False, "account": account,
                   "summary": "Изменения не нужны: выбранное состояние уже установлено.",
                   "binding_plan": plan}
-        say(json.dumps(result, ensure_ascii=False) if args.json else result["summary"])
+        if reused:
+            result["reused_callouts"] = reused
+        say(json.dumps(result, ensure_ascii=False) if args.json else "\n".join([*notes, result["summary"]]))
         return 0
     seen = []
     engine = Writer(client, account, accounts=accounts, apply=args.apply,
@@ -301,6 +345,8 @@ def run(args):
     if args.json:
         result = report.machine()
         result.update(account=account, binding_plan=plan, verified_ads=verified)
+        if reused:
+            result["reused_callouts"] = reused
         say(json.dumps(result, ensure_ascii=False))
     else:
         lines = report.lines()
