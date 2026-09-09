@@ -3,7 +3,7 @@ name: yandex-direct
 description: |
   Работа с рекламой в Яндекс Директе через официальный API: анализ статистики,
   конверсий и поисковых запросов, аудит, создание и изменение кампаний,
-  объявлений, фраз, ставок и настроек, выгрузки и предпросмотр.
+  объявлений, фраз, ставок, условий ретаргетинга и настроек, выгрузки и предпросмотр.
   Используй для задач о рекламе Директа, ЕПК, расходах, эффективности,
   позициях в поиске, модерации, минус-фразах и управлении рекламным кабинетом.
 ---
@@ -209,6 +209,13 @@ ROAS не учитывает себестоимость и прочие расх
 покажи содержимое «было → станет». Порядок для новой рекламы и изменений —
 [быстрые ссылки и уточнения](references/EXTENSIONS.md).
 
+Для аудитории на основе существующего сегмента Метрики используй
+`retargeting.py sources`, затем найди или создай условие Директа через
+`retargeting.py list/create`. ID этого условия применяется в корректировке
+ставок через `bids.py` либо в нацеливании группы через `ads_write.py`.
+ID сегмента Метрики, условия Директа и привязки к группе различаются.
+Команды и правила применения — [сегменты и ретаргетинг](references/RETARGETING.md).
+
 ## Команды и справочники
 
 Все команды находятся в `scripts/`. Каждая имеет свой набор параметров:
@@ -221,6 +228,7 @@ ROAS не учитывает себестоимость и прочие расх
 | Объявления и фразы | `ads.py`, `keywords.py` | [API_OBJECTS.md](references/API_OBJECTS.md) |
 | Загрузка и проверка изображений | `images.py` | [CHANGES.md](references/CHANGES.md#загрузка-изображений) |
 | Быстрые ссылки и уточнения | `extensions.py`, `ads.py --with-extensions` | [EXTENSIONS.md](references/EXTENSIONS.md) |
+| Сегменты Метрики и ретаргетинг | `retargeting.py`, `bids.py modifier`, `ads_write.py group targets` | [RETARGETING.md](references/RETARGETING.md) |
 | Статистика, цели и сравнения | `report.py` | [REPORTS.md](references/REPORTS.md) |
 | Выгрузка настроек и структуры | `campaign_dump.py` | Поля и отсутствующие части перечислены в результате |
 | Комплекты объявлений | `audit_combinatorial.py`, `ads_generate.py`, `preview.py` | [COMBINATORIAL_COPY.md](references/COMBINATORIAL_COPY.md), [AD_CONTENT.md](references/AD_CONTENT.md), [PREVIEW.md](references/PREVIEW.md) |
