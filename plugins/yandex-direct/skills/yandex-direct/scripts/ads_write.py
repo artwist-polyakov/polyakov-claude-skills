@@ -30,6 +30,7 @@ from config import (  # noqa: E402
 )
 from direct import Client  # noqa: E402
 from preferences import Preferences  # noqa: E402
+from retargeting_lists import read_lists  # noqa: E402
 from responsive import CLEAR, CLEARABLE, STRUCTURE, Kit  # noqa: E402
 from writer import (NORMALIZED, UNEXPLAINED, UNLOGGED, UNVERIFIED,  # noqa: E402
                     Limits, Operation, Task, Writer, merged, showing, unrun)
@@ -945,14 +946,9 @@ def lifecycle_operation(method: str, ids: list, *, state=None):
 
 
 TARGETS = "audiencetargets"
-LISTS = "retargetinglists"
 
 TARGET_FIELDS = ("Id", "AdGroupId", "CampaignId", "RetargetingListId",
                  "InterestId", "ContextBid", "StrategyPriority", "State")
-
-# Срез условия ретаргетинга: по нему решается применимость.
-LIST_FIELDS = ("Id", "Name", "Type", "Scope", "IsAvailable",
-               "AvailableForTargetsInAdGroupTypes")
 
 TARGETS_RU = {
     "add": "привязка условия",
@@ -1009,19 +1005,6 @@ def _why_unfit(one: dict):
                 f"для корректировок ставок, нацеливанием оно не пользуется "
                 f"вовсе (справочник RetargetingLists.get)")
     return None
-
-
-def read_lists(client, account, accounts, ids) -> dict:
-    """Условия ретаргетинга, которые собираются привязать: `{номер: срез}`."""
-    need = Limits.load().units_cost(LISTS, "get", len(ids))
-    found = {}
-    for item in client.get_all(LISTS, {
-            "SelectionCriteria": {"Ids": [int(one) for one in ids]},
-            "FieldNames": list(LIST_FIELDS)}, account=account,
-            use_operator_units=lambda: accounts.use_operator_units(
-                account, need=need)):
-        found[item["Id"]] = item
-    return found
 
 
 def targets_of(client, account, accounts, group) -> dict:
