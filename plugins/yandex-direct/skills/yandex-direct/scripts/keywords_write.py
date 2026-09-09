@@ -24,6 +24,7 @@ from accounts import Accounts, resolve_account  # noqa: E402
 from config import DirectFailure, excerpt, preload_secrets, redact  # noqa: E402
 from direct import Client  # noqa: E402
 from money import format_api  # noqa: E402
+from reports import Reference  # noqa: E402
 from writer import showing, CLEAR, Limits, Task, Writer, unrun  # noqa: E402
 
 # Что сказать до вопроса, если задача правит текст фраз. Справочник
@@ -250,6 +251,19 @@ def _unique(items) -> list:
 # Отчёт по поисковым запросам
 # --------------------------------------------------------------------------
 
+def conversion_columns(rows) -> list:
+    """Столбцы конверсий, включая выбранные цели и модели атрибуции."""
+    reference = Reference.load()
+    columns = dict.fromkeys(name for row in rows for name in row)
+    found = [name for name in columns if reference.column_base(name) == "Conversions"]
+    if not found:
+        raise DirectFailure(
+            "В отчёте нет Conversions или столбцов вида Conversions_513923501_AUTO. "
+            "Закажите отчёт `search_queries` с `--goals` и выбранными пользователем "
+            "целями. Без конверсий предлагать минус-фразы нельзя.")
+    return found
+
+
 def read_report(path: Path) -> list:
     """Строки отчёта по поисковым запросам из выгрузки `TSV`.
 
@@ -287,19 +301,16 @@ def read_report(path: Path) -> list:
         found.append(row)
     if not found:
         raise DirectFailure(f"В {path} нет ни одной строки с запросом.")
-    # Столбцы метрик обязаны быть **все**. Недостающий читается как ноль, а
-    # ноль в конверсиях означает «запрос ничего не принёс»: отчёт без этого
-    # столбца выдал бы за мусор весь список, включая конверсионные запросы, и
-    # человеку предложили бы отсечь то, на чём он зарабатывает.
-    missing = [name for name in REPORT_NUMBERS
-               if not any(name in row for row in found)]
+    # Трафик и расход нужны для порогов; конверсии проверяются отдельно,
+    # поскольку имя столбца зависит от целей и атрибуции.
+    missing = [name for name in REPORT_NUMBERS if name != "Conversions"
+               and not any(name in row for row in found)]
     if missing:
         raise DirectFailure(
-            f"В {path} нет столбцов {', '.join(missing)}. Без них цену вопроса "
-            f"не посчитать, а недостающие конверсии прочитались бы нулём — и "
-            f"конверсионный запрос попал бы в предложения на отсечение. "
-            f"Закажите отчёт пресетом `search_queries`: там эти поля есть."
+            f"В {path} нет столбцов {', '.join(missing)}. Без них нельзя "
+            f"оценить трафик и расход. Закажите отчёт пресетом `search_queries`."
         )
+    conversion_columns(found)
     return found
 
 
@@ -351,21 +362,15 @@ def finite(text: str) -> float:
     return number
 
 
-def _number(value, *, where: str = "") -> float:
-    """Число из ячейки отчёта: `--` и пустая ячейка означают ноль.
+def _number(value, *, where: str = "", missing=0.0) -> float | None:
+    """Конечное число; пустая ячейка и прочерк возвращают missing.
 
-    Директ ставит `--` там, где значение неприменимо, и это законный ноль:
-    падение посреди разбора отчёта на тысячу строк — потерянная работа, а не
-    сообщение об ошибке.
-
-    А вот всё остальное нечитаемое — отказ, а не ноль. Разница здесь стоит
-    денег: ноль в `Conversions` означает «запрос ничего не принёс» и ведёт
-    прямиком в предложение его заминусовать. Ячейка, которую не удалось
-    прочесть, такого не означает, и молча приравнять её к нулю значит
-    предложить отсечь конверсионный спрос."""
+    Для конверсий передают missing=None: отсутствие показателя не доказывает,
+    что конверсий не было. Нечитаемое значение вызывает ошибку.
+    """
     text = str(value if value is not None else "").strip().replace(",", ".")
     if not text or text in ("--", "-"):
-        return 0.0
+        return missing
     try:
         number = float(text)
     except ValueError:
@@ -480,25 +485,35 @@ def suggest_negatives(rows, *, min_clicks: int = 0, min_cost: float = 0.0,
     «купить» в мусорном запросе — то же «купить», что в коммерческом.
     Запрос же отсекает ровно себя, и человек видит, что именно уходит.
 
-    Отбираются запросы **без конверсий**: запрос, принёсший конверсию, стоит
-    денег не зря, и предлагать его в минус — предлагать убрать продажи.
+    Отбираются запросы с явным нулём по всем столбцам конверсий и всем строкам
+    запроса. Цели и модели не складываются: достаточно любой положительной,
+    в том числе дробной конверсии или пропуска, чтобы запрос не предлагать.
 
     `known` — то, что уже заминусовано на любом из уровней. Повторное
     предложение уже стоящей минус-фразы не ошибка, но человеку оно врёт про
     цену вопроса: эти показы уже отсечены."""
+    if not rows:
+        return []
+    columns = conversion_columns(rows)
     seen = [_words(one) for one in known]
-    rolled = {}
+    rolled, excluded = {}, set()
     for row in rows:
         query = (row.get(QUERY_COLUMN) or "").strip()
         if _blocked(query, seen):
             continue
         found = rolled.setdefault(query, {name: 0 for name in REPORT_NUMBERS})
-        for name in ("Impressions", "Clicks", "Conversions"):
+        for name in columns:
+            value = _number(row.get(name), where=name, missing=None)
+            if value is not None and value < 0:
+                raise DirectFailure(f"В отчёте отрицательное число конверсий в столбце {name}.")
+            if value is None or value > 0:
+                excluded.add(query)
+        for name in ("Impressions", "Clicks"):
             found[name] += int(_number(row.get(name), where=name))
         found["Cost"] += micros(row.get("Cost"), in_micros=in_micros)
     found = [
         {"query": query, **numbers} for query, numbers in rolled.items()
-        if not numbers["Conversions"]
+        if query not in excluded
         and numbers["Clicks"] >= min_clicks
         and numbers["Cost"] >= int(round(min_cost * 1_000_000))
     ]
@@ -1431,7 +1446,11 @@ def from_report(client, account, accounts, args) -> tuple:
     # группы уже не идёт: показанный свежим кандидатом, он врёт про цену
     # вопроса прошлым расходом, а записанный повторно тратит конечную длину
     # списка на работу, которая сделана.
-    found = suggest_negatives(within(read_report(args.report), level, identifier),
+    rows = within(read_report(args.report), level, identifier)
+    warn("Столбцы конверсий: " + ", ".join(conversion_columns(rows))
+         + ". Предлагаются только запросы с нулём по всем этим столбцам; "
+           "пропуски и прочерки не считаются нулём.")
+    found = suggest_negatives(rows,
                               min_clicks=args.min_clicks,
                               min_cost=args.min_cost,
                               known=effective_negatives(client, account,
