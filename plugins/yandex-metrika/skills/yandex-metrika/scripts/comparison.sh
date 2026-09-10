@@ -66,7 +66,7 @@ DIMENSION="${DIMENSION:-ym:s:${ATTRIBUTION}TrafficSource}"
 COMP_METRICS="${COMP_METRICS:-ym:s:visits,ym:s:users,ym:s:bounceRate}"
 
 # Cache key
-_params_str="comparison_${COUNTER}_${DATE1A}_${DATE2A}_${DATE1B}_${DATE2B}_${DIMENSION}_${COMP_METRICS}_${DEVICE}_${SOURCE}_${ATTRIBUTION}_${LIMIT}"
+_params_str="comparison_${COUNTER}_${DATE1A}_${DATE2A}_${DATE1B}_${DATE2B}_${DIMENSION}_${COMP_METRICS}_${DEVICE}_${SOURCE}_${ATTRIBUTION}_${FILTERS}_${LIMIT}"
 _hash=$(cache_key "$_params_str")
 COUNTER_DIR=$(cache_dir_for_counter "$COUNTER")
 CACHE_FILE="$COUNTER_DIR/reports/comparison_${DATE1A}_${DATE2B}_${_hash}.csv"

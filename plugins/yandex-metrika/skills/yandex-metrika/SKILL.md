@@ -1,19 +1,24 @@
 ---
 name: yandex-metrika
 description: |
-  Аналитика Yandex Metrika: трафик, конверсии, UTM, поисковые системы.
+  Яндекс Метрика: детализация трафика по источникам и UTM-меткам,
+  отчёты по конверсиям и поисковым системам, API-сегменты и доступы к счётчикам.
   Cache-first подход для гигиены контекстного окна.
   Triggers: яндекс метрика, yandex metrika, metrika analytics,
-  метрика трафик, метрика конверсии, метрика отчёт.
+  метрика трафик, метрика конверсии, метрика отчёт, создать сегмент,
+  доступ к счётчику, выдать доступ рекламному кабинету.
 ---
 
 # yandex-metrika
 
-Работа с Yandex Metrika Reporting API v1. Отчёты по трафику, конверсиям, UTM-меткам, поисковым системам.
+Работа с API Яндекс Метрики: детализация трафика по источникам и UTM-меткам,
+отчёты по конверсиям и поисковым системам, API-сегменты и прямые доступы к
+счётчикам.
 
 ## Config
 
-Требуется `YANDEX_METRIKA_TOKEN` в `config/.env`.
+Требуется `YANDEX_METRIKA_TOKEN` в `config/.env`. Для чтения нужен доступ
+`metrika:read`, для создания сегментов и управления доступами — `metrika:write`.
 Инструкция: `config/README.md`.
 
 ## Philosophy
@@ -69,6 +74,40 @@ description: |
 
 6. **Запускай отчёты** по задаче пользователя.
 
+## Сегменты и доступы
+
+Для API-сегмента сначала зафиксируй понятное название и выражение `filters`.
+Создание и удаление без `--apply` показывают план и ничего не меняют.
+Перед записью сценарий читает свежую роль на счётчике; сервер API остаётся
+окончательным источником прав.
+
+```bash
+bash scripts/segments.sh --counter <ID> --action create \
+  --name "Посетители карточек" \
+  --expression "EXISTS(ym:pv:URL=@'/catalog/')"
+# после проверки плана повторить с --apply
+```
+
+Получи точный логин от вызывающей задачи, затем проверь прямой доступ к счётчику
+и при необходимости подготовь минимальную роль:
+
+```bash
+bash scripts/grants.sh --counter <ID> --action get --login <LOGIN>
+bash scripts/grants.sh --counter <ID> --action add \
+  --login <LOGIN> --permission view
+# после проверки плана повторить с --apply
+```
+
+Для использования сегмента обычно достаточно `view`. Не выдавай `edit`, если
+задача не требует менять счётчик. Если пользователь выбрал `analyst` или `edit`,
+передай эту роль через `--permission`; существующую роль меняй через `update`.
+Список `/grants` содержит прямые разрешения;
+владелец выводится отдельно, а представители аккаунта в этот список не входят.
+После записи верни вызывающей задаче номер счётчика, ID сегмента, логин и
+подтверждённую роль.
+Подробности: [API-сегменты](references/SEGMENTS.md) и
+[прямые доступы к счётчику](references/ACCESS.md).
+
 ## Scripts
 
 Общий паттерн вызова:
@@ -89,8 +128,12 @@ bash scripts/<script>.sh --counter <ID> --date1 YYYY-MM-DD [--date2 ...] [--grou
 | `direct_clients.sh` | Логины Директа | — |
 | `direct_costs.sh` | Расходы Директа (`ym:ad:*`) | `--direct-client-logins "login"`; нет `--group`/`--device`/`--source` |
 | `comparison.sh` | Сравнение двух периодов | `--date1a/--date2a/--date1b/--date2b`; `--dimension`, `--metrics` |
+| `segments.sh` | Список, просмотр, создание и удаление API-сегментов | `--action`; запись только с `--apply` |
+| `grants.sh` | Владелец и прямые доступы по логинам; роли `view`, `analyst`, `edit` | `--action`; запись только с `--apply` |
 
 Не все скрипты поддерживают все общие параметры — см. **Special params**.
+Сценариям управления `segments.sh` и `grants.sh` для надёжного разбора JSON
+нужен Python 3.10+ либо `uv`; обычные отчёты по-прежнему работают без них.
 
 ### Отчёт по целям
 
@@ -123,6 +166,7 @@ bash scripts/<script>.sh --counter <ID> --date1 YYYY-MM-DD [--date2 ...] [--grou
 | `--device` | no | all | desktop, mobile, tablet |
 | `--source` | no | all | organic, ad, referral, direct, social |
 | `--attribution` | no | lastsign | lastsign, last, first |
+| `--filters` | no | без роботов | выражение сегментации API отчётов |
 | `--limit` | no | API default | число строк |
 | `--csv` | no | - | путь для экспорта |
 | `--no-cache` | no | - | пропустить кеш |
@@ -137,6 +181,9 @@ bash scripts/<script>.sh --counter <ID> --date1 YYYY-MM-DD [--date2 ...] [--grou
 - `counter_<id>/direct_clients.json` — логины Директа
 - `counter_<id>/reports/*.csv` — результаты отчётов
 
+Сегменты и доступы всегда читаются заново и не сохраняются в кеш: эти данные
+меняются независимо от отчётов, а список доступов содержит логины пользователей.
+
 Для поиска по кешу: `grep "text" cache/counters.tsv` или `rg "text" cache/`.
 
 ## Расширенные сценарии
@@ -146,6 +193,8 @@ bash scripts/<script>.sh --counter <ID> --date1 YYYY-MM-DD [--date2 ...] [--grou
 - [Справочник dimensions/metrics](references/API_REFERENCE.md)
 - [Сравнение периодов год-к-году](references/PERIOD_COMPARISON.md)
 - [Расходы Директа и PnL](references/DIRECT_COSTS.md)
+- [API-сегменты для подбора аудитории в Директе](references/SEGMENTS.md)
+- [Проверка и выдача доступа рекламным кабинетам](references/ACCESS.md)
 - [Ограничения API](references/API_REFERENCE.md#known-api-limitations) (bytime, scope mixing, drilldown CSV)
 
 ## Лимиты API

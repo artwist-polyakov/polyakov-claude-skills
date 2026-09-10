@@ -55,6 +55,19 @@ def metric_value(metric, source, period=0):
 
 def fake_curl(args):
     """Write API-shaped CSV and record parameters, never credentials or URLs."""
+    if any("Authorization: OAuth " in argument for argument in args):
+        raise AssertionError("OAuth token must not be passed in curl argv")
+    header_files = [Path(args[index + 1][1:])
+                    for index, argument in enumerate(args[:-1])
+                    if argument == "-H" and args[index + 1].startswith("@")]
+    if not header_files:
+        raise AssertionError("curl must read private headers from a file")
+    if not any("Authorization: OAuth " in path.read_text()
+               for path in header_files):
+        raise AssertionError("OAuth header is missing")
+    if any(path.stat().st_mode & 0o077 for path in header_files):
+        raise AssertionError("OAuth header file is not private")
+
     params = {}
     output = headers = url = None
     index = 0
@@ -146,6 +159,7 @@ class ConversionsTests(unittest.TestCase):
         config = self.root / "config"
         config.mkdir()
         (config / ".env").write_text("YANDEX_METRIKA_TOKEN=synthetic-test-token\n")
+        (config / ".env").chmod(0o600)
         self.counter = self.root / "cache" / "counter_12345"
         self.counter.mkdir(parents=True)
         self.output = self.root / "result.csv"

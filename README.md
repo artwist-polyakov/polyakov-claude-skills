@@ -19,7 +19,7 @@
   - [fal-ai-image](#fal-ai-image) — генерация изображений
   - [yandex-search-api](#yandex-search-api) — парсинг выдачи Яндекса
   - [yandex-direct](#yandex-direct) — статистика и управление Яндекс Директом
-  - [yandex-metrika](#yandex-metrika) — аналитика Yandex Metrika
+  - [yandex-metrika](#yandex-metrika) — отчёты, сегменты и доступы Яндекс Метрики
   - [yandex-webmaster](#yandex-webmaster) — управление сайтами в Яндекс.Вебмастере
   - [zoomkit](#zoomkit) — баланс, счета, отчёты и настройки Яндекс.Директа через ZoomKit API
   - [telegraph-publisher](#telegraph-publisher) — публикация в Telegraph
@@ -285,17 +285,21 @@ SSH подключение к удалённым серверам по ключ�
 
 ### [yandex-metrika](plugins/yandex-metrika/skills/yandex-metrika)
 
-Аналитика Yandex Metrika: трафик, конверсии, UTM, поисковые системы.
+Аналитика и управление Яндекс Метрикой: отчёты, API-сегменты и доступы.
 
 - Cache-first стратегия с TSV-индексами для grep
 - Отчёты: трафик по источникам, конверсии по целям, UTM-разметка, поисковые системы
 - Фильтры: устройство, источник, модель атрибуции, без роботов по умолчанию
 - Автоматический пропуск кеша для текущей даты
+- Создание сегментов по выражениям `filters` для подбора аудитории в Директе
+- Проверка логинов, выдача и изменение прямого доступа с выбором роли
 
 **Триггеры (RU):**
 - "покажи трафик по счётчику"
 - "конверсии за период"
 - "аналитика метрики"
+- "создай сегмент для Директа"
+- "проверь и выдай доступ к счётчику"
 
 **Триггеры (EN):**
 - "yandex metrika analytics"
@@ -585,7 +589,7 @@ polyakov-claude-skills/
 │   ├── fal-ai-image/         # Плагин для генерации изображений
 │   ├── yandex-search-api/    # Плагин для Yandex Search API
 │   ├── yandex-direct/        # Статистика и управление Яндекс Директом
-│   ├── yandex-metrika/       # Плагин для аналитики Yandex Metrika
+│   ├── yandex-metrika/       # Отчёты, сегменты и доступы Яндекс Метрики
 │   ├── yandex-webmaster/     # Плагин для Yandex Webmaster API
 │   ├── zoomkit/               # Плагин для ZoomKit API
 │   ├── telegraph-publisher/  # Плагин для публикации в Telegraph

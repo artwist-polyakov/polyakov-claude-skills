@@ -63,7 +63,7 @@
     },
     {
       "name": "yandex-metrika",
-      "description": "Аналитика Yandex Metrika: трафик, конверсии, UTM, поисковые системы",
+      "description": "Яндекс Метрика: отчёты, API-сегменты и управление доступом рекламных кабинетов",
       "source": "./plugins/yandex-metrika",
       "category": "productivity"
     },

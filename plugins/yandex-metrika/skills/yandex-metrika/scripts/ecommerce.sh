@@ -49,7 +49,7 @@ METRICS="ym:s:ecommercePurchases,${_rev},${_rev_per_purchase},${_rev_per_visit},
 DIMENSIONS="ym:s:${ATTRIBUTION}TrafficSource"
 
 # Cache key
-_params_str="ecommerce_${COUNTER}_${DATE1}_${DATE2}_${GROUP}_${DEVICE}_${SOURCE}_${ATTRIBUTION}_${CURRENCY}_${LIMIT}"
+_params_str="ecommerce_${COUNTER}_${DATE1}_${DATE2}_${GROUP}_${DEVICE}_${SOURCE}_${ATTRIBUTION}_${FILTERS}_${CURRENCY}_${LIMIT}"
 _hash=$(cache_key "$_params_str")
 COUNTER_DIR=$(cache_dir_for_counter "$COUNTER")
 CACHE_FILE="$COUNTER_DIR/reports/ecommerce_${DATE1}_${DATE2}_${_hash}.csv"
