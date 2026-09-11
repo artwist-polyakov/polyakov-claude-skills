@@ -66,7 +66,7 @@ def get_budget(client, login: str) -> dict:
     else:
         raise DirectFailure("Не удалось прочитать AccountDayBudget.Amount.")
     # Live 4 хранит сумму в валюте, не в микроединицах. Проверка связи ×7
-    # с недельным лимитом интерфейса и её актуальность описаны в PLAYBOOK.md.
+    # с недельным лимитом интерфейса и её актуальность описаны в BUDGETS.md.
     return {"account_id": row["AccountID"], "login": row["Login"],
             "currency": row["Currency"], "api_amount": decimal_text(base),
             "weekly": decimal_text(base * DAYS) if base else None}
