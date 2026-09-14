@@ -541,8 +541,8 @@ def placements(pairs) -> dict:
 GOAL_OPERATION = "SET"
 
 
-def priority_goals(pairs, metrika_source, *, updating: bool) -> dict:
-    """Приоритетные цели с ценностью конверсии."""
+def priority_goals(pairs, metrika_source, *, updating: bool, current=()) -> dict:
+    """Цели из аргументов; при добавлении сохраняем прочитанные цели по GoalId."""
     named = set(metrika_source)
     items, seen = [], {}
     for goal, value in pairs:
@@ -561,8 +561,6 @@ def priority_goals(pairs, metrika_source, *, updating: bool) -> dict:
         if goal in named:
             item["IsMetrikaSourceOfValue"] = "YES"
             named.discard(goal)
-        if updating:
-            item["Operation"] = GOAL_OPERATION
         items.append(item)
     if named:
         raise DirectFailure(
@@ -571,7 +569,13 @@ def priority_goals(pairs, metrika_source, *, updating: bool) -> dict:
             f"приоритетных нет. Аргумент, принятый и не применённый, — это "
             f"половина просьбы, выданная за целое."
         )
-    return {"Items": items}
+    merged = {item["GoalId"]: dict(item) for item in current}
+    for item in items:
+        merged.setdefault(item["GoalId"], {}).update(item)
+    if updating:
+        for item in merged.values():
+            item["Operation"] = GOAL_OPERATION
+    return {"Items": list(merged.values())}
 
 
 def fits_goals(items: list, named, effective=None) -> None:
@@ -1334,6 +1338,9 @@ def campaign_body(args, kind: str, *, creating: bool, record=None) -> dict:
     """Типовая структура кампании из аргументов: стратегия, цели, счётчики."""
     args.campaign_kind = kind
     fits_strategy_arguments(args)
+    adding_goals = not creating and getattr(args, "add_goals", False)
+    if adding_goals and not args.goal:
+        raise DirectFailure("--add-goals требует хотя бы один --goal ЦЕЛЬ=СУММА.")
     body = {}
     halves = {}
     for half, code, pairs, places in (
@@ -1367,8 +1374,10 @@ def campaign_body(args, kind: str, *, creating: bool, record=None) -> dict:
         if code is not None:
             ruling[half] = code
     codes = sorted(set(ruling.values()))
-    goals = priority_goals(args.goal, args.goal_from_metrika,
-                           updating=not creating)
+    current = (record or {}).get(campaign_command.TYPE_BODY[kind]) or {}
+    goals = priority_goals(
+        args.goal, args.goal_from_metrika, updating=not creating,
+        current=items_of(current.get("PriorityGoals")) if adding_goals else ())
     fits_goals(goals["Items"], named, codes)
     if goals["Items"] and any(one in SHARE_OF_SPEND for one in codes):
         for item in goals["Items"]:
@@ -1408,9 +1417,19 @@ def strategy_task(client, account, accounts, args):
         )
     prefix = campaign_command.TYPE_BODY[kind]
     what = {f"{prefix}.{one}": TYPED_RU[one] for one in typed}
+    read_fields = set(typed)
+    guard = None
+    if "PriorityGoals" in typed:
+        # Цели собраны по первоначальному чтению и проверены по его стратегии.
+        # Не перезаписываем изменения, появившиеся до чтения внутри Writer.
+        read_fields.add("BiddingStrategy")
+        guard = unchanged_at({
+            f"{prefix}.{field}": (record.get(prefix) or {}).get(field)
+            for field in ("PriorityGoals", "BiddingStrategy")})
     operation = update_operation(
         args.campaign, kind, record=record, typed=typed, what=what,
-        read=read_params(kind, typed=list(typed),
+        guard_also=guard,
+        read=read_params(kind, typed=sorted(read_fields),
                          places=create_places(typed)),
         collections=(rules_for("PriorityGoals", f"{prefix}.PriorityGoals")[1]
                      if "PriorityGoals" in typed else None),
@@ -1971,7 +1990,8 @@ def add_strategy(step, *, required: bool) -> None:
 def add_goals(step, *, counters: bool = True) -> None:
     step.add_argument("--goal", action="append", type=goal, default=[],
                       metavar="ЦЕЛЬ=ЦЕННОСТЬ",
-                      help="приоритетная цель и ценность конверсии в валюте")
+                      help="цель и сумма в валюте кабинета; при правке список "
+                           "заменяется целиком, для добавления — --add-goals")
     step.add_argument("--goal-from-metrika", dest="goal_from_metrika",
                       action="append", type=whole, default=[], metavar="ЦЕЛЬ",
                       help="ценность этой цели берётся из Метрики")
@@ -2040,6 +2060,10 @@ def build_parser() -> Parser:
     strategy.add_argument("--campaign", type=whole, required=True)
     add_strategy(strategy, required=False)
     add_goals(strategy, counters=False)
+    strategy.add_argument(
+        "--add-goals", action="store_true",
+        help="добавить --goal к текущим целям; совпавший ID обновляет сумму, "
+             "остальные цели и источники ценности сохраняются")
 
     marked = actions.add_parser("tracking", parents=[common],
                                 help="параметры URL кампании")
