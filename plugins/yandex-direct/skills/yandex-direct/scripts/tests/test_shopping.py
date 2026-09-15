@@ -249,6 +249,42 @@ class ShoppingTests(unittest.TestCase):
         self.assertEqual(report["written"], [str(AD)])
         self.assertEqual(len(self.client.writes), 1)
 
+    def test_malformed_final_read_preserves_write_and_reports_unknown(self):
+        malformed = ([{}], [{"Id": []}], [{"Id": True}], [{"Id": 0}], [{"Id": -1}],
+                     [{"Id": AD}, {"Id": AD}], [{"Id": AD + 1}])
+        for records in malformed:
+            with self.subTest(records=records):
+                self.client.ads = [ad()]
+                self.client.writes = []
+                self.client.processing_reads = 0
+                get_all = self.client.get_all
+
+                def read(service, *args, **kwargs):
+                    result = get_all(service, *args, **kwargs)
+                    if service == "ads" and self.client.processing_reads == 2:
+                        return records
+                    return result
+
+                with patch.object(self.client, "get_all", side_effect=read):
+                    code, report = self.command("update", "--ad", str(AD),
+                                                "--default-text", "Текст", "--apply")
+                self.assertEqual(code, 1)
+                self.assertFalse(report["ok"])
+                self.assertFalse(report["ready"])
+                self.assertTrue(report["unknown"])
+                self.assertEqual(report["written"], [str(AD)])
+                self.assertEqual(len(self.client.writes), 1)
+                self.assertEqual(self.client.ads[0]["ShoppingAd"]["DefaultTexts"], ["Текст"])
+
+    def test_malformed_group_read_blocks_creation(self):
+        self.client.ads = []
+        self.client.groups = [{"Id": GROUP}, {"Id": GROUP}]
+        code, report = self.command("add", "--group", str(GROUP), "--feed", str(FEED),
+                                    "--default-text", "Текст", "--apply")
+        self.assertEqual(code, 1)
+        self.assertIn("повторный", " ".join(report["problems"]))
+        self.assertEqual(self.client.writes, [])
+
     def test_get_reads_complete_shopping_and_keeps_listing_separate(self):
         listing = {**ad(), "Id": 302, "Type": "LISTING_AD"}
         self.client.ads.append(listing)

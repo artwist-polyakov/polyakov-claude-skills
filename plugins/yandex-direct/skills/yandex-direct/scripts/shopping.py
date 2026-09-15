@@ -22,7 +22,7 @@ from accounts import Accounts, resolve_account  # noqa: E402
 from cache import Cache, outline  # noqa: E402
 from config import DirectFailure, preload_secrets, redact  # noqa: E402
 from direct import Client  # noqa: E402
-from errors import required  # noqa: E402
+from errors import required, TransportFailure  # noqa: E402
 from feed_objects import read_feeds  # noqa: E402
 from writer import Limits, Operation, PROBLEM, Task, UNLOGGED, UNVERIFIED, Writer, showing  # noqa: E402
 
@@ -121,11 +121,21 @@ def read_params(args):
 
 
 def read_records(client, account, accounts, service, params):
-    count = len((params.get("SelectionCriteria") or {}).get("Ids", [])) or None
-    need = Limits.load().units_cost(service, "get", count)
-    return {one["Id"]: one for one in client.get_all(
+    requested = (params.get("SelectionCriteria") or {}).get("Ids")
+    need = Limits.load().units_cost(service, "get", len(requested or []) or None)
+    records = {}
+    for one in client.get_all(
         service, params, account=account,
-        use_operator_units=lambda: accounts.use_operator_units(account, need=need))}
+        use_operator_units=lambda: accounts.use_operator_units(account, need=need)):
+        identifier = required(one, "Id", int, f"{service}.get")
+        if isinstance(identifier, bool) or identifier <= 0:
+            raise TransportFailure(f"{service}.get: Id должен быть положительным целым числом.",
+                                   retryable=False)
+        if identifier in records or (requested is not None and identifier not in requested):
+            raise TransportFailure(f"{service}.get: повторный или незапрошенный Id {identifier}.",
+                                   retryable=False)
+        records[identifier] = one
+    return records
 
 
 def shopping_body(record):
