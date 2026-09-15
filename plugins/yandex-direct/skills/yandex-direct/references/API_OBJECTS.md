@@ -603,6 +603,10 @@
 
 ### 7.1. Настройки автотаргетинга
 
+Смысл категорий, старт только с узкими запросами и расширение охвата — в
+[AUTOTARGETING.md](AUTOTARGETING.md). Для записи используйте вложенную
+структуру `AutotargetingSettings`; старые поля ниже нужны для разбора ответа.
+
 | Половина | Поля | Значения |
 |---|---|---|
 | `Categories` | `Exact`, `Narrow`, `Alternative`, `Accessory`, `Broader` | `YES`, `NO` |
@@ -617,14 +621,14 @@
 
 | Плоское имя | Половина вложенной формы | Поле |
 |---|---|---|
-| `EXACT` — категория | `Categories` | `Exact` |
+| `EXACT` — категория | `Categories` | объединяет `Exact` и `Narrow`; раздельный выбор доступен только во вложенной форме |
 | `ALTERNATIVE` — категория | `Categories` | `Alternative` |
 | `BROADER` — категория | `Categories` | `Broader` |
 | `ACCESSORY` — категория | `Categories` | `Accessory` |
 | `COMPETITOR` — тоже категория | `BrandOptions` | `WithCompetitorsBrand` |
 | `WITHOUT_BRANDS` — признак бренда | `BrandOptions` | `WithoutBrands` |
 | `WITH_ADVERTISER_BRAND` — признак бренда | `BrandOptions` | `WithAdvertiserBrand` |
-| плоской формой не выражается | `Categories` | `Narrow` |
+| отдельно плоской формой не выражается | `Categories` | `Narrow` |
 
 ## 8. Дополнения к объявлению
 
