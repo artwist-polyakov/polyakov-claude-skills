@@ -130,32 +130,86 @@ class ProxyTransportTests(unittest.TestCase):
                     self.assertEqual(opener.open.call_count, 1)
                     sleep.assert_not_called()
 
-    def test_409_preserves_full_text_and_does_not_interpret_yandex_code(self):
-        for code in (409, 53):
-            with self.subTest(code=code):
-                client, _, _ = self.client(wire_response(409, envelope(code)))
-                with self.assertRaises(ApiFailure) as caught:
-                    client.call("Campaigns", "get", retry=False)
-                message = str(caught.exception)
-                self.assertIn("Ответ прокси proxy.example.test", message)
-                self.assertIn("Выбор подключения\n" + DETAIL, message)
-                self.assertIn("proxy-request-42", message)
-                self.assertNotIn(hint(53, "v5"), message)
-                self.assertTrue(caught.exception.retryable)
+    def test_4xx_envelope_preserves_instruction_without_retry(self):
+        for status in (400, 401, 403, 409, 422):
+            for code in (409, 53, 1000):
+                for version in ("v501", "v4", "live/v4"):
+                    with self.subTest(status=status, code=code, version=version):
+                        client, opener, sleep = self.client(wire_response(status, envelope(code)))
+                        with self.assertRaises(ApiFailure) as caught:
+                            if version == "v501":
+                                client.call("Campaigns", "get", retry=True)
+                            else:
+                                client.call_v4("GetRetargetingGoals", version=version, retry=True)
+                        message = str(caught.exception)
+                        host = "proxy.example.test" if version == "v501" else "legacy.example.test"
+                        self.assertIn(f"Ответ прокси {host}", message)
+                        self.assertIn("Выбор подключения\n" + DETAIL, message)
+                        self.assertIn("proxy-request-42", message)
+                        self.assertNotIn(hint(53, "v5"), message)
+                        self.assertFalse(caught.exception.retryable)
+                        self.assertEqual(opener.open.call_count, 1)
+                        sleep.assert_not_called()
 
-    def test_read_retries_proxy_envelope_even_with_yandex_auth_code(self):
-        client, opener, sleep = self.client(
-            wire_response(409, envelope(53)), wire_response(),
+    def test_read_retries_503_envelope_even_with_yandex_auth_code(self):
+        for version in ("v501", "v4", "live/v4"):
+            with self.subTest(version=version):
+                success = SUCCESS if version == "v501" else {"data": [123]}
+                client, opener, sleep = self.client(
+                    wire_response(503, envelope(53)), wire_response(payload=success),
+                )
+                if version == "v501":
+                    response = client.call("Campaigns", "get", {"FieldNames": ["Id"]})
+                    expected_url = BASE_URL + "/json/v501/campaigns/"
+                else:
+                    response = client.call_v4("GetRetargetingGoals", version=version)
+                    expected_url = V4_BASE_URL + f"/{version}/json/"
+                self.assertEqual(response.result, success.get("result", success.get("data")))
+                self.assertEqual(response.attempts, 2)
+                self.assertEqual(opener.open.call_count, 2)
+                sleep.assert_called_once_with(1.0)
+                first, second = (item.args[0] for item in opener.open.call_args_list)
+                self.assertEqual(first.full_url, expected_url)
+                self.assertEqual(first.data, second.data)
+                self.assertEqual(first.header_items(), second.header_items())
+
+    def test_forwarded_200_error_keeps_direct_retry_rules(self):
+        cases = (
+            ("v501", 53, False), ("v501", 54, False), ("v501", 152, False),
+            ("v501", 8000, False), ("v501", 1000, True),
+            ("v4", 53, False), ("live/v4", 71, False),
         )
-        response = client.call("Campaigns", "get", {"FieldNames": ["Id"]})
-        self.assertEqual(response.result, SUCCESS["result"])
-        self.assertEqual(response.attempts, 2)
-        self.assertEqual(opener.open.call_count, 2)
-        sleep.assert_called_once_with(1.0)
-        first, second = (item.args[0] for item in opener.open.call_args_list)
-        self.assertEqual(first.full_url, BASE_URL + "/json/v501/campaigns/")
-        self.assertEqual(first.data, second.data)
-        self.assertEqual(first.header_items(), second.header_items())
+        direct_settings = resolve_settings(from_file={}, environ={
+            "YANDEX_DIRECT_TOKEN": TOKEN, "YANDEX_DIRECT_ACCOUNT": ACCOUNT,
+        })
+        for configuration in (settings(), direct_settings):
+            for version, code, retryable in cases:
+                with self.subTest(proxy=configuration.is_proxy, version=version, code=code):
+                    if version == "v501":
+                        payload = envelope(code, "Ответ Яндекса")
+                        success = SUCCESS
+                    else:
+                        payload = {"error_code": code, "error_str": "Ответ Яндекса"}
+                        success = {"data": [123]}
+                    client, opener, sleep = self.client(
+                        wire_response(200, payload), wire_response(payload=success),
+                        configuration=configuration,
+                    )
+                    if version == "v501":
+                        call = lambda: client.call("Campaigns", "get")
+                    else:
+                        call = lambda: client.call_v4("GetRetargetingGoals", version=version)
+                    if retryable:
+                        self.assertTrue(call().ok)
+                        self.assertEqual(opener.open.call_count, 2)
+                        sleep.assert_called_once_with(1.0)
+                    else:
+                        with self.assertRaises(ApiFailure) as caught:
+                            call()
+                        self.assertEqual(caught.exception.code, code)
+                        self.assertFalse(caught.exception.retryable)
+                        self.assertEqual(opener.open.call_count, 1)
+                        sleep.assert_not_called()
 
     def test_write_never_retries_proxy_envelope_even_when_requested(self):
         client, opener, sleep = self.client(wire_response(409, envelope(53)))

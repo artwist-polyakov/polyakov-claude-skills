@@ -6,7 +6,7 @@ import json
 import re
 
 from config import DirectFailure, excerpt, header_safe
-from errors import ApiFailure, TransportFailure
+from errors import ApiFailure, TransportFailure, classify, is_retryable
 
 # `live/v4` — там, где у метода есть вариант Live; `v4` — где его нет.
 # Пометодно расписано в API_MAP.md, раздел «Версии 4 и Live 4».
@@ -448,6 +448,16 @@ def proxy_response(settings, protocol, raw, status, request_id, where):
         declared = V5().error_of(payload, request_id, where, proxy_host=host)
         if declared is None and isinstance(protocol, V4):
             declared = protocol.error_of(payload, request_id, where, proxy_host=host)
+    if declared is not None:
+        if status == 200:
+            # Ошибки методов Директа передаются внутри HTTP 200. Прокси
+            # сохраняет этот статус; собственные отказы отдаёт как 4xx/5xx.
+            declared.kind = classify(declared.code, declared.version)
+            declared.retryable = is_retryable(declared.code, declared.version)
+        else:
+            # code читают Accounts и whoami (54 — тип токена, 152 — баллы).
+            # Номер прокси не управляет этой логикой; исходный остаётся в raw.
+            declared.code = None
     if status == 404:
         detail = ("не поддерживает четвёртую версию API"
                   if isinstance(protocol, V4) else "не поддерживает этот адрес")
@@ -462,13 +472,17 @@ def proxy_response(settings, protocol, raw, status, request_id, where):
             retryable=False, status=status,
         )
     if declared is not None:
+        if status == 200:
+            # Пересланная ошибка Директа: смысл повтора задаёт код API.
+            return payload, declared
+        retryable = status == 429 or 500 <= status < 600
         if isinstance(protocol, Reports):
             # Повторы отчётов выполняет one_page, включая очередь и лимит
             # времени ожидания; он обрабатывает ошибки по HTTP-статусу.
             return payload, TransportFailure(
-                str(declared), retryable=status not in (401, 502), status=status,
+                str(declared), retryable=retryable and status != 502, status=status,
             )
-        declared.retryable = status != 401
+        declared.retryable = retryable
         return payload, declared
     return payload, protocol.failure(payload, status, request_id, where, raw)
 

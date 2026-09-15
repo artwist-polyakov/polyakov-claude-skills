@@ -122,9 +122,24 @@ class ProxyReportsTests(unittest.TestCase):
         self.assertEqual(self.run_report(client), REPORT)
         self.assertEqual(self.clock.pauses, [POLL_DEFAULT])
 
-    def test_expired_retry_budget_preserves_409_details_without_claiming_queue(self):
+    def test_4xx_instruction_is_returned_without_waiting_or_retry(self):
         detail = "Выберите логин токена. " * 30 + "Полная инструкция: X-Token-Login."
-        client = self.client([(409, {}, refusal(detail)), (409, {}, refusal(detail))])
+        for status in (400, 401, 403, 409, 422):
+            with self.subTest(status=status):
+                client = self.client([(status, {}, refusal(detail))])
+                with self.assertRaises(TransportFailure) as caught:
+                    self.run_report(client, wait=10)
+                self.assertIn(detail, str(caught.exception))
+                self.assertNotIn("за 10 с", str(caught.exception))
+                self.assertNotIn("очереди", str(caught.exception))
+                self.assertEqual(caught.exception.status, status)
+                self.assertFalse(caught.exception.retryable)
+                self.assertEqual(self.clock.pauses, [])
+                self.assertEqual(len(client.transport.calls), 1)
+
+    def test_expired_retry_budget_preserves_503_details_without_claiming_queue(self):
+        detail = "Сервис временно недоступен. " * 30 + "Попробуйте позднее."
+        client = self.client([(503, {}, refusal(detail)), (503, {}, refusal(detail))])
         with self.assertRaises(DirectFailure) as caught:
             self.run_report(client, wait=10)
         self.assertIn(detail, str(caught.exception))
