@@ -184,6 +184,13 @@ ROAS не учитывает себестоимость и прочие расх
 Брендовая реклама — повод обсудить исключение, а не автоматически снять лимит.
 Суммы, команды, бюджеты пакета и на период — в том же справочнике.
 
+При создании поисковой рекламы, настройке автотаргетинга, нецелевых запросах
+или нехватке трафика читай [категории автотаргетинга](references/AUTOTARGETING.md).
+Для новой поисковой группы по умолчанию предлагай только узкие запросы:
+`Narrow=YES`, остальные четыре категории — `NO`, если пользователь не выбрал
+другой состав. Объясняй этот выбор сам; работающие настройки не заменяй
+автоматически. Расширение охвата, бренды, РСЯ и товарная галерея — в справочнике.
+
 Обычный запуск пишущей команды показывает план без изменений в кабинете.
 `--apply` выполняет правку и перечитывает объект. Если пользователь уже поручил
 конкретное действие, повторное подтверждение не требуется. Если просит только
@@ -264,6 +271,7 @@ ID сегмента Метрики, условия Директа и привя�
 | Кабинет и доступ | `accounts.py`, `whoami.py` | [CLIENT_LOGIN.md](references/CLIENT_LOGIN.md), [API_ACCESS.md](config/API_ACCESS.md) |
 | Кампании и группы | `campaigns.py`, `adgroups.py` | [PLAYBOOK.md](references/PLAYBOOK.md) |
 | Объявления и фразы | `ads.py`, `keywords.py` | [API_OBJECTS.md](references/API_OBJECTS.md) |
+| Автотаргетинг и категории запросов | `keywords.py`, `keywords_write.py autotargeting` | [AUTOTARGETING.md](references/AUTOTARGETING.md) |
 | Загрузка и проверка изображений | `images.py` | [CHANGES.md](references/CHANGES.md#загрузка-изображений) |
 | Быстрые ссылки и уточнения | `extensions.py`, `ads.py --with-extensions` | [EXTENSIONS.md](references/EXTENSIONS.md) |
 | Сегменты Метрики и ретаргетинг | `retargeting.py`, `bids.py modifier`, `ads_write.py group targets` | [RETARGETING.md](references/RETARGETING.md) |
