@@ -309,7 +309,7 @@
 | Поле | Тип | `add` | `update` | Ограничение |
 |---|---|---|---|---|
 | `FeedId` | long | Да | — | **сменить фид нельзя**: поля в `update` нет |
-| `DefaultTexts` | array of string | Да | для `ShoppingAd` необязателен | ровно одно значение при передаче |
+| `DefaultTexts` | array of string | Да | Нет | ровно одно значение при передаче |
 | `FeedFilterConditions` | `FeedFilterConditionsItem` | Нет | Нет | до 30 фильтров, суммарно 65 КБайт JSON; `Arguments` при чтении до 10 строк |
 | `TitleSources` | array of string | Нет | Нет | имена полей — из `Feeds.get`, `TitleAndTextSources` |
 | `TextSources` | array of string | Нет | Нет | то же |
@@ -319,8 +319,10 @@
 | `BusinessId` | long, nillable | Нет | Нет | только при `IsPublished = YES` |
 
 Команды для `ShoppingAd`, различия массивов при создании и обновлении,
-фильтры и смена фида — в [FEEDS.md](FEEDS.md). Необязательность
-`ShoppingAdUpdate.DefaultTexts` проверена по `minOccurs=0` в
+фильтры и смена фида — в [FEEDS.md](FEEDS.md). Быстрые ссылки и уточнения обоих
+типов меняет `extensions.py bind` — [EXTENSIONS.md](EXTENSIONS.md).
+Необязательность `DefaultTexts` у `ShoppingAdUpdate` и `ListingAdUpdate`
+проверена по `minOccurs=0` в
 [схеме v501](https://api.direct.yandex.com/v501/ads?wsdl): таблица `Ads.update`
 помечает поле обязательным, но схема допускает частичное обновление без него.
 

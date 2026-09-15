@@ -9,7 +9,8 @@ from policy import Change
 from writer import Limits, Operation
 
 UNSET = object()
-BODY = {"TEXT_AD": "TextAd", "RESPONSIVE_AD": "ResponsiveAd"}
+BODY = {"TEXT_AD": "TextAd", "RESPONSIVE_AD": "ResponsiveAd",
+        "SHOPPING_AD": "ShoppingAd", "LISTING_AD": "ListingAd"}
 READ = {
     "FieldNames": ["Id", "Type", "State"],
     # Обе структуры запрашиваются всегда: иначе комбинаторное объявление
@@ -17,6 +18,8 @@ READ = {
     "TextAdFieldNames": ["Href", "TurboPageId", "SitelinkSetId", "AdExtensions"],
     "ResponsiveAdFieldNames": ["Titles", "Texts", "Href", "SitelinkSetId",
                                "AdExtensions"],
+    "ShoppingAdFieldNames": ["SitelinkSetId", "AdExtensions"],
+    "ListingAdFieldNames": ["SitelinkSetId", "AdExtensions"],
 }
 
 
@@ -37,22 +40,27 @@ def _texts(body, field, item_field, where):
     return [one[item_field] for one in values]
 
 
-def _snapshot(record):
+def body_of(record):
+    """Структура дополнений выбранного типа, общая для плана и проверки."""
     if not isinstance(record, dict):
         raise DirectFailure("Объявление должно быть объектом из Ads.get.")
-    identifier = _positive(record.get("Id"), "ID объявления")
     kind = record.get("Type")
-    if kind not in BODY:
-        raise DirectFailure(f"Объявление {identifier}: тип {kind!r} не поддерживается; "
-                            "нужен TEXT_AD или RESPONSIVE_AD.")
+    if not isinstance(kind, str) or kind not in BODY:
+        raise DirectFailure(f"Объявление {record.get('Id')}: тип {kind!r} не поддерживается; "
+                            "доступны " + ", ".join(BODY) + ".")
     body = record.get(BODY[kind])
-    where = f"Объявление {identifier}"
     if not isinstance(body, dict):
-        raise DirectFailure(f"{where}: не прочитана структура {BODY[kind]}.")
-    if any(field not in body for field in ("SitelinkSetId", "AdExtensions", "Href")):
-        raise DirectFailure(f"{where}: не прочитаны SitelinkSetId, AdExtensions или Href.")
-    if body["Href"] is not None and not isinstance(body["Href"], str):
-        raise DirectFailure(f"{where}: повреждён Href.")
+        raise DirectFailure(f"Объявление {record.get('Id')}: не прочитана структура {BODY[kind]}.")
+    return body
+
+
+def _snapshot(record):
+    body = body_of(record)
+    identifier = _positive(record.get("Id"), "ID объявления")
+    kind = record["Type"]
+    where = f"Объявление {identifier}"
+    if any(field not in body for field in ("SitelinkSetId", "AdExtensions")):
+        raise DirectFailure(f"{where}: не прочитаны SitelinkSetId или AdExtensions.")
     sitelinks = body["SitelinkSetId"]
     if sitelinks is not None:
         sitelinks = _positive(sitelinks, f"{where}, SitelinkSetId")
@@ -68,8 +76,11 @@ def _snapshot(record):
     if len(callouts) != len(set(callouts)):
         raise DirectFailure(f"{where}: повторяются AdExtensionId в ответе.")
     result = {"Id": identifier, "Type": kind, "State": record.get("State"),
-              "SitelinkSetId": sitelinks, "AdExtensionIds": sorted(callouts),
-              "Href": body["Href"], "TurboPageId": body.get("TurboPageId")}
+              "SitelinkSetId": sitelinks, "AdExtensionIds": sorted(callouts)}
+    if kind in ("TEXT_AD", "RESPONSIVE_AD"):
+        if "Href" not in body or (body["Href"] is not None and not isinstance(body["Href"], str)):
+            raise DirectFailure(f"{where}: не прочитан или повреждён Href.")
+        result.update(Href=body["Href"], TurboPageId=body.get("TurboPageId"))
     if kind == "RESPONSIVE_AD":
         result["Titles"] = _texts(body, "Titles", "Title", where)
         result["Texts"] = _texts(body, "Texts", "Text", where)
@@ -174,7 +185,8 @@ def build_binding_operations(records, *, sitelink_set=UNSET, callout_ids=UNSET):
     for before in snapshots:
         if before["State"] == "ARCHIVED":
             raise DirectFailure(f"Объявление {before['Id']} архивное; привязки менять нельзя.")
-        if sitelink_set is not UNSET and sitelink_set is not None and not before["Href"]:
+        if (before["Type"] in ("TEXT_AD", "RESPONSIVE_AD")
+                and sitelink_set is not UNSET and sitelink_set is not None and not before["Href"]):
             if before["Type"] != "TEXT_AD" or not before["TurboPageId"]:
                 raise DirectFailure(f"Объявление {before['Id']}: для быстрых ссылок нужен Href.")
         same_sitelinks = sitelink_set is UNSET or sitelink_set == before["SitelinkSetId"]
