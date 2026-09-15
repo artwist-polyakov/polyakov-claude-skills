@@ -183,7 +183,7 @@ class V5(Protocol):
 
     def request(self, settings, *, service, method, params, account, use_operator_units):
         key = service_key(service)
-        url = f"https://{settings.host}/json/{settings.version}/{key}/"
+        url = f"{settings.base_url}/json/{settings.version}/{key}/"
         body = json.dumps(
             {"method": method, "params": params if params is not None else {}},
             ensure_ascii=False,
@@ -209,12 +209,14 @@ class V5(Protocol):
                 # Client-Login Директ его не отвергает, но и смысла в нём нет —
                 # платит агентство и так.
                 headers["Use-Operator-Units"] = "true"
+        if settings.is_proxy:
+            headers.update(settings.extra_headers)
         return url, body, headers
 
     def safe(self, method: str) -> bool:
         return method.lower() in SAFE_METHODS
 
-    def error_of(self, payload, request_id: str, where: str):
+    def error_of(self, payload, request_id: str, where: str, proxy_host: str = ""):
         error = payload.get("error")
         if error is None:
             return None
@@ -227,7 +229,7 @@ class V5(Protocol):
             message=error.get("error_string") or "",
             detail=error.get("error_detail") or "",
             request_id=error.get("request_id") or request_id,
-            where=where, version="v5", raw=error,
+            where=where, version="v5", raw=error, proxy_host=proxy_host,
         )
 
 
@@ -397,7 +399,7 @@ class V4(Protocol):
         self.path = V4_PATHS[version]
 
     def request(self, settings, *, service, method, params, account, use_operator_units):
-        url = f"https://{settings.host_v4}{self.path}"
+        url = f"{settings.base_url_v4}{self.path}"
         # Токен уходит в теле, а не в заголовке. Отсюда требование к журналу:
         # вырезать секреты из тела, а не только из заголовков.
         body = json.dumps(
@@ -409,12 +411,16 @@ class V4(Protocol):
             },
             ensure_ascii=False,
         )
-        return url, body, {"Content-Type": "application/json; charset=utf-8"}
+        headers = {"Content-Type": "application/json; charset=utf-8"}
+        if settings.is_proxy:
+            headers["Authorization"] = f"Bearer {settings.token}"
+            headers.update(settings.extra_headers)
+        return url, body, headers
 
     def safe(self, method: str) -> bool:
         return method.lower() in SAFE_METHODS_V4
 
-    def error_of(self, payload, request_id: str, where: str):
+    def error_of(self, payload, request_id: str, where: str, proxy_host: str = ""):
         if "error_code" not in payload and "error_str" not in payload:
             return None
         return ApiFailure(
@@ -422,7 +428,49 @@ class V4(Protocol):
             message=payload.get("error_str") or "",
             detail=payload.get("error_detail") or "",
             request_id=request_id, where=where, version="v4", raw=payload,
+            proxy_host=proxy_host,
         )
+
+
+def proxy_response(settings, protocol, raw, status, request_id, where):
+    """Ответ совместимого прокси, включая ошибки вне конверта Директа."""
+    host = settings.host_v4 if isinstance(protocol, V4) else settings.host
+    try:
+        payload = protocol.parse(raw, status, where)
+    except TransportFailure:
+        if status < 400:
+            raise
+        payload = raw
+
+    declared = None
+    if isinstance(payload, dict):
+        # Прокси использует конверт v5 и для отказа на адрес четвёртой версии.
+        declared = V5().error_of(payload, request_id, where, proxy_host=host)
+        if declared is None and isinstance(protocol, V4):
+            declared = protocol.error_of(payload, request_id, where, proxy_host=host)
+    if status == 404:
+        detail = ("не поддерживает четвёртую версию API"
+                  if isinstance(protocol, V4) else "не поддерживает этот адрес")
+        return payload, TransportFailure(
+            f"Прокси {host}: {detail}." + (f"\n{declared}" if declared else ""),
+            retryable=False, status=status,
+        )
+    if status == 401 and declared is None:
+        return payload, TransportFailure(
+            f"Прокси {host} отверг ключ из YANDEX_DIRECT_TOKEN. "
+            "Выпустите новый ключ у прокси и обновите config/.env.",
+            retryable=False, status=status,
+        )
+    if declared is not None:
+        if isinstance(protocol, Reports):
+            # Повторы отчётов выполняет one_page, включая очередь и лимит
+            # времени ожидания; он обрабатывает ошибки по HTTP-статусу.
+            return payload, TransportFailure(
+                str(declared), retryable=status not in (401, 502), status=status,
+            )
+        declared.retryable = status != 401
+        return payload, declared
+    return payload, protocol.failure(payload, status, request_id, where, raw)
 
 
 def protocols() -> dict:

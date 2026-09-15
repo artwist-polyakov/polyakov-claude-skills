@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 import money
 from cache import signature
 from config import SKILL_DIR, DirectFailure, excerpt
+from direct import header, retry_after
 from errors import TransportFailure
 
 # Показатели, для которых нужны выбранные пользователем цели.
@@ -786,9 +787,16 @@ def one_page(client, params: dict, *, account, report_type: str,
     started = clock()
     fallen_back = False
     broken = 0
+    is_proxy = getattr(getattr(client, "settings", None), "is_proxy", False)
+    last_failure = None
 
     def overrun(status) -> None:
         """Отказ по пределу ожидания — один на все паузы цикла."""
+        if is_proxy and last_failure is not None:
+            raise DirectFailure(
+                f"Не удалось получить отчёт «{params.get('ReportName')}» за {wait} с. "
+                f"Время повторных попыток истекло (последний код {status}).\n{last_failure}"
+            )
         raise DirectFailure(
             f"Отчёт «{params.get('ReportName')}» не сформировался за "
             f"{wait} с (последний код {status}). Он остался в очереди "
@@ -818,6 +826,7 @@ def one_page(client, params: dict, *, account, report_type: str,
                 retry=False,
             )
         except TransportFailure as failure:
+            last_failure = failure
             if failure.status == 502 and not fallen_back:
                 pass
             elif failure.status == 500 and broken >= 1:
@@ -825,7 +834,7 @@ def one_page(client, params: dict, *, account, report_type: str,
                     f"Директ дважды не смог сформировать отчёт "
                     f"«{params.get('ReportName')}» (HTTP 500). Справочник на "
                     f"этот случай отправляет в поддержку, а не в третий "
-                    f"повтор: {excerpt(str(failure), 200)}",
+                    f"повтор: {str(failure) if is_proxy else excerpt(str(failure), 200)}",
                     retryable=False, status=500,
                 ) from None
             elif failure.status == 500 and broken < 1:
@@ -836,10 +845,15 @@ def one_page(client, params: dict, *, account, report_type: str,
                 sleep(POLL_DEFAULT)
                 continue
             elif failure.retryable and clock() - started < wait:
+                pause = POLL_DEFAULT
+                if is_proxy and failure.status == 429:
+                    requested = retry_after(header(failure.headers, "retryIn"))
+                    if requested is not None:
+                        pause = requested
                 if warn is not None:
                     warn(f"Отчёт не дошёл ({excerpt(str(failure), 120)}) — "
-                         f"повтор через {POLL_DEFAULT} с.")
-                linger(POLL_DEFAULT, failure.status)
+                         f"повтор через {pause:g} с.")
+                linger(pause, failure.status)
                 budgeted = failure.status
                 continue
             else:
@@ -850,6 +864,7 @@ def one_page(client, params: dict, *, account, report_type: str,
                 warn("Директ не уложился в ограничение на время обработки — "
                      "тот же отчёт заказан в режиме offline.")
             continue
+        last_failure = None
         if answer.ready:
             return answer.text
         waited = clock() - started

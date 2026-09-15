@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import math
 import random
 import sys
 import time
@@ -128,7 +129,8 @@ class Transport:
                 raise TransportFailure(
                     f"Директ ответил перенаправлением (HTTP {status}). Скилл "
                     f"им не следует: вместе с адресом ушёл бы и токен. "
-                    f"Проверьте, не подменяет ли ответы промежуточный прокси.",
+                    f"Проверьте базовый адрес API и хвостовой слэш: "
+                    f"прокси должен принимать адрес без перенаправления.",
                     retryable=False, status=status, headers=exc.headers,
                 ) from None
             try:
@@ -159,6 +161,15 @@ class Transport:
             ) from None
 
 
+def retry_after(value):
+    """Пауза из retryIn в секундах; None, если заголовок некорректен."""
+    try:
+        seconds = float(value)
+    except (ValueError, TypeError, OverflowError):
+        return None
+    return seconds if math.isfinite(seconds) and seconds >= 0 else None
+
+
 class Retries:
     """Сколько раз повторять и сколько ждать между попытками."""
 
@@ -172,7 +183,11 @@ class Retries:
     def last(self, attempt: int) -> bool:
         return attempt >= self.attempts
 
-    def wait(self, attempt: int) -> None:
+    def wait(self, attempt: int, retry_in=None) -> None:
+        seconds = retry_after(retry_in)
+        if seconds is not None:
+            self._sleep(seconds)
+            return
         delay = self.backoff * (2 ** (attempt - 1))
         # Дрожание разводит одновременные повторы: пять параллельных запросов,
         # получивших код 506, без него повторятся ровно вместе и получат его же.
@@ -1151,6 +1166,8 @@ class Client:
         where = f"{key}.{method}" if key else method
         if retry is None:
             retry = protocol.safe(method)
+        if self.settings.is_proxy:
+            retry = retry and protocol.safe(method)
         started = time.monotonic()
         last_failure = None
         for attempt in range(1, self.retries.attempts + 1):
@@ -1188,8 +1205,21 @@ class Client:
                 # Разбор тела стоит внутри try не для красоты: он тоже бросает
                 # TransportFailure — на HTML от шлюза вместо JSON, — и снаружи
                 # эта ошибка обходила и повторы, и запись в журнал.
-                payload = protocol.parse(raw, status, where)
+                request_id = excerpt(header(received, "RequestId") or "", 64)
+                if self.settings.is_proxy:
+                    payload, failure = protocols.proxy_response(
+                        self.settings, protocol, raw, status, request_id, where,
+                    )
+                    if failure is not None:
+                        failure.retryable = failure.retryable and protocol.safe(method)
+                        if isinstance(failure, TransportFailure):
+                            failure.headers = received
+                else:
+                    payload = protocol.parse(raw, status, where)
+                    failure = protocol.failure(payload, status, request_id, where, raw)
             except TransportFailure as failure:
+                if self.settings.is_proxy:
+                    failure.retryable = failure.retryable and protocol.safe(method)
                 last_failure = failure
                 if units is None and protocol.counts_units and failure.headers is not None:
                     # Ответ мог прийти и не прочитаться: тело не в UTF-8,
@@ -1210,11 +1240,12 @@ class Client:
                     "error": {"kind": failure.kind, "message": str(failure)},
                 })
                 if retry and failure.retryable and not final:
-                    self.retries.wait(attempt)
+                    if self.settings.is_proxy and failure.status == 429:
+                        self.retries.wait(attempt, header(failure.headers, "retryIn"))
+                    else:
+                        self.retries.wait(attempt)
                     continue
                 raise
-            request_id = excerpt(header(received, "RequestId") or "", 64)
-            failure = protocol.failure(payload, status, request_id, where, raw)
             response = Response(
                 payload=payload, headers=received, status=status, service=key,
                 method=method, version=protocol.version, units=units,
@@ -1235,7 +1266,10 @@ class Client:
             })
             if failure is not None and retry and failure.retryable and not final:
                 last_failure = failure
-                self.retries.wait(attempt)
+                if self.settings.is_proxy and status == 429:
+                    self.retries.wait(attempt, header(received, "retryIn"))
+                else:
+                    self.retries.wait(attempt)
                 continue
             if failure is not None and raise_on_error:
                 raise failure

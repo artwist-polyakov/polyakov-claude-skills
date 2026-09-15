@@ -142,7 +142,7 @@ def source_ad(args):
         client = Client.from_env(profile=args.env, warn=warn)
         accounts = Accounts.load(client, warn=warn)
         login = resolve_account(accounts, client, args.account)
-        cache = cache_module.Cache.from_args(args, account=login, warn=warn)
+        cache = cache_module.Cache.from_args(args, account=login, warn=warn, settings=client.settings)
         entry = ads_command.read_ads(cache, client, accounts, login,
                                      objects.ads_params(ad_ids=[args.ad]))
         found = [one for one in entry.data if one.get("Id") == args.ad]

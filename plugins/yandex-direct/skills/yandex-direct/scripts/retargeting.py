@@ -164,7 +164,7 @@ def run(args):
     accounts = Accounts.load(client, warn=warn)
     account = resolve_account(accounts, client, args.account)
     if operation is None:
-        cache = Cache.from_args(args, account)
+        cache = Cache.from_args(args, account, settings=client.settings)
         profile = client.settings.profile
         if args.action == "sources":
             entry = cache.through(f"retargeting-sources-{profile}", "structure",

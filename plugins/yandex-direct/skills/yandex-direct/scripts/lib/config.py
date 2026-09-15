@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import re
+import sys
 import unicodedata
 from pathlib import Path
+from urllib.parse import urlsplit
 
 SKILL_DIR = Path(__file__).resolve().parent.parent.parent
 ENV_FILE = SKILL_DIR / "config" / ".env"
@@ -20,6 +24,15 @@ API_VERSION = "v501"
 # домены разные, и оба отвечают (расхождение D-08 в API_MAP.md). Адрес взят
 # документированный.
 API_HOST_V4 = "api.direct.yandex.ru"
+
+DEFAULT_API_BASE_URL = f"https://{API_HOST}"
+DEFAULT_API_BASE_URL_V4 = f"https://{API_HOST_V4}"
+
+EXTRA_HEADERS_VAR = "YANDEX_DIRECT_API_EXTRA_HEADERS"
+PROTOCOL_HEADERS = frozenset({
+    "authorization", "content-type", "host", "client-login", "accept-language",
+    "use-operator-units",
+})
 
 PROFILES = {
     "production": ("продакшн", ""),
@@ -233,12 +246,91 @@ def header_safe(value: str, what: str, show: bool = True) -> str:
     return value
 
 
+def api_base_url(value: str, name: str, allow_http: bool) -> tuple:
+    """Проверить базовый адрес, сохранив путь и убрав хвостовые слэши."""
+    if any(character.isspace() or unicodedata.category(character) in ("Cc", "Cf", "Cs")
+           for character in value):
+        raise DirectFailure(f"{name}: базовый адрес содержит пробел или управляющий символ.")
+    if "?" in value or "#" in value:
+        raise DirectFailure(f"{name}: базовый адрес не должен содержать query или fragment (? и #).")
+    try:
+        parsed = urlsplit(value)
+        host = parsed.hostname
+        # Обращение к port проверяет также число и диапазон порта.
+        port = parsed.port
+        if not host or parsed.username is not None or parsed.password is not None:
+            raise ValueError
+        authority = f"[{host}]" if ":" in host else host
+        if not re.fullmatch(re.escape(authority) + r"(?::[0-9]+)?", parsed.netloc.lower()):
+            raise ValueError
+        if "%" in host:
+            raise ValueError
+        domain = host[:-1] if host.endswith(".") else host
+        if ":" in host or re.fullmatch(r"[0-9.]+", domain):
+            ipaddress.ip_address(host)
+        elif len(domain) > 253 or not all(
+            re.fullmatch(r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?", label)
+            for label in domain.split(".")
+        ):
+            raise ValueError
+    except ValueError:
+        raise DirectFailure(
+            f"{name}: нужен полный адрес с допустимым хостом и портом, без логина и пароля в URL."
+        ) from None
+    if parsed.scheme != "https" and not (
+        parsed.scheme == "http" and allow_http and host in ("localhost", "127.0.0.1")
+    ):
+        raise DirectFailure(
+            f"{name}: используйте https://. HTTP разрешён только для localhost или "
+            f"127.0.0.1 при YANDEX_DIRECT_ALLOW_INSECURE_HTTP=1."
+        )
+    return value.rstrip("/"), host
+
+
+def extra_headers(value: str) -> dict:
+    """Дополнительные заголовки в формате «Имя: значение; Имя2: значение2»."""
+    headers = {}
+    names = set()
+    for entry in value.split(";"):
+        if not entry.strip():
+            continue
+        name, separator, content = entry.partition(":")
+        name, content = name.strip(), content.strip()
+        if not separator or not name or not content:
+            raise DirectFailure(f"{EXTRA_HEADERS_VAR}: ожидается «Имя: значение; Имя2: значение2».")
+        header_safe(name, f"Имя заголовка в {EXTRA_HEADERS_VAR}", show=False)
+        header_safe(content, f"Значение заголовка в {EXTRA_HEADERS_VAR}", show=False)
+        if not re.fullmatch(r"[!#$%&'*+.^_`|~0-9a-zA-Z-]+", name):
+            raise DirectFailure(f"{EXTRA_HEADERS_VAR}: недопустимое имя заголовка.")
+        if name.lower() in PROTOCOL_HEADERS:
+            raise DirectFailure(
+                f"{EXTRA_HEADERS_VAR}: заголовком {name} управляет протокол, переопределять его нельзя."
+            )
+        if name.lower() in names:
+            raise DirectFailure(f"{EXTRA_HEADERS_VAR}: заголовок {name} указан несколько раз.")
+        names.add(name.lower())
+        headers[name] = content
+    return headers
+
+
+def remember_setting_secret(name: str, value: str) -> None:
+    """Собрать секреты до проверок, включая значения повторных присваиваний."""
+    if "TOKEN" in name.upper():
+        keep_secret(value)
+    if name == EXTRA_HEADERS_VAR:
+        for entry in value.split(";"):
+            _, separator, content = entry.partition(":")
+            if separator:
+                keep_secret(content.strip())
+
+
 class Settings:
     """Разобранная конфигурация одного контура."""
 
     __slots__ = (
         "profile", "host", "version", "host_v4", "token", "token_var",
         "token_borrowed", "account", "locale", "operator_units",
+        "base_url", "base_url_v4", "is_proxy", "extra_headers",
     )
 
     def __init__(self, **values):
@@ -275,6 +367,11 @@ def no_token_message(profile: str, suffix: str) -> str:
 def resolve_settings(profile=None, account=None, from_file=None, environ=None) -> Settings:
     """Настройки контура из окружения и файла."""
     from_file = from_file or {}
+    environ = os.environ if environ is None else environ
+    for source in (from_file, environ):
+        for name, value in source.items():
+            if name.startswith("YANDEX_"):
+                remember_setting_secret(name, value or "")
     profile = profile or env_value("YANDEX_DIRECT_ENV", from_file, environ) or "production"
     if profile not in PROFILES:
         raise DirectFailure(
@@ -312,11 +409,33 @@ def resolve_settings(profile=None, account=None, from_file=None, environ=None) -
         )
 
     default_account = env_value("YANDEX_DIRECT_ACCOUNT" + suffix, from_file, environ)
+    allow_http = env_value("YANDEX_DIRECT_ALLOW_INSECURE_HTTP", from_file, environ) == "1"
+    base_url, host = api_base_url(
+        env_value("YANDEX_DIRECT_API_BASE_URL", from_file, environ) or DEFAULT_API_BASE_URL,
+        "YANDEX_DIRECT_API_BASE_URL", allow_http,
+    )
+    is_proxy = base_url != DEFAULT_API_BASE_URL
+    base_url_v4, host_v4 = api_base_url(
+        env_value("YANDEX_DIRECT_API_BASE_URL_V4", from_file, environ)
+        or (base_url if is_proxy else DEFAULT_API_BASE_URL_V4),
+        "YANDEX_DIRECT_API_BASE_URL_V4", allow_http,
+    )
+    headers = extra_headers(env_value(EXTRA_HEADERS_VAR, from_file, environ))
+    if headers and not is_proxy:
+        print(
+            f"Предупреждение: {EXTRA_HEADERS_VAR} действует только при подключении через прокси; "
+            "в прямом режиме дополнительные заголовки не отправляются.", file=sys.stderr,
+        )
+        headers = {}
     return Settings(
         profile=profile,
-        host=API_HOST,
+        host=host,
         version=API_VERSION,
-        host_v4=API_HOST_V4,
+        host_v4=host_v4,
+        base_url=base_url,
+        base_url_v4=base_url_v4,
+        is_proxy=is_proxy,
+        extra_headers=headers,
         token=token,
         token_var=token_var,
         token_borrowed=borrowed,
@@ -342,14 +461,10 @@ def preload_secrets(env_file=None, environ=None) -> None:
     секретом быть не перестаёт."""
     path = Path(env_file) if env_file else ENV_FILE
 
-    def remember(name: str, value: str) -> None:
-        if "TOKEN" in name.upper():
-            keep_secret(value)
-
-    load_env_file(path, strict=False, on_value=remember)
+    load_env_file(path, strict=False, on_value=remember_setting_secret)
     for name, value in (environ if environ is not None else os.environ).items():
         if name.startswith("YANDEX_"):
-            remember(name, value)
+            remember_setting_secret(name, value)
 
 
 def settings_from_env(profile=None, account=None, env_file=None, environ=None) -> Settings:

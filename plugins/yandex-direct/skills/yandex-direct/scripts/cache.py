@@ -53,14 +53,16 @@ class RedactingParser(argparse.ArgumentParser):
 def rows_of(entries: list) -> list:
     """Перечень записей в виде строк таблицы."""
     folder_width = max(len(entry["folder"] or "—") for entry in entries)
-    name_width = max(len(entry["name"]) for entry in entries)
+    names = [f"{entry['connection']} / {entry['name']}"
+             if entry["connection"] else entry["name"] for entry in entries]
+    name_width = max(map(len, names))
     lines = []
-    for entry in entries:
+    for entry, name in zip(entries, names):
         count = "—" if entry["count"] is None else str(entry["count"])
         age = "?" if entry["age"] is None else human_age(entry["age"])
         lines.append(
             f"  {(entry['folder'] or '—'):<{folder_width}}  "
-            f"{entry['name']:<{name_width}}  "
+            f"{name:<{name_width}}  "
             f"{entry['layer']:<12}  {age:<16}  "
             f"{human_size(entry['size']):>9}  {count:>7}"
         )
@@ -80,11 +82,12 @@ def machine(value) -> None:
 
 
 def show(cache: Cache, as_json: bool) -> int:
-    entries = cache.entries()
+    entries = cache.entries(all_connections=True)
     if as_json:
         machine([
             {
                 "account": entry["folder"],
+                "connection": entry["connection"],
                 "name": entry["name"],
                 "layer": entry["layer"],
                 "age_seconds": None if entry["age"] is None else round(entry["age"]),
@@ -114,7 +117,7 @@ def show(cache: Cache, as_json: bool) -> int:
 
 
 def clear(cache: Cache, whole: bool, as_json: bool) -> int:
-    removed = cache.forget(everything=whole)
+    removed = cache.forget(everything=whole, all_connections=True)
     where = "весь кэш" if whole else f"кабинет {cache.account}"
     if as_json:
         machine({"cleared": "all" if whole else cache.account,
@@ -132,7 +135,7 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--account",
         metavar="ЛОГИН",
-        help="логин кабинета; без него показываются все кабинеты",
+        help="логин кабинета во всех подключениях; без него показываются все кабинеты",
     )
     parser.add_argument(
         "--clear", action="store_true",

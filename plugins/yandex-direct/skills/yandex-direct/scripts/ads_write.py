@@ -670,7 +670,7 @@ def _read_sitelinks(client, account, accounts, sets, seen) -> None:
     """Адреса быстрых ссылок: у товарного и каталожного объявления они
     единственные адреса, по которым уходит трафик."""
     related = read_related(client, accounts, account, sitelink_ids=sets,
-                           cache=cache_module.Cache(account, reuse=False))
+                           cache=cache_module.Cache(account, reuse=False, settings=client.settings))
     seen.unread.extend(notes_of(related))
     for item in related["SitelinksSets"]:
         owners = tuple(sorted(one for one in sets[item["Id"]] if one is not None))

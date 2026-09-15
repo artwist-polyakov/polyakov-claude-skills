@@ -119,7 +119,7 @@ def require_complete(related):
 def read_selected(client, accounts, account, kind, identifiers, limits, *, reuse=False):
     selection = {"sitelink_ids" if kind == "sitelinks" else "extension_ids": identifiers}
     return read_related(client, accounts, account, limits=limits,
-                        cache=Cache(account, reuse=reuse), **selection)
+                        cache=Cache(account, reuse=reuse, settings=client.settings), **selection)
 
 
 def read_active_callouts(client, accounts, account, limits, identifiers=None):
@@ -287,7 +287,7 @@ def run(args):
         if callout_ids is not UNSET:
             selection["extension_ids"].extend(callout_ids)
         related = require_complete(read_related(client, accounts, account, limits=limits,
-                                                cache=Cache(account, reuse=False), **selection))
+                                                cache=Cache(account, reuse=False, settings=client.settings), **selection))
         plan = binding_plan(records, related, sitelink_set, callout_ids)
         notes = [json.dumps(one, ensure_ascii=False) for one in plan]
         notes.append("Меняются только выбранные объявления. Старые наборы и уточнения остаются в библиотеке. Возможна повторная модерация.")

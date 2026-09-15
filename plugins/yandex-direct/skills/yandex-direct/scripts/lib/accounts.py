@@ -457,7 +457,8 @@ class Accounts:
         self.warn = warn or (lambda text: None)
         # Свой кэш собирается с тем же предупреждением: жалоба слоя на
         # непрочитанную запись адресована тому же, кто читает остальные.
-        self.cache = cache if cache is not None else Cache(warn=self.warn)
+        self.cache = cache if cache is not None else Cache(
+            warn=self.warn, settings=getattr(client, "settings", None))
         # Здесь помнится только **неудача** вопроса об остатке: сам остаток
         # ведут заголовки ответов, и замораживать его нельзя. Платный вопрос
         # задаётся один раз на кабинет — повторять его на каждое решение
@@ -476,7 +477,7 @@ class Accounts:
         а их обновление списка не отменяет. Поэтому запись читается всегда, а
         `refresh` решает только, годится ли прочитанный список в ответ."""
         note = warn or (lambda text: None)
-        store = cache if cache is not None else Cache(warn=note)
+        store = cache if cache is not None else Cache(warn=note, settings=client.settings)
         if not store.reuse:
             # `--no-cache` этому модулю передаётся аргументом `refresh`, а не
             # кэшем, который не читает сохранённого. Разница не в словах: в

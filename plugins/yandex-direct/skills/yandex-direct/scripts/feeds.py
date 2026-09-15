@@ -211,7 +211,7 @@ def run(args):
     account = resolve_account(accounts, client, args.account)
     if args.action in ("list", "get"):
         identifiers = sorted(set(args.ids)) if args.ids is not None else None
-        entry = Cache.from_args(args, account).through(
+        entry = Cache.from_args(args, account, settings=client.settings).through(
             f"feeds-{client.settings.profile}-{signature(identifiers)}", "structure",
             lambda: list(read_feeds(client, account, accounts, identifiers).values()))
         missing = set(identifiers or []) - {one["Id"] for one in entry.data}

@@ -1261,7 +1261,8 @@ class Writer:
             )
         # Кэш нужен ровно для отзыва после записи. Читает конвейер клиентом —
         # то есть мимо кэша всегда, а не по настройке.
-        self.cache = cache if cache is not None else cache_module.Cache(self.account)
+        self.cache = cache if cache is not None else cache_module.Cache(
+            self.account, settings=getattr(client, "settings", None))
         self.journal = journal if journal is not None else AuditLog(self.account)
         self.apply = apply
         self.show = show
@@ -1274,7 +1275,8 @@ class Writer:
         """Дополнить limits.json свежим справочником Constants, общим для кабинетов.
         При недоступности справочника использовать файл с явным сообщением."""
         limits = Limits.load()
-        store = cache_module.Cache(root=self.cache.root, warn=self.warn)
+        store = cache_module.Cache(root=self.cache.root, warn=self.warn,
+                                   settings=getattr(self.client, "settings", None))
         try:
             return constants_module.Constants.load(
                 self.client, cache=store).apply(limits)

@@ -1254,7 +1254,7 @@ def sweep(client, accounts: Accounts, args) -> dict:
     rows, failures, records = [], [], []
     for cabinet in living:
         try:
-            entry = read_slice(Cache.from_args(args, account=cabinet.login, warn=warn),
+            entry = read_slice(Cache.from_args(args, account=cabinet.login, warn=warn, settings=client.settings),
                                client, accounts, cabinet.login)
         except DirectFailure as failure:
             # Один недоступный кабинет не отменяет свод: у агентства их сотни,
@@ -1286,7 +1286,7 @@ def store_sweep(accounts: Accounts, result: dict):
                      for login, reason in result["failures"]],
         "campaigns": result["campaigns"],
     }
-    return Cache(warn=warn).write(
+    return accounts.cache.write(
         f"campaigns-sweep-{accounts.profile}", "structure", payload,
         index=lambda body: tsv(body["campaigns"], ["account"] + COLUMNS),
     )
@@ -1434,7 +1434,7 @@ def main(argv=None) -> int:
             return 1 if not result["cabinets"] else 0
 
         login = resolve_account(accounts, client, args.account)
-        cache = Cache.from_args(args, account=login, warn=warn)
+        cache = Cache.from_args(args, account=login, warn=warn, settings=client.settings)
         entry = read_slice(cache, client, accounts, login)
         found = chosen(entry.data, args)
         balance = None

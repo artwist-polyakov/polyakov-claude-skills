@@ -14,15 +14,20 @@ import sys
 import time
 import unicodedata
 from pathlib import Path
+from urllib.parse import urlsplit
 
 try:
     import fcntl
 except ImportError:  # не POSIX: замок недоступен, см. `_exclusive`
     fcntl = None
 
-from config import SKILL_DIR, DirectFailure, excerpt, redact, short
+from config import (
+    DEFAULT_API_BASE_URL, DEFAULT_API_BASE_URL_V4, SKILL_DIR,
+    DirectFailure, excerpt, redact, short,
+)
 
 CACHE_DIR = SKILL_DIR / "cache"
+CONNECTIONS_DIR = ".endpoints"
 
 # Файл, которым каталог кэша держится в git. Очистка его не трогает: без него
 # `skills/yandex-direct/cache/` исчезает из чистого клона, и рабочее дерево
@@ -230,6 +235,7 @@ class Cache:
         account: str = "",
         *,
         root=None,
+        settings=None,
         reuse: bool = True,
         store: bool = True,
         warn=None,
@@ -240,6 +246,22 @@ class Cache:
         # умолчанию, вычисленное при импорте, невозможно подменить, и проверка
         # очистки шла бы по настоящему каталогу кэша.
         self.root = Path(root) if root is not None else CACHE_DIR
+        self.connection_root = self.root
+        base = getattr(settings, "base_url", DEFAULT_API_BASE_URL)
+        base_v4 = getattr(settings, "base_url_v4", DEFAULT_API_BASE_URL_V4)
+        if (base, base_v4) != (DEFAULT_API_BASE_URL, DEFAULT_API_BASE_URL_V4):
+            # Путь тоже входит в ключ: один хост может обслуживать несколько
+            # подключений. Заголовки могут выбирать аккаунт внутри прокси.
+            # Их значения и полный адрес в имя файла не попадают.
+            headers = sorted((name.lower(), value) for name, value in
+                             getattr(settings, "extra_headers", {}).items())
+            identity = json.dumps([base, base_v4, headers], ensure_ascii=False)
+            mark = hashlib.sha256(identity.encode()).hexdigest()[:16]
+            host = urlsplit(base).hostname or "api"
+            host = re.sub(r"[^A-Za-z0-9._-]", "_", host)
+            self.connection_root = self.root / CONNECTIONS_DIR / f"{host}-{mark}"
+        # Замок очистки остаётся в общем root: --all удаляет все подключения
+        # и должен дождаться записи в любом из них.
         self.reuse = reuse
         self.store = store
         self.warn = warn or warn_to_stderr
@@ -276,7 +298,19 @@ class Cache:
 
     @property
     def directory(self) -> Path:
-        return self.root / self.folder if self.folder else self.root
+        return self.connection_root / self.folder if self.folder else self.connection_root
+
+    def _directories(self, all_connections: bool):
+        yield self.directory
+        if all_connections and self.folder and self.connection_root == self.root:
+            # Команда управления кэшем работает без токена и конфигурации:
+            # указанный кабинет выбирается во всех сохранённых подключениях.
+            connections = self.root / CONNECTIONS_DIR
+            if connections.is_symlink():
+                return
+            for connection in sorted(connections.glob("*")):
+                if connection.is_dir() and not connection.is_symlink():
+                    yield connection / self.folder
 
     def path(self, name: str, suffix: str = ".json") -> Path:
         """Путь записи. Имя может содержать `/`: `reports/<подпись>`."""
@@ -647,13 +681,15 @@ class Cache:
 
     # -- очистка ------------------------------------------------------------
 
-    def forget(self, name=None, *, everything: bool = False) -> int:
+    def forget(self, name=None, *, everything: bool = False,
+               all_connections: bool = False) -> int:
         """Объявить сохранённое недействительным. Возвращает число удалённых файлов.
 
         У кэша без кабинета такая область — весь кэш вместе со всеми
         кабинетами, поэтому она требует `everything=True`. Кэш без кабинета
         заводится не ради очистки, а ради общих записей вроде перечня
-        кабинетов, и промах в имени не должен стоить содержимого соседей."""
+        кабинетов, и промах в имени не должен стоить содержимого соседей.
+        `all_connections` расширяет очистку кабинета на все подключения."""
         if name is not None:
             removed = 0
             # Под теми же замками, что и запись: снятие трёх файлов вперемешку
@@ -682,14 +718,17 @@ class Cache:
         # очистка ждёт, пока они закончат, и начинается на пустом месте.
         wipe_lock = self.root / WIPE_LOCK
         with _exclusive(wipe_lock, warn=self.warn):
-            removed = _wipe(self.directory, self.root)
+            directories = list(self._directories(all_connections))
+            removed = sum(_wipe(directory, self.root) for directory in directories)
             # Метки отзыва лежали в файлах замков и ушли вместе с ними, а
             # выгрузка, начатая до очистки, вернётся и положит в кэш данные
             # «до». Поэтому очистка отмечается здесь — в файле, который её
             # переживает. Одной метки на весь кэш хватает: очистка касается
             # всех записей сразу, и различать их незачем.
             _restamp(wipe_lock)
-            if self.folder and self.directory.is_dir():
+            for directory in directories:
+                if not self.folder or not directory.is_dir():
+                    continue
                 # Каталог кабинета удаляется вместе с содержимым: пустой
                 # каталог в перечне выглядит как кабинет, у которого кэш есть,
                 # но пуст. Корень кэша так не удаляется — его держит в git
@@ -700,19 +739,20 @@ class Cache:
                 # удаление сносит его между `mkdir` и первым файлом — и запись
                 # падает на пропавшем родителе.
                 try:
-                    self.directory.rmdir()
+                    directory.rmdir()
                 except OSError:
                     pass
         return removed
 
-    def entries(self) -> list:
+    def entries(self, *, all_connections: bool = False) -> list:
         """Что лежит в кэше: по записям метаданных, без чтения самих данных.
 
         У кэша без кабинета обходится весь корень — это перечень по всем
         кабинетам сразу, каким его показывает `scripts/cache.py`."""
         found = [
             _describe(path, self.root, self.clock())
-            for path in self.directory.rglob("*" + META_SUFFIX)
+            for directory in self._directories(all_connections)
+            for path in directory.rglob("*" + META_SUFFIX)
             # Подменённые ссылкой метаданные не разворачиваются: перечень
             # показал бы поля чужого кабинета как свои. Чтение это уже
             # различает, а перечень ходит своим путём, мимо `path`.
@@ -1203,6 +1243,10 @@ def _describe(meta_path: Path, root: Path, now: float) -> dict:
     if not isinstance(meta, dict):
         meta = {}
     relative = meta_path.relative_to(root)
+    connection = ""
+    if len(relative.parts) > 2 and relative.parts[0] == CONNECTIONS_DIR:
+        connection = relative.parts[1]
+        relative = Path(*relative.parts[2:])
     folder = relative.parts[0] if len(relative.parts) > 1 else ""
     if folder.startswith("."):
         # Каталог общих записей кабинетом не является и выбран быть не может:
@@ -1222,6 +1266,7 @@ def _describe(meta_path: Path, root: Path, now: float) -> dict:
         # принимает, а `print` на нём падает — и перечень, заведённый ради
         # показа испорченных записей, отказывал бы именно на них.
         "folder": _printable(folder),
+        "connection": _printable(connection),
         "name": _printable(meta.get("name") or data_path.stem),
         "layer": _printable(meta.get("layer") or "?"),
         "age": None if epoch is None else max(0.0, now - epoch),

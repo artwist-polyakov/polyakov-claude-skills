@@ -82,7 +82,8 @@ def read_related(client, accounts, login, *, sitelink_ids=(), extension_ids=(),
     if limits is None:
         from writer import Limits
         limits = Limits.load()
-    cache = cache if cache is not None else Cache(login)
+    cache = cache if cache is not None else Cache(
+        login, settings=getattr(client, "settings", None))
     for collection, service in (
         ("SitelinksSets", "sitelinks"), ("AdExtensions", "adextensions"),
     ):

@@ -335,7 +335,7 @@ def main(argv=None) -> int:
         client = Client.from_env(profile=args.env, warn=warn)
         accounts = Accounts.load(client, warn=warn)
         login = resolve_account(accounts, client, args.account)
-        cache = Cache.from_args(args, account=login, warn=warn)
+        cache = Cache.from_args(args, account=login, warn=warn, settings=client.settings)
 
         campaign = None
         if args.campaign:
@@ -350,7 +350,7 @@ def main(argv=None) -> int:
         found = chosen(entry.data, args)
         # Справочник регионов кабинету не принадлежит, поэтому и запись его
         # кэша — общая, в корне.
-        names = region_names(client, found, Cache.from_args(args, warn=warn))
+        names = region_names(client, found, Cache.from_args(args, warn=warn, settings=client.settings))
 
         if args.csv:
             campaign_command.dump_csv(

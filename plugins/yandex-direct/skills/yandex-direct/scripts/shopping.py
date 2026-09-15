@@ -347,7 +347,7 @@ def run(args):
     if args.action == "get":
         params = objects.ads_params(ad_ids=args.ad, group_ids=[args.group] if args.group else None,
                                     campaign_ids=[args.campaign] if args.campaign else None)
-        entry = ads_command.read_ads(Cache.from_args(args, account), client, accounts, account, params)
+        entry = ads_command.read_ads(Cache.from_args(args, account, settings=client.settings), client, accounts, account, params)
         found = index_records(entry.data, "ads", args.ad)
         for identifier in args.ad or []:
             if identifier not in found:

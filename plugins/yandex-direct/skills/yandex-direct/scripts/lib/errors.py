@@ -316,17 +316,29 @@ class ApiFailure(DirectFailure):
         where: str = "",
         version: str = "v5",
         raw=None,
+        proxy_host: str = "",
     ):
         self.code = code if isinstance(code, int) and not isinstance(code, bool) else None
         self.request_id = excerpt(request_id, 64)
         self.where = where
         self.version = version
         self.raw = raw
-        self.kind = classify(self.code, version)
-        self.retryable = is_retryable(self.code, version)
+        self.proxy_host = proxy_host
+        self.kind = UNKNOWN if proxy_host else classify(self.code, version)
+        self.retryable = True if proxy_host else is_retryable(self.code, version)
         super().__init__(self._compose(code, message, detail))
 
     def _compose(self, code, message: str, detail: str) -> str:
+        if self.proxy_host:
+            # Коды прокси не входят в таблицу Директа. Его пояснение может
+            # содержать инструкцию целиком; не обрезаем и не заменяем её.
+            lines = [f"{self.where}: Ответ прокси {self.proxy_host}."]
+            lines.extend(str(part) for part in (message, detail) if part)
+            if not message and not detail:
+                lines.append(json.dumps(self.raw, ensure_ascii=False))
+            if self.request_id:
+                lines.append(f"Идентификатор запроса: {self.request_id}")
+            return "\n".join(lines)
         shown_code = self.code if self.code is not None else excerpt(code or "без кода", 32)
         where = f"{self.where}: " if self.where else ""
         version = "" if self.version == "v5" else f" ({self.version})"

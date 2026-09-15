@@ -30,6 +30,7 @@ from config import (  # noqa: E402  — путь импорта задаётся
     redact,
     settings_from_env,
 )
+from protocol import V5, proxy_response
 
 TIMEOUT = 30
 
@@ -90,7 +91,7 @@ def call(settings: Settings, service: str, params: dict, client_login: str = "")
 
     Повторов здесь нет намеренно: проверка связи существует, чтобы показать
     проблему, а не пережить её."""
-    url = f"https://{settings.host}/json/{settings.version}/{service}/"
+    url = f"{settings.base_url}/json/{settings.version}/{service}/"
     body = json.dumps({"method": "get", "params": params}).encode("utf-8")
     headers = {
         "Authorization": f"Bearer {settings.token}",
@@ -104,6 +105,8 @@ def call(settings: Settings, service: str, params: dict, client_login: str = "")
         # поэтому здесь auto равен never.
         if settings.operator_units == "always":
             headers["Use-Operator-Units"] = "true"
+    if settings.is_proxy:
+        headers.update(settings.extra_headers)
 
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
@@ -145,20 +148,32 @@ def call(settings: Settings, service: str, params: dict, client_login: str = "")
         raise DirectFailure(
             f"{settings.host} ответил перенаправлением (HTTP {status}). "
             f"Скилл им не следует: вместе с адресом ушёл бы и токен. "
-            f"Проверьте, не подменяет ли ответы промежуточный прокси."
+            f"Проверьте базовый адрес API и хвостовой слэш: "
+            f"прокси должен принимать адрес без перенаправления."
         )
 
-    try:
-        payload = json.loads(raw)
-    except (ValueError, RecursionError):
-        # ValueError, а не JSONDecodeError: синтаксически верный JSON тоже
-        # разбирается не всегда — целое длиннее 4300 цифр Python отвергает
-        # отдельной ошибкой. RecursionError даёт глубокая вложенность, и он
-        # вовсе не потомок ValueError. Оба до правки выходили трассировкой.
-        raise DirectFailure(
-            f"{settings.host} ответил телом, которое не разбирается как JSON "
-            f"(HTTP {status}): {excerpt(raw) or 'пустое тело'}"
-        ) from None
+    if settings.is_proxy:
+        payload, failure = proxy_response(
+            settings, V5(), raw, status, received.get("RequestId") or "", f"{service}.get",
+        )
+        # Код 54 у AgencyClients проверяется существующей логикой collect.
+        if failure is not None and not (
+            service == "agencyclients" and getattr(failure, "code", None) == ERROR_NO_RIGHTS
+        ):
+            raise failure
+
+    else:
+        try:
+            payload = json.loads(raw)
+        except (ValueError, RecursionError):
+            # ValueError, а не JSONDecodeError: синтаксически верный JSON тоже
+            # разбирается не всегда — целое длиннее 4300 цифр Python отвергает
+            # отдельной ошибкой. RecursionError даёт глубокая вложенность, и он
+            # вовсе не потомок ValueError. Оба до правки выходили трассировкой.
+            raise DirectFailure(
+                f"{settings.host} ответил телом, которое не разбирается как JSON "
+                f"(HTTP {status}): {excerpt(raw) or 'пустое тело'}"
+            ) from None
     if not isinstance(payload, dict):
         raise DirectFailure(f"{settings.host} вернул неожиданный ответ (HTTP {status})")
     if direct_error(payload) is None:
@@ -621,6 +636,8 @@ def main(argv=None) -> int:
         # одним вызовом общего модуля: раздельно это значило бы завести момент,
         # когда токен уже прочитан, а вырезать его ещё некому.
         settings = settings_from_env(profile=args.env, account=args.account)
+        if settings.is_proxy:
+            warn(f"Подключение через прокси: {settings.host}")
         if settings.profile == "test_cabinet" and not settings.account:
             # У этого профиля тот же адрес, что у продакшена: без своего логина
             # он отличается от боевого только словом в строке «Контур».

@@ -932,7 +932,7 @@ def run(args, parser, reference) -> int:
     client = Client.from_env(profile=args.env, warn=warn)
     accounts = Accounts.load(client, refresh=args.no_cache, warn=warn)
     login = resolve_account(accounts, client, args.account)
-    cache = Cache.from_args(args, account=login, warn=warn)
+    cache = Cache.from_args(args, account=login, warn=warn, settings=client.settings)
     cabinet = accounts.by_login(login)
     vat_rate = cabinet.vat_rate if cabinet is not None else None
 

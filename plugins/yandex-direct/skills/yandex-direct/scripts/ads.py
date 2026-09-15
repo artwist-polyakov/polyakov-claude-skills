@@ -489,7 +489,7 @@ def main(argv=None) -> int:
         client = Client.from_env(profile=args.env, warn=warn)
         accounts = Accounts.load(client, warn=warn)
         login = resolve_account(accounts, client, args.account)
-        cache = Cache.from_args(args, account=login, warn=warn)
+        cache = Cache.from_args(args, account=login, warn=warn, settings=client.settings)
         limits = campaign_command.limits()
 
         where = f"Кабинет {login}"

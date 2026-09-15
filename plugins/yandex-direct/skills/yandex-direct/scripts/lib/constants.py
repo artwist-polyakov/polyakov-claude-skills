@@ -52,7 +52,8 @@ class Constants:
         уходит, ответ одинаков для всех кабинетов, и запись, разложенная по
         кабинетам, была бы одним и тем же файлом в сотне копий, каждая со
         своим сроком."""
-        store = cache if cache is not None else Cache()
+        store = cache if cache is not None else Cache(
+            settings=getattr(client, "settings", None))
         fetched: list = []
 
         def produce():
