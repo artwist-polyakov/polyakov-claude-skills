@@ -120,22 +120,27 @@ def read_params(args):
     return params
 
 
-def read_records(client, account, accounts, service, params):
-    requested = (params.get("SelectionCriteria") or {}).get("Ids")
-    need = Limits.load().units_cost(service, "get", len(requested or []) or None)
-    records = {}
-    for one in client.get_all(
-        service, params, account=account,
-        use_operator_units=lambda: accounts.use_operator_units(account, need=need)):
+def index_records(records, service, requested=None):
+    found = {}
+    for one in records:
         identifier = required(one, "Id", int, f"{service}.get")
         if isinstance(identifier, bool) or identifier <= 0:
             raise TransportFailure(f"{service}.get: Id должен быть положительным целым числом.",
                                    retryable=False)
-        if identifier in records or (requested is not None and identifier not in requested):
+        if identifier in found or (requested is not None and identifier not in requested):
             raise TransportFailure(f"{service}.get: повторный или незапрошенный Id {identifier}.",
                                    retryable=False)
-        records[identifier] = one
-    return records
+        found[identifier] = one
+    return found
+
+
+def read_records(client, account, accounts, service, params):
+    requested = (params.get("SelectionCriteria") or {}).get("Ids")
+    need = Limits.load().units_cost(service, "get", len(requested or []) or None)
+    records = client.get_all(
+        service, params, account=account,
+        use_operator_units=lambda: accounts.use_operator_units(account, need=need))
+    return index_records(records, service, requested)
 
 
 def shopping_body(record):
@@ -203,7 +208,7 @@ def read_processing(client, account, accounts, identifiers):
     for record in records.values():
         body = shopping_body(record)
         identifier = required(body, "FeedId", int, "Ads.get, ShoppingAd")
-        if identifier < 1:
+        if isinstance(identifier, bool) or identifier < 1:
             raise DirectFailure("При проверке генерации не прочитан положительный FeedId.")
         feed_ids.add(identifier)
         for field in ("State", "Status"):
@@ -343,7 +348,7 @@ def run(args):
         params = objects.ads_params(ad_ids=args.ad, group_ids=[args.group] if args.group else None,
                                     campaign_ids=[args.campaign] if args.campaign else None)
         entry = ads_command.read_ads(Cache.from_args(args, account), client, accounts, account, params)
-        found = {one["Id"]: one for one in entry.data}
+        found = index_records(entry.data, "ads", args.ad)
         for identifier in args.ad or []:
             if identifier not in found:
                 raise DirectFailure(f"Объявление {identifier} не найдено в выбранном кабинете.")

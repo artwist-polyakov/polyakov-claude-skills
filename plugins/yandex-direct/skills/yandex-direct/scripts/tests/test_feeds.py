@@ -302,6 +302,32 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertTrue(data["unknown"])
 
+    def test_feed_reader_rejects_boolean_id_even_when_one_is_requested(self):
+        identifier = self.client.stored({**self.item, "Id": 1})
+        record = {**self.client.records[identifier], "Id": True}
+        for selected in (None, [1]):
+            with self.subTest(selected=selected), patch.object(self.client, "get_all", return_value=[record]):
+                with self.assertRaises(TransportFailure):
+                    feeds.read_feeds(self.client, self.account, self.accounts, ids=selected)
+
+    def test_conflicting_feed_statuses_after_write_report_unknown(self):
+        get_all = self.client.get_all
+
+        def read(service, params, **kwargs):
+            records = list(get_all(service, params, **kwargs))
+            if self.client.batch_calls and "Status" in params["FieldNames"]:
+                record = records[0]
+                return [{**record, "Status": "ERROR"}, {**record, "Status": "DONE"}]
+            return records
+
+        with patch.object(self.client, "get_all", side_effect=read):
+            status, data = self.add("--apply")
+        self.assertEqual(status, 1)
+        self.assertFalse(data["ok"])
+        self.assertTrue(data["unknown"])
+        self.assertTrue(data["written"])
+        self.assertEqual(len(self.client.batch_calls), 1)
+
     def test_invalid_input_is_rejected_before_client_creation(self):
         for arguments in (("add", "--name", " ", "--url", self.url),
                           ("add", "--name", "Фид", "--url", "catalog.xml"),

@@ -285,6 +285,26 @@ class ShoppingTests(unittest.TestCase):
         self.assertIn("повторный", " ".join(report["problems"]))
         self.assertEqual(self.client.writes, [])
 
+    def test_conflicting_feed_statuses_do_not_report_ready(self):
+        feed = self.client.feeds[0]
+        self.client.feeds = [{**feed, "Status": "ERROR"}, {**feed, "Status": "DONE"}]
+        code, report = self.command("update", "--ad", str(AD), "--default-text", "Текст", "--apply")
+        self.assertEqual(code, 1)
+        self.assertFalse(report["ok"])
+        self.assertFalse(report["ready"])
+        self.assertTrue(report["unknown"])
+        self.assertEqual(report["written"], [str(AD)])
+        self.assertEqual(len(self.client.writes), 1)
+
+    def test_boolean_feed_reference_does_not_match_feed_one(self):
+        self.client.ads[0]["ShoppingAd"]["FeedId"] = True
+        self.client.feeds[0]["Id"] = 1
+        code, report = self.command("update", "--ad", str(AD), "--default-text", "Текст", "--apply")
+        self.assertEqual(code, 1)
+        self.assertFalse(report["ready"])
+        self.assertTrue(report["unknown"])
+        self.assertEqual(report["written"], [str(AD)])
+
     def test_get_reads_complete_shopping_and_keeps_listing_separate(self):
         listing = {**ad(), "Id": 302, "Type": "LISTING_AD"}
         self.client.ads.append(listing)
@@ -295,6 +315,12 @@ class ShoppingTests(unittest.TestCase):
         self.assertIn("ResponsiveAdFieldNames", self.client.calls[0][1])
         with self.assertRaisesRegex(DirectFailure, "SHOPPING_AD"):
             self.command("get", "--ad", "302", "--no-cache")
+
+    def test_get_rejects_ambiguous_or_malformed_ids(self):
+        for records in ([{}], [{"Id": []}], [ad(), ad()], [{**ad(), "Id": AD + 1}]):
+            with self.subTest(records=records), patch.object(self.client, "get_all", return_value=records):
+                with self.assertRaises(TransportFailure):
+                    self.command("get", "--ad", str(AD), "--no-cache")
 
     def test_invalid_filters_fail_before_account_access(self):
         for filters in ([], FILTERS * 31, [{**FILTERS[0], "Operator": "RANGE"}],

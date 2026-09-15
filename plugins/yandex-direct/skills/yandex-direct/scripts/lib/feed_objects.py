@@ -3,7 +3,7 @@
 from copy import deepcopy
 
 from config import DirectFailure
-from errors import required
+from errors import required, TransportFailure
 from writer import Limits
 
 
@@ -46,8 +46,11 @@ def read_feeds(client, account, accounts, ids=None):
                 "feeds", params, account=account,
                 use_operator_units=lambda need=need: accounts.use_operator_units(account, need=need)):
             identifier = required(item, "Id", int, "Feeds.get")
-            if identifier < 1 or (chunk is not None and identifier not in chunk):
-                raise DirectFailure(f"Feeds.get вернул некорректный или незапрошенный ID {identifier}.")
+            if (isinstance(identifier, bool) or identifier < 1 or identifier in found
+                    or (chunk is not None and identifier not in chunk)):
+                raise TransportFailure(
+                    f"Feeds.get вернул некорректный, повторный или незапрошенный ID {identifier}.",
+                    retryable=False)
             required(item, "Name", str, "Feeds.get")
             for field, allowed in (("BusinessType", BUSINESS_TYPES), ("SourceType", ("URL", "FILE")),
                                    ("Status", STATUSES)):
