@@ -18,7 +18,8 @@ from ad_extensions import READ_PARAMS, ids_of, read_related  # noqa: E402
 from cache import Cache  # noqa: E402
 from config import DirectFailure, preload_secrets, redact  # noqa: E402
 from direct import Client  # noqa: E402
-from extension_writes import UNSET, build_binding_operations  # noqa: E402
+from errors import required  # noqa: E402
+from extension_writes import UNSET, body_of, build_binding_operations  # noqa: E402
 from writer import UNLOGGED, UNVERIFIED, Limits, Operation, Task, Writer, showing  # noqa: E402
 
 SERVICES = {"sitelinks": "sitelinks", "callouts": "adextensions"}
@@ -161,7 +162,12 @@ def read_ads(client, accounts, account, identifiers, limits):
         records.extend(client.get_all(
             "ads", objects.ads_params(ad_ids=chunk), account=account,
             use_operator_units=lambda: accounts.use_operator_units(account, need=need)))
-    found = {one["Id"] for one in records}
+    found = set()
+    for record in records:
+        identifier = positive(required(record, "Id", int, "Ads.get"))
+        if identifier in found:
+            raise DirectFailure(f"Ads.get вернул повторный ID объявления {identifier}.")
+        found.add(identifier)
     if found - set(identifiers):
         raise DirectFailure("Ads.get вернул объявления вне выбранного списка.")
     missing = set(identifiers) - found
@@ -176,7 +182,7 @@ def binding_plan(records, related, sitelink_set, callout_ids):
     callouts = {one["Id"]: one for one in related["AdExtensions"]}
     result = []
     for ad in records:
-        body = ad.get("ResponsiveAd") or ad.get("TextAd") or {}
+        body = body_of(ad)
         before, after = {}, {}
         if sitelink_set is not UNSET:
             before["sitelinks"] = sets.get(body.get("SitelinkSetId"))
@@ -330,7 +336,7 @@ def run(args):
             if build_binding_operations(after, sitelink_set=sitelink_set, callout_ids=callout_ids):
                 raise DirectFailure("Итоговые привязки не совпадают с планом.")
             for ad in after:
-                body = ad.get("ResponsiveAd") or ad.get("TextAd")
+                body = body_of(ad)
                 verified.append({key: ad.get(key) for key in ("Id", "State", "Status")}
                                 | {key: body[key] for key in ("SitelinkSetId", "AdExtensions")})
         except DirectFailure as failure:

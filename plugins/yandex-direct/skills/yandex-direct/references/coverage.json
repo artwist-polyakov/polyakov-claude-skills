@@ -52,7 +52,7 @@
     "no_reference": "справочника нет",
     "platform": "ограничение платформы",
     "undocumented": "документация не описывает поведение",
-    "r011": "Скилл поддерживает запись объявлений только в формате ResponsiveAd через v501."
+    "r011": "Для этого действия с форматом объявления нет готовой команды записи."
   },
   "reasons_note": "Причина указывает, почему часть действия нужно выполнить в интерфейсе или проверить по актуальной документации.",
   "methods_note": "Поле methods перечисляет связанные методы API; наличие метода не означает, что для него есть готовая команда скилла.",
@@ -1312,7 +1312,7 @@
       "bucket": "handoff",
       "api": "",
       "manual": "целиком",
-      "why": "Готовой команды записи ListingAd нет; shopping.py работает только с ShoppingAd. API описывает создание ListingAd.",
+      "why": "Готовой команды создания ListingAd нет; shopping.py работает только с ShoppingAd. У существующего ListingAd можно менять дополнения через extensions.py bind. API описывает создание ListingAd.",
       "reason": "r011",
       "reason_also": []
     },
@@ -1488,7 +1488,7 @@
       "area": "ad_elements",
       "ui": "Редактирование объявления → Быстрые ссылки",
       "bucket": "api",
-      "api": "Ads.add, Ads.update — SitelinkSetId",
+      "api": "Ads.update — SitelinkSetId; extensions.py bind привязывает, заменяет и снимает набор у ResponsiveAd, TextAd, ShoppingAd и ListingAd. Для нового объявления сначала создание, затем bind по полученному ID. Ads.add также поддерживает SitelinkSetId.",
       "manual": "",
       "why": "",
       "methods": [
@@ -1540,7 +1540,7 @@
       "area": "ad_elements",
       "ui": "Редактирование объявления → Уточнения",
       "bucket": "api",
-      "api": "Ads.add — AdExtensionIds; Ads.update — CalloutSetting с ADD / REMOVE / SET",
+      "api": "Ads.update — CalloutSetting; extensions.py bind задаёт полный список уточнений через SET или снимает все через null у ResponsiveAd, TextAd, ShoppingAd и ListingAd. Для нового объявления сначала создание, затем bind по полученному ID. Ads.add также поддерживает AdExtensionIds.",
       "manual": "",
       "why": "",
       "methods": [
@@ -2362,7 +2362,7 @@
       "bucket": "partial",
       "api": "Ads.add, Ads.update, Ads.get; shopping.py --filters/--clear-filters — FEEDS.md",
       "manual": "ListingAd и фильтры старых типов групп требуют отдельного способа настройки",
-      "why": "Готовая команда меняет FeedFilterConditions у ShoppingAd. ListingAd команда записи не поддерживает; фильтры DynamicTextFeedAdGroup настраиваются в интерфейсе.",
+      "why": "Готовая команда shopping.py меняет FeedFilterConditions у ShoppingAd. Изменение фильтров ListingAd она не поддерживает; фильтры DynamicTextFeedAdGroup настраиваются в интерфейсе.",
       "reason": "r011",
       "reason_also": [],
       "methods": [
@@ -2660,7 +2660,7 @@
       "area": "bulk",
       "ui": "Объявления → Действия → Быстрые ссылки; Уточнения",
       "bucket": "api",
-      "api": "Sitelinks.add, AdExtensions.add; Ads.update — SitelinkSetId, CalloutSetting; совпавшее уточнение ищется AdExtensions.get и переиспользуется по идентификатору — идентичное при добавлении даёт ошибку на каждое; перечень объявлений даёт Ads.get — метод работает по идентификаторам, и собрать их надо до записи",
+      "api": "Sitelinks.add, AdExtensions.add; Ads.update — SitelinkSetId, CalloutSetting; extensions.py bind с повторяемым --ad поддерживает ResponsiveAd, TextAd, ShoppingAd и ListingAd. Совпавшее уточнение ищется AdExtensions.get и переиспользуется по идентификатору — идентичное при добавлении даёт ошибку на каждое; перечень объявлений даёт Ads.get — метод работает по идентификаторам, и собрать их надо до записи",
       "manual": "",
       "why": "",
       "methods": [
