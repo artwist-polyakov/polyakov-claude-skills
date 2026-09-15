@@ -5,16 +5,18 @@ import binascii
 import hashlib
 
 
-def compact_payload(value):
-    """Заменить ImageData размером и SHA-256, не меняя исходный запрос."""
+def compact_payload(value, _parent=None):
+    """Показать размер и SHA-256 картинки или файла фида вместо base64."""
     if isinstance(value, list):
-        return [compact_payload(one) for one in value]
+        return [compact_payload(one, _parent) for one in value]
     if not isinstance(value, dict):
         return value
     result = {}
     for key, one in value.items():
-        if key != "ImageData" or one is None:
-            result[key] = compact_payload(one)
+        binary = key in {"ImageData", "FileFeed.Data"} or (
+            _parent == "FileFeed" and key == "Data")
+        if not binary or one is None:
+            result[key] = compact_payload(one, key)
             continue
         try:
             data = base64.b64decode(one, validate=True)

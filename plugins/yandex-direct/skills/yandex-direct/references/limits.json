@@ -474,8 +474,8 @@
     "ShoppingAd.DefaultTexts": {
       "min": 1,
       "max": 1,
-      "required_on_update": true,
-      "comment": "Ровно одно значение; обязателен и при обновлении.",
+      "required_on_update": false,
+      "comment": "Ровно одно значение при передаче. При update можно опустить: v501 WSDL ShoppingAdUpdate.DefaultTexts имеет minOccurs=0.",
       "required_on_add": true
     },
     "ListingAd.DefaultTexts": {
@@ -1738,6 +1738,10 @@
     "Ads.get.AdImageHashes": {
       "min": 1,
       "max": 50
+    },
+    "Feeds.get.Ids": {
+      "min": 1,
+      "max": 10000
     },
     "AdImages.get.AdImageHashes": {
       "max": 10000

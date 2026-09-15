@@ -200,7 +200,13 @@ ROAS не учитывает себестоимость и прочие расх
 сначала перечитай объект, чтобы повтор не создал дубликат. Настройки могут быть
 записаны, но ещё не допущены к показам: учитывай состояние и модерацию.
 
-Объявления записываются как комбинаторные `ResponsiveAd` через API v501.
+Команда `ads_write.py ad create/update` записывает комбинаторные `ResponsiveAd`
+через API v501. Для фидов, товарных объявлений и отбора товаров сначала читай
+[фиды и товарные объявления](references/FEEDS.md): `feeds.py` управляет
+библиотекой фидов, `shopping.py` — объявлениями `ShoppingAd` и их фильтрами.
+Проверь тип объявления и все кампании, использующие фид, перед изменением
+общего источника. Смена `FeedId` требует нового объявления; снятие фильтров
+расширяет отбор до всего фида.
 Чтение включает `ResponsiveAdFieldNames`, иначе API может показать комплект
 как `TEXT_AD`. Основные тексты старого `TextAd` готовые команды не меняют:
 назови такой остаток и предложи правку в интерфейсе. Его быстрые ссылки и
@@ -264,6 +270,7 @@ ID сегмента Метрики, условия Директа и привя�
 | Выгрузка настроек и структуры | `campaign_dump.py` | Поля и отсутствующие части перечислены в результате |
 | Комплекты объявлений | `audit_combinatorial.py`, `ads_generate.py`, `preview.py` | [COMBINATORIAL_COPY.md](references/COMBINATORIAL_COPY.md), [AD_CONTENT.md](references/AD_CONTENT.md), [PREVIEW.md](references/PREVIEW.md) |
 | Создание и изменения | `campaign_write.py`, `ads_write.py`, `keywords_write.py` | [CHANGES.md](references/CHANGES.md), [naming.md](references/naming.md) |
+| Фиды, товарные объявления и фильтры товаров | `feeds.py`, `shopping.py` | [FEEDS.md](references/FEEDS.md) |
 | Ставки и пересечения фраз | `bids.py`, `cross_negative.py` | [PLAYBOOK.md](references/PLAYBOOK.md) |
 | Локальные данные | `cache.py` | Просмотр и очистка кеша без обращений к API |
 

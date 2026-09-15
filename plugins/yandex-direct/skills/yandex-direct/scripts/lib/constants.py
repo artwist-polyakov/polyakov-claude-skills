@@ -18,7 +18,7 @@ RECORD = "constants"
 # Справочники сохраняются в кэше на сутки.
 LAYER = "dictionaries"
 
-# Величина справочника — целое без знака. Строгий разбор, а не `int`: тот
+# Числовые ограничения — целые без знака. Строгий разбор, а не `int`: тот
 # принимает подчёркивания и пробелы по краям, и `"5_6"` становится 56 —
 # опечатка выглядит пределом, которого Директ не называл.
 NUMBER = re.compile(r"^[0-9]+$")
@@ -27,10 +27,9 @@ NUMBER = re.compile(r"^[0-9]+$")
 class Constants:
     """Прочитанный справочник `Constants`: имя — величина.
 
-    Собирается разбором ответа, а не доверием к нему: величины приходят
-    строками, и всё, что не оказалось целым, — отказ, а не пропуск. Величина,
-    молча ставшая `None`, отключает предел, и заметить это можно только в
-    кабинете."""
+    Значения приходят строками и могут содержать не только числа.
+    Используемые ограничения строго преобразуются в числа при сверке и
+    применении: некорректный предел нельзя молча пропустить."""
 
     __slots__ = ("values", "items")
 
@@ -58,9 +57,9 @@ class Constants:
 
         def produce():
             items = client.dictionaries(DICTIONARY)[DICTIONARY]
-            # Разбор до записи, а не после: испорченный ответ не должен лечь в
-            # кэш на сутки. Разобранное запоминается здесь же — оно уже
-            # оплачено баллом, и потерять его из-за диска нельзя.
+            # Форма ответа проверяется до записи в кэш; числовые ограничения
+            # проверяются при использовании. Разобранное запоминается здесь
+            # же — оно уже оплачено баллом, и потерять его из-за диска нельзя.
             fetched.append(cls.parse(items))
             return items
 
@@ -127,7 +126,7 @@ class Constants:
                     f"ответ не говорит.",
                     retryable=False,
                 )
-            values[name] = _number(name, item.get("Value"))
+            values[name] = _value(name, item.get("Value"))
         return cls(values, items)
 
     # -- сверка с офлайн-фолбэком -------------------------------------------
@@ -155,7 +154,10 @@ class Constants:
         found = []
         for name, path, stored in _bound(limits):
             fresh = self.values.get(name)
-            if fresh is not None and fresh != stored:
+            if fresh is None:
+                continue
+            fresh = _number(name, fresh)
+            if fresh != stored:
                 found.append((name, tuple(path), stored, fresh))
         return found
 
@@ -180,24 +182,30 @@ class Constants:
             node = data
             for step in path[:-1]:
                 node = node[step]
-            node[path[-1]] = fresh
+            node[path[-1]] = _number(name, fresh)
         fresh_limits = type(limits)(data)
         fresh_limits.runtime = {
-            name: self.values[name]
+            name: _number(name, self.values[name])
             for name in _source(limits).get("unbound_names") or ()
             if name in self.values
         }
         return fresh_limits
 
 
-def _number(name: str, value) -> int:
-    """Величина справочника целым числом. Всё, что не целое, — отказ."""
+def _value(name: str, value):
+    """Значение ConstantsItem: строка или уже разобранное целое число."""
     if isinstance(value, bool) or not isinstance(value, (str, int)):
         raise TransportFailure(
             f"Величина «{excerpt(name, 64)}» справочника {DICTIONARY} пришла "
             f"как {type(value).__name__}, а не числом или строкой.",
             retryable=False,
         )
+    return value
+
+
+def _number(name: str, value) -> int:
+    """Числовое ограничение. Всё, что не положительное целое, — отказ."""
+    value = _value(name, value)
     if isinstance(value, int):
         number = value
     else:
