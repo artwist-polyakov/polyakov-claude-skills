@@ -1,12 +1,11 @@
 #!/bin/sh
-# auth_check.sh — verify that OAuth credentials work in app-only mode.
-# Calls GET https://oauth.reddit.com/r/all/new?limit=1 with a fresh Bearer.
+# auth_check.sh — verify API access or public RSS availability.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/common.sh"
-load_config
+load_config rss
 
 OUT="$REDDIT_TMPDIR/reddit_auth_check.$$.json"
 trap 'rm -f "$OUT"' EXIT
@@ -22,6 +21,9 @@ if not (isinstance(d, dict) and d.get("kind") == "Listing"):
     sys.exit(1)
 PY
 
-echo "OK: ${REDDIT_AUTH_MODE} token works"
+if [ "$REDDIT_AUTH_MODE" = "rss" ]; then
+    echo "OK: RSS feed works (no API credentials required)"
+else
+    echo "OK: ${REDDIT_AUTH_MODE} token works"
+fi
 echo "    User-Agent: $REDDIT_USER_AGENT"
-echo "    Endpoint  : $REDDIT_OAUTH_BASE"

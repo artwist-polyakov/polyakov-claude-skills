@@ -7,7 +7,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/common.sh"
-load_config
+load_config rss
 
 USERNAME=""; SORT="new"; TIME="all"; LIMIT="25"; NO_CACHE=""
 while [ $# -gt 0 ]; do
@@ -23,18 +23,10 @@ done
 [ -n "$USERNAME" ] || die "Usage: user_posts.sh --username <name> [--sort N] [--time T] [--limit N]"
 USERNAME=$(printf '%s' "$USERNAME" | sed 's|^/*u/||')
 
-KEY=$(cache_key "user-posts|${USERNAME}|${SORT}|${TIME}|${LIMIT}")
-OUT="$REDDIT_CACHE_DIR/listings/${KEY}.json"
-mkdir -p "$REDDIT_CACHE_DIR/listings"
-
-if [ -z "$NO_CACHE" ] && [ -s "$OUT" ]; then
-    echo "(cached: $OUT)"
-else
-    reddit_get "/user/${USERNAME}/submitted" "$OUT" \
-        --data-urlencode "sort=${SORT}" \
-        --data-urlencode "t=${TIME}" \
-        --data-urlencode "limit=${LIMIT}"
-fi
+reddit_listing "user-posts|${USERNAME}|${SORT}|${TIME}|${LIMIT}" "/user/${USERNAME}/submitted" "$NO_CACHE" \
+    --data-urlencode "sort=${SORT}" \
+    --data-urlencode "t=${TIME}" \
+    --data-urlencode "limit=${LIMIT}"
 
 echo "Posts by u/${USERNAME} (sort=${SORT}, time=${TIME}, limit=${LIMIT}):"
 print_listing_summary "$OUT" "$LIMIT"

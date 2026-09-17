@@ -28,7 +28,7 @@
   - [x-research](#x-research) — рисерч X/Twitter через xAI Grok API
   - [github-pages-publisher](#github-pages-publisher) — публикация на GitHub Pages
   - [sourcecraft-publisher](#sourcecraft-publisher) — публикация на SourceCraft Sites
-  - [reddit-skill](#reddit-skill) — Reddit API: пользователи, сабреддиты, поиск, посты
+  - [reddit-skill](#reddit-skill) — Reddit без ключей: посты, комментарии, RSS; OAuth2 API
   - [knowledge-compiler](#knowledge-compiler) — компиляция книг и длинных источников в личные скиллы
   - [perplexity-search](#perplexity-search) — поиск и ресёрч через Perplexity API
 - [Структура репозитория](#структура-репозитория)
@@ -500,8 +500,14 @@ SEO-краулер сайтов на базе Crawl4AI.
 
 ### [reddit-skill](plugins/reddit-skill/skills/reddit-skill)
 
-Reddit API на shell-скриптах: пользователи, сабреддиты, посты, комментарии, поиск.
+Чтение Reddit без ключей через доступный веб-инструмент агента: публичный JSON
+для постов и комментариев, RSS для списков. Shell-скрипты с кешем и OAuth2 API —
+запасной способ и основа для автоматизации.
 
+- Сначала встроенный `fetch` / `open`, если доступен; без чтения файла с ключами
+- `REDDIT_RSS_MODE=1`: топ сабреддита, поиск и посты пользователя без приложения и ключей
+- Отдельный пост и доступные комментарии через публичный `.json` в том же режиме
+- Автоматический переход на RSS при отказе авторизации API; оценки и число комментариев остаются неизвестными
 - Прямые вызовы Reddit OAuth2 API через curl (без PRAW и Python-зависимостей)
 - Авто-выбор режима: app-only (`client_credentials`) для read, user (`password`) для write/me
 - Cache-first: токены, юзеры, сабреддиты, листинги
