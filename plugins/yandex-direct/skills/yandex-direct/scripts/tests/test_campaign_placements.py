@@ -16,7 +16,8 @@ import campaigns
 import cache
 from config import DirectFailure
 from direct import BatchEntry, BatchResult, Response
-from writer import AuditLog, Limits, Task, Writer
+from policy import Change
+from writer import AuditLog, Limits, Operation, Task, Writer
 
 
 GALLERY = {"SearchResults": "NO", "ProductGallery": "YES", "Maps": "NO",
@@ -129,8 +130,11 @@ class CampaignPlacementsTests(unittest.TestCase):
                 self.assertEqual(len(client.writes), int(apply))
                 self.assertEqual(len(previews), 1)
                 plan = previews[0].text()
+                self.assertIn("Изменения (1):", plan)
+                self.assertIn("изменений 1", report.summary())
                 self.assertIn("«YES» → «NO»", plan)
-                for untouched in ("AverageCpa", "WeeklySpendLimit", "Network", "SERVING_OFF"):
+                for untouched in ("AverageCpa", "WeeklySpendLimit", "Network", "SERVING_OFF",
+                                  "AVERAGE_CPA", "BiddingStrategyType"):
                     self.assertNotIn(untouched, plan)
                 expected = copy.deepcopy(self.record)
                 if apply:
@@ -149,6 +153,7 @@ class CampaignPlacementsTests(unittest.TestCase):
         self.assertTrue(report.ok, vars(report))
         self.assertEqual(client.writes, [])
         plan = previews[0].text()
+        self.assertIn("Изменения (2):", plan)
         self.assertIn("«YES» → «NO»", plan)
         self.assertIn("«AVERAGE_CPA» → «SERVING_OFF»", plan)
 
@@ -161,9 +166,15 @@ class CampaignPlacementsTests(unittest.TestCase):
         self.assertEqual(operation.unread, (NETWORK_PLACES,))
         self.assertEqual(set(operation.read["UnifiedCampaignSearchStrategyPlacementTypesFieldNames"]), READ_PLACES)
         self.assertTrue(any("интерфейс" in note and "Карт" in note for note in notes))
-        report = self.execute(operation, FakeClient(self.record))
+        previews = []
+        report = self.execute(operation, FakeClient(self.record), show=previews.append)
         self.assertTrue(report.ok, vars(report))
         self.assertTrue(report.written, vars(report))
+        plan = previews[0].text()
+        self.assertIn("Изменения (2):", plan)
+        self.assertIn("«YES» → «NO»", plan)
+        self.assertIn("— → «NO»", plan)
+        self.assertNotIn("BiddingStrategyType", plan)
         self.assertEqual(len(report.unchecked), 1)
         self.assertIn(NETWORK_PLACES, report.unchecked[0])
         self.assertIn("без перечитывания", report.summary())
@@ -194,6 +205,19 @@ class CampaignPlacementsTests(unittest.TestCase):
     def test_campaign_read_requests_all_search_placements(self):
         params = campaigns.request_params()
         self.assertEqual(set(params["UnifiedCampaignSearchStrategyPlacementTypesFieldNames"]), READ_PLACES)
+
+    def test_plan_keeps_unknown_values_and_type_changes(self):
+        for before, after, visible in ((None, None, 1), (True, 1, 1), ("YES", "YES", 0)):
+            with self.subTest(before=before, after=after):
+                change = Change(object_id=123, what="Значение", field="Value",
+                                before=before, after=after)
+                operation = Operation("campaigns", "update", params_key="Campaigns",
+                                      items=[{"Id": 123, "Value": after}], changes=[change],
+                                      read={"FieldNames": ["Id", "Value"]},
+                                      clears=("Value",) if after is None else ())
+                task = Task("Проверить отображение плана", [operation])
+                self.assertEqual(len(task.plan()), visible)
+                self.assertEqual(task.changes, [change])
 
 
 if __name__ == "__main__":
