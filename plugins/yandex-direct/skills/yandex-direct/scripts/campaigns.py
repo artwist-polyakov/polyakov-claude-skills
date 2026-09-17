@@ -700,6 +700,9 @@ def request_params() -> dict:
         "FieldNames": list(COMMON_FIELDS),
     }
     params.update({name: list(fields) for name, fields in TYPE_FIELDS.items()})
+    params["UnifiedCampaignSearchStrategyPlacementTypesFieldNames"] = [
+        "SearchResults", "ProductGallery", "DynamicPlaces", "Maps",
+        "SearchOrganizationList"]
     return params
 
 

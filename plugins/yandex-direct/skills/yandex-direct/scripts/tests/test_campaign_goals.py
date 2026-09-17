@@ -146,6 +146,8 @@ class CampaignGoalsTests(unittest.TestCase):
                          "--search-param", "GoalId=13",
                          "--search-param", "WeeklySpendLimit=10000",
                          "--network-strategy", "SERVING_OFF",
+                         "--placement", "SearchResults=YES", "--placement", "ProductGallery=NO",
+                         "--placement", "Maps=NO", "--placement", "SearchOrganizationList=NO",
                          "--goal", "101=700", "--goal", "102=500")
         body = command.campaign_body(args, command.UNIFIED, creating=True)
         self.assertEqual(body["BiddingStrategy"]["Search"]["WbMaximumConversionRate"]["GoalId"], 13)

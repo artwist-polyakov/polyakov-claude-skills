@@ -1028,7 +1028,12 @@ class Task:
         return [change for operation in self.operations for change in operation.changes]
 
     def plan(self) -> policies.Plan:
-        return policies.Plan(self.changes, title=self.title)
+        """Показывать изменения значений; полный запрос остаётся в операциях."""
+        changes = [change for change in self.changes
+                   if change.before is None
+                   or type(change.before) is not type(change.after)
+                   or change.before != change.after]
+        return policies.Plan(changes, title=self.title)
 
     def __repr__(self) -> str:
         return f"<Task {self.title}: операций {len(self.operations)}>"
@@ -1130,7 +1135,7 @@ class Report:
                     or self.despite or self.unknown or self.unlogged)
 
     def summary(self) -> str:
-        parts = [f"изменений {len(self.task.changes)}"]
+        parts = [f"изменений {len(self.task.plan())}"]
         if self.applied:
             if len(self.accepted) != len(self.written):
                 parts.append(f"Директ принял {len(self.accepted)}")
@@ -1397,8 +1402,8 @@ class Writer:
         plan = task.plan()
         lines = [f"Задача: {task.title}",
                  f"Объектов: {len(plan.touched())}"]
-        lines.append(f"Изменения ({len(task.changes)}):")
-        for change in task.changes:
+        lines.append(f"Изменения ({len(plan)}):")
+        for change in plan:
             lines.append("  " + change.describe(_title(seen.get(change))))
         return lines
 
@@ -1463,7 +1468,7 @@ class Writer:
                 report.record(PROBLEM, problem)
             report.stopped = "кабинет изменился после чтения; повторите подготовку правок"
             return report
-        recorded = {"shown": len(report.preview), "changes": len(task.changes)}
+        recorded = {"shown": len(report.preview), "changes": len(task.plan())}
         try:
             self._remember(task, recorded, snapshots)
         except DirectFailure as exc:
