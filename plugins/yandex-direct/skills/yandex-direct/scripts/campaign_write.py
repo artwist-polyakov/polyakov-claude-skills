@@ -158,20 +158,10 @@ SHARE_OF_SPEND = tuple(
 
 SYSTEM_GOAL = 12
 
-PLACEMENTS_WRITABLE = ("SearchResults", "ProductGallery")
-PLACEMENTS_HANDOFF = {
-    "DynamicPlaces": "записи не поддаётся: документация откладывает "
-                     "управление, а отправленное значение Директ заменяет "
-                     "значением SearchResults",
-    "Maps": "флажку кабинета отвечает пара полей, и сетевое из них чтением не "
-            "возвращается — сверка после записи проверила бы половину "
-            "(замер 03.09.2026: параметр "
-            "`UnifiedCampaignNetworkStrategyPlacementTypesFieldNames` "
-            "принимается и значений не отдаёт)",
-    "SearchOrganizationList": "кабинетный флажок шире поля — он включает ещё "
-                              "отели и галерею услуг, — и что именно включит "
-                              "запись, документация не говорит",
-}
+PLACEMENTS_WRITABLE = ("SearchResults", "ProductGallery", "Maps",
+                       "SearchOrganizationList")
+PLACEMENTS_READ = (*PLACEMENTS_WRITABLE, "DynamicPlaces")
+TEXT_PLACEMENTS = ("SearchResults", "ProductGallery")
 
 # Настройка, которую команда пишет, и единственная. Почему она одна — в
 # док-строке модуля.
@@ -514,25 +504,22 @@ def strategy_half(kind: str, half: str, code: str, params: dict,
     return body
 
 
-def placements(pairs) -> dict:
-    """Места показа поисковой половины: `{Имя: YES|NO}`.
-
-    Из пяти значений пишутся два. Остальные три названы поимённо с причиной —
-    причины у них разные, и складывать их в одну строку нельзя: у
-    `DynamicPlaces` нет управления, у `Maps` нет проверки, у
-    `SearchOrganizationList` не назван объём."""
+def placements(pairs, kind=UNIFIED) -> dict:
+    """Явно выбранные места показа. Карты ниже передаются в обе половины."""
     built = {}
+    allowed = PLACEMENTS_WRITABLE if kind == UNIFIED else TEXT_PLACEMENTS
     for name, value in pairs:
-        if name in PLACEMENTS_HANDOFF:
+        if name == "DynamicPlaces":
             raise DirectFailure(
-                f"Место показа «{name}» кодом не задаётся: "
-                f"{PLACEMENTS_HANDOFF[name]}. Оно остаётся человеку — "
-                f"переключателем в кабинете."
+                "DynamicPlaces не имеет независимого управления при создании: "
+                "Директ использует SearchResults. При изменении проверьте "
+                "динамические места в интерфейсе; отдельный флаг API не "
+                "считайте подтверждённым переключателем."
             )
-        if name not in PLACEMENTS_WRITABLE:
+        if name not in allowed:
             raise DirectFailure(
                 f"Место показа «{excerpt(name, 40)}» неизвестно. Записываются "
-                f"{', '.join(PLACEMENTS_WRITABLE)}."
+                f"{', '.join(allowed)}."
             )
         _once(built, name, value, path=name, where="места показа")
     return built
@@ -676,7 +663,9 @@ def read_any_type(*, common=(), typed=(), places=()) -> dict:
         params[f"{body}FieldNames"] = sorted(
             set(typed) | {"PackageBiddingStrategy"})
         if places:
-            params[f"{body}SearchStrategyPlacementTypesFieldNames"] = list(places)
+            params[f"{body}SearchStrategyPlacementTypesFieldNames"] = [
+                name for name in places
+                if kind == UNIFIED or name in TEXT_PLACEMENTS]
     return params
 
 
@@ -921,11 +910,14 @@ def add_operation(kind: str, name: str, body: dict, *, start: str, end=None,
         changes=changes, search=("Name", WHOLE_ACCOUNT),
         read=read_params(kind, common=create_common(item),
                          typed=create_typed(body),
-                         places=create_places(body)),
+                         places=(PLACEMENTS_READ
+                                 if kind == UNIFIED and create_places(body)
+                                 else create_places(body))),
         texts=create_rules(item)[0],
         collections=create_rules(item)[1],
         phrases=("NegativeKeywords.Items",),
         full=(f"{campaign_command.TYPE_BODY[kind]}.Settings",),
+        unread=placement_unread(kind, body),
     )
 
 
@@ -945,6 +937,15 @@ def create_typed(body: dict) -> list:
 def create_places(body: dict) -> list:
     search = (body.get("BiddingStrategy") or {}).get(SEARCH) or {}
     return sorted(search.get("PlacementTypes") or ())
+
+
+def placement_unread(kind: str, body: dict) -> tuple:
+    network = (body.get("BiddingStrategy") or {}).get(NETWORK) or {}
+    if "Maps" in (network.get("PlacementTypes") or {}):
+        # get не возвращает контейнер целиком, а не только вложенный Maps.
+        return (f"{campaign_command.TYPE_BODY[kind]}"
+                ".BiddingStrategy.Network.PlacementTypes",)
+    return ()
 
 
 FIELD_RULES = {
@@ -1155,7 +1156,24 @@ def create_task(client, account, accounts, args):
 
 def rule_notes(args, applied=None, operations=()) -> list:
     """Назвать автоматически добавленные параметры; явные правки есть в плане."""
-    return default_notes(applied or {}, named_by_hand(args), offer=False)
+    notes = default_notes(applied or {}, named_by_hand(args), offer=False)
+    places = dict(getattr(args, "placement", None) or ())
+    if "Maps" in places:
+        notes.append("Карты: значение передаётся в Search и Network. API "
+                     "позволяет перечитать только Search.Maps; сетевую часть "
+                     "и итоговый переключатель Карт проверьте в интерфейсе.")
+    if "SearchOrganizationList" in places:
+        notes.append("SearchOrganizationList управляет списком организаций. "
+                     "Общий переключатель списка организаций, отелей и "
+                     "галереи услуг проверьте в интерфейсе.")
+    if "SearchResults" in places:
+        notes.append("При создании DynamicPlaces повторяет SearchResults. "
+                     "После изменения кампании проверьте динамические места "
+                     "в интерфейсе.")
+    if places and getattr(args, "search_strategy", None) == "SERVING_OFF":
+        notes.append("Search = SERVING_OFF: поисковая половина отключена; "
+                     "значения PlacementTypes сами по себе её не включают.")
+    return notes
 
 
 def named_by_hand(args) -> set:
@@ -1199,7 +1217,6 @@ def named_by_hand(args) -> set:
 
 NEEDS_HALF = {
     "search_param": ("--search-param", "--search-strategy"),
-    "placement": ("--placement", "--search-strategy"),
     "network_param": ("--network-param", "--network-strategy"),
 }
 
@@ -1343,10 +1360,37 @@ def campaign_body(args, kind: str, *, creating: bool, record=None) -> dict:
         raise DirectFailure("--add-goals требует хотя бы один --goal ЦЕЛЬ=СУММА.")
     body = {}
     halves = {}
-    for half, code, pairs, places in (
-            (SEARCH, args.search_strategy, args.search_param, args.placement),
-            (NETWORK, args.network_strategy, args.network_param, ())):
+    search_places = placements(args.placement, kind)
+    if creating and kind == UNIFIED and args.search_strategy != "SERVING_OFF":
+        missing = [name for name in PLACEMENTS_WRITABLE if name not in search_places]
+        if missing:
+            raise DirectFailure(
+                "При создании ЕПК явно выберите места показа, чтобы "
+                "пропущенные поля не расширили охват. Не заданы: "
+                f"{', '.join(missing)}. Передайте --placement МЕСТО=YES|NO "
+                "для каждого; пример только галереи — в PLACEMENTS.md."
+            )
+    for half, code, pairs, half_places in (
+            (SEARCH, args.search_strategy, args.search_param, search_places),
+            (NETWORK, args.network_strategy, args.network_param,
+             {"Maps": search_places["Maps"]} if "Maps" in search_places else {})):
         if code is None:
+            if half_places:
+                current_code = strategy_now(record, kind).get(half)
+                if current_code is None:
+                    raise DirectFailure(
+                        f"Не прочитан тип стратегии половины «{HALF_RU[half]}»: "
+                        "изменить только места показа без него нельзя. "
+                        "Перечитайте кампанию."
+                    )
+                if current_code not in STRATEGY_CODES[(kind, half)]:
+                    raise DirectFailure(
+                        f"Тип стратегии «{excerpt(current_code, 40)}» половины "
+                        f"«{HALF_RU[half]}» недоступен для записи. Измените места "
+                        "показа в интерфейсе; подменять стратегию нельзя."
+                    )
+                halves[half] = {"BiddingStrategyType": current_code,
+                                "PlacementTypes": half_places}
             continue
         params = strategy_params(pairs, where=f"половина «{HALF_RU[half]}»")
         if args.weekly_budget is not None and carries_budget(
@@ -1355,8 +1399,8 @@ def campaign_body(args, kind: str, *, creating: bool, record=None) -> dict:
             params.setdefault("WeeklySpendLimit", args.weekly_budget)
         halves[half] = strategy_half(kind, half, code, params,
                                      creating=creating)
-        if places:
-            halves[half]["PlacementTypes"] = placements(places)
+        if half_places:
+            halves[half]["PlacementTypes"] = half_places
     if halves:
         if creating and set(halves) != {SEARCH, NETWORK}:
             raise DirectFailure(
@@ -1401,14 +1445,17 @@ TYPED_RU = {
 def strategy_task(client, account, accounts, args):
     """Стратегия, цели, атрибуция и места показов — одной правкой."""
     record = one_campaign(client, account, accounts, args.campaign,
-                          read_any_type(typed=sorted(TYPED_RU)))
+                          read_any_type(typed=sorted(TYPED_RU),
+                                        places=(PLACEMENTS_READ
+                                                if args.placement else ())))
     kind = writable_type(record)
     typed = campaign_body(args, kind, creating=False, record=record)
     fits_money_bounds(client, account, accounts, typed)
     if not typed:
         raise DirectFailure(
             "Не сказано, что менять: назовите --search-strategy, "
-            "--network-strategy, --goal или --attribution. Счётчики правит "
+            "--network-strategy, --placement, --goal или --attribution. "
+            "Счётчики правит "
             "отдельное действие — counters --campaign … --add --counter "
             "<номер>: поле заменяется целиком, и просьба «привязать ещё один» "
             "без режима неотличима от «оставить только этот». Запись без "
@@ -1418,22 +1465,28 @@ def strategy_task(client, account, accounts, args):
     prefix = campaign_command.TYPE_BODY[kind]
     what = {f"{prefix}.{one}": TYPED_RU[one] for one in typed}
     read_fields = set(typed)
-    guard = None
+    unchanged = {}
+    read_places = create_places(typed)
+    if args.placement:
+        unchanged[f"{prefix}.BiddingStrategy"] = (
+            record.get(prefix) or {}).get("BiddingStrategy")
+        read_places = PLACEMENTS_READ if kind == UNIFIED else TEXT_PLACEMENTS
     if "PriorityGoals" in typed:
         # Цели собраны по первоначальному чтению и проверены по его стратегии.
         # Не перезаписываем изменения, появившиеся до чтения внутри Writer.
         read_fields.add("BiddingStrategy")
-        guard = unchanged_at({
+        unchanged.update({
             f"{prefix}.{field}": (record.get(prefix) or {}).get(field)
             for field in ("PriorityGoals", "BiddingStrategy")})
     operation = update_operation(
         args.campaign, kind, record=record, typed=typed, what=what,
-        guard_also=guard,
+        guard_also=unchanged_at(unchanged) if unchanged else None,
         read=read_params(kind, typed=sorted(read_fields),
-                         places=create_places(typed)),
+                         places=read_places),
         collections=(rules_for("PriorityGoals", f"{prefix}.PriorityGoals")[1]
                      if "PriorityGoals" in typed else None),
-        unread=((f"{prefix}.PriorityGoals.Items.Operation",)
+        unread=placement_unread(kind, typed) +
+               ((f"{prefix}.PriorityGoals.Items.Operation",)
                 if "PriorityGoals" in typed else ()))
     return (f"правка кампании {args.campaign}: {', '.join(what.values())}",
             [operation], rule_notes(args, operations=[operation]), [], None)
@@ -1983,8 +2036,11 @@ def add_strategy(step, *, required: bool) -> None:
                            "WeeklySpendLimit обеих половин, если он у них есть")
     step.add_argument("--placement", action="append", type=yes_no, default=[],
                       metavar="МЕСТО=YES|NO",
-                      help=f"места показа поисковой половины: "
-                           f"{', '.join(PLACEMENTS_WRITABLE)}")
+                      help="места показа ЕПК: "
+                           f"{', '.join(PLACEMENTS_WRITABLE)}; "
+                           "Maps меняется в обеих половинах. При создании "
+                           "с активным поиском нужны все четыре значения; "
+                           "при правке можно менять только места")
 
 
 def add_goals(step, *, counters: bool = True) -> None:

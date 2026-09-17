@@ -170,8 +170,8 @@
       "rule": "Места показа",
       "value": null,
       "applied": false,
-      "why": "Команда записывает проверяемые места SearchResults и ProductGallery.",
-      "price": "DynamicPlaces, Maps и SearchOrganizationList имеют ограничения записи или чтения; для недоступной настройки нужен путь в интерфейсе."
+      "why": "У новой ЕПК с активным Search явно задаются SearchResults, ProductGallery, Maps и SearchOrganizationList. Формат объявления не определяет места показа.",
+      "price": "DynamicPlaces при создании повторяет SearchResults. Сетевая часть Maps не читается; полный переключатель списка организаций также нужно проверить в интерфейсе. Порядок выбора — PLACEMENTS.md."
     },
     {
       "key": "site_monitoring",
