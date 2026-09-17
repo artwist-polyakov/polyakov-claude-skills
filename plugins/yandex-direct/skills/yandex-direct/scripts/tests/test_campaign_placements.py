@@ -82,19 +82,20 @@ class CampaignPlacementsTests(unittest.TestCase):
                          "--network-strategy", "SERVING_OFF", *placement_args(places))
         return command.campaign_body(args, kind, creating=True)
 
-    def operation(self, places):
+    def operation(self, places, *options):
         with patch.object(command, "one_campaign", return_value=copy.deepcopy(self.record)):
-            task = command.strategy_task(None, "example", None, self.args(*placement_args(places)))
+            task = command.strategy_task(None, "example", None,
+                                         self.args(*placement_args(places), *options))
         return task[1][0], task[2]
 
-    def execute(self, operation, client, *, apply=True):
+    def execute(self, operation, client, *, apply=True, show=None):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             engine = Writer(
                 client, "example", apply=apply, limits=Limits.load(),
                 cache=cache.Cache("example", root=root / "cache"),
                 journal=AuditLog("example", root=root / "journal"),
-                show=lambda preview: None, warn=lambda message: None)
+                show=show or (lambda preview: None), warn=lambda message: None)
             return engine.run(Task("Изменить места показа", [operation]))
 
     def test_gallery_creation_excludes_other_places_and_network(self):
@@ -122,13 +123,34 @@ class CampaignPlacementsTests(unittest.TestCase):
         for apply in (False, True):
             with self.subTest(apply=apply):
                 client = FakeClient(self.record)
-                report = self.execute(operation, client, apply=apply)
+                previews = []
+                report = self.execute(operation, client, apply=apply, show=previews.append)
                 self.assertTrue(report.ok, vars(report))
                 self.assertEqual(len(client.writes), int(apply))
+                self.assertEqual(len(previews), 1)
+                plan = previews[0].text()
+                self.assertIn("«YES» → «NO»", plan)
+                for untouched in ("AverageCpa", "WeeklySpendLimit", "Network", "SERVING_OFF"):
+                    self.assertNotIn(untouched, plan)
                 expected = copy.deepcopy(self.record)
                 if apply:
                     expected["UnifiedCampaign"]["BiddingStrategy"]["Search"]["PlacementTypes"]["SearchResults"] = "NO"
                 self.assertEqual(client.record, expected)
+
+    def test_mixed_placement_and_strategy_update_shows_both_changes(self):
+        strategy = self.record["UnifiedCampaign"]["BiddingStrategy"]
+        strategy["Network"] = {"BiddingStrategyType": "AVERAGE_CPA",
+                               "AverageCpa": copy.deepcopy(strategy["Search"]["AverageCpa"])}
+        operation, _ = self.operation({"SearchResults": "NO"},
+                                      "--network-strategy", "SERVING_OFF")
+        previews = []
+        client = FakeClient(self.record)
+        report = self.execute(operation, client, apply=False, show=previews.append)
+        self.assertTrue(report.ok, vars(report))
+        self.assertEqual(client.writes, [])
+        plan = previews[0].text()
+        self.assertIn("«YES» → «NO»", plan)
+        self.assertIn("«AVERAGE_CPA» → «SERVING_OFF»", plan)
 
     def test_maps_are_written_in_both_halves_but_missing_readback_remains_unchecked(self):
         operation, notes = self.operation({"Maps": "NO"})

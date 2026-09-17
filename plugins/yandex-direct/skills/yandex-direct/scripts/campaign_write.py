@@ -1468,6 +1468,14 @@ def strategy_task(client, account, accounts, args):
     unchanged = {}
     read_places = create_places(typed)
     if args.placement:
+        # Частичная правка не заменяет всю стратегию: показываем только
+        # отправляемые значения, чтобы бюджет не выглядел удалённым.
+        what.pop(f"{prefix}.BiddingStrategy")
+        for path, value in _fields(typed["BiddingStrategy"]):
+            if not isinstance(value, (dict, list)):
+                half, _, field = path.partition(".")
+                what[f"{prefix}.BiddingStrategy.{path}"] = (
+                    f"{HALF_RU[half]}: {field}")
         unchanged[f"{prefix}.BiddingStrategy"] = (
             record.get(prefix) or {}).get("BiddingStrategy")
         read_places = PLACEMENTS_READ if kind == UNIFIED else TEXT_PLACEMENTS
@@ -1488,7 +1496,8 @@ def strategy_task(client, account, accounts, args):
         unread=placement_unread(kind, typed) +
                ((f"{prefix}.PriorityGoals.Items.Operation",)
                 if "PriorityGoals" in typed else ()))
-    return (f"правка кампании {args.campaign}: {', '.join(what.values())}",
+    return (f"правка кампании {args.campaign}: "
+            f"{', '.join(TYPED_RU[one] for one in typed)}",
             [operation], rule_notes(args, operations=[operation]), [], None)
 
 
