@@ -1,8 +1,9 @@
 ---
 name: reddit-skill
 description: |
-  Reddit API: пользователи, сабреддиты, посты, комментарии, поиск.
-  OAuth2 (app-only / user mode), кеш-first, опциональные write-операции
+  Reddit: чтение постов через RSS без ключей или через API, пользователи,
+  сабреддиты, комментарии, поиск. OAuth2 (app-only / user mode), кеш,
+  автоматический переход на RSS при отказе авторизации, опциональные write-операции
   с двойным предохранителем (REDDIT_ENABLE_WRITE=1 + --confirm).
   Triggers: reddit, reddit api, reddit subreddit, reddit user, reddit post,
   reddit search, парсинг reddit, посты reddit, комментарии reddit, реддит.
@@ -10,18 +11,30 @@ description: |
 
 # reddit-skill
 
-Прямой доступ к Reddit API через OAuth2 без PRAW. Порт MCP-сервера
+Чтение публичных списков через RSS, постов и комментариев через `.json` без ключей,
+а также прямой доступ к Reddit API
+через OAuth2 без PRAW. Порт MCP-сервера
 [Arindam200/reddit-mcp](https://github.com/Arindam200/reddit-mcp) на shell-скрипты
 по образцу yandex-metrika / yandex-search-api.
 
 ## Config
 
-Нужно зарегистрировать **script-app** на https://www.reddit.com/prefs/apps и
-заполнить `config/.env`. Подробная инструкция: [config/README.md](config/README.md).
+Для мониторинга постов ключи приложения не нужны. Включить RSS явно:
 
-Минимум для read-only:
+```bash
+REDDIT_RSS_MODE=1 sh scripts/subreddit_top.sh --subreddit singularity --time day --limit 25
+```
+
+`REDDIT_RSS_MODE=1` можно сохранить в `config/.env`. При передаче через окружение
+файл `.env` не читается. Для RSS есть стандартный User-Agent; его можно заменить
+через `REDDIT_USER_AGENT`.
+
+Для полного доступа через API зарегистрировать **script-app** на
+https://www.reddit.com/prefs/apps и заполнить `config/.env`:
 - `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`
 - `REDDIT_USER_AGENT` (обязателен по правилам Reddit)
+
+Подробная инструкция: [config/README.md](config/README.md).
 
 Для write/me дополнительно:
 - `REDDIT_USERNAME`, `REDDIT_PASSWORD` — владелец script-app (без 2FA)
@@ -31,7 +44,7 @@ description: |
 
 1. **Cache-first** — токен, юзеры, сабреддиты, листинги кешируются по детерминированному ключу.
 2. **Context window hygiene** — stdout ≤ 30 строк, полный JSON в `cache/listings/<hash>.json`.
-3. **Auth auto-detect** — если в `.env` есть `REDDIT_USERNAME`+`REDDIT_PASSWORD`, скилл идёт в user mode (`grant_type=password`); иначе — app-only (`grant_type=client_credentials`).
+3. **Выбор режима** — `REDDIT_RSS_MODE=1` включает RSS. Без ключей поддерживаемые команды чтения также используют RSS. С ключами выбирается user mode при наличии `REDDIT_USERNAME`+`REDDIT_PASSWORD`, иначе app-only. При отказе авторизации чтение постов автоматически переходит на RSS в текущем запуске; настройки на диске не меняются.
 4. **Двойная защита write** — два уровня:
    - Без `REDDIT_ENABLE_WRITE=1` в `.env` write-скрипты **отказывают сразу** с понятной ошибкой (никакого dry-run — это «ворота» уровня окружения).
    - С `REDDIT_ENABLE_WRITE=1`, но без `--confirm` — **dry-run**: печатают что бы сделали, но не отправляют запрос.
@@ -40,13 +53,14 @@ description: |
 
 ## Workflow
 
-### STOP! Перед любым запросом
+### Проверка доступа
 
-1. **Проверь, что credentials настроены:**
+1. **Для чтения постов запускай нужную команду сразу.** Если нужно проверить доступ отдельно:
    ```bash
    sh scripts/auth_check.sh
    ```
-   Должен вывести `OK: app-only token works` (или `OK: user token works`).
+   Успех: `OK: RSS feed works`, `OK: app-only token works` или `OK: user token works`.
+   Для RSS не запрашивай файл с ключами и не требуй регистрации приложения.
 
 2. **Если нужна write-операция:**
    - Убедись, что в `.env` есть `REDDIT_USERNAME`+`REDDIT_PASSWORD`+`REDDIT_ENABLE_WRITE=1`
@@ -56,13 +70,40 @@ description: |
 
 3. **Имя сабреддита/юзера** можно передавать с префиксом или без: `r/python` ≡ `python`, `u/spez` ≡ `spez`.
 
+### Возможности RSS
+
+RSS поддерживают `subreddit_top.sh`, `search.sh`, `user_posts.sh` и `auth_check.sh`.
+Параметры поиска, сортировки, периода и количества передаются в публичную ленту.
+`submission.sh` в этом же режиме читает `https://www.reddit.com/comments/{id}.json`
+без токена. Можно передать обычную ссылку поста, ссылку с `.json` или ID.
+`--include-comments` у топа загружает посты и комментарии через тот же публичный JSON.
+Остальные команды требуют API.
+
+Сохраняются доступные в ленте заголовок, ссылка, дата, автор, сабреддит и текст.
+JSON имеет привычную структуру `Listing` и признак `source: "rss"`.
+`score` и `num_comments` равны `null`, в кратком выводе — `?`: RSS этих чисел не даёт.
+Не оценивай по ним популярность поста. Текст ограничен содержимым самой ленты.
+
+Публичный `.json` сохраняется как массив `[Listing поста, Listing комментариев]`,
+каждый с `source: "public-json"`; оценки и другие поля берутся из ответа Reddit.
+Полный полученный текст и вложенные ответы доступны в кеше, на экран выводится
+краткая сводка. Не обещай все комментарии: ответ ограничен `--limit-comments` /
+`--comments-per-post` и может содержать `more`. Скилл не разворачивает `more`
+дополнительными запросами; `submission.sh` сообщает, если нашёл его в дереве.
+
+Автоматический переход срабатывает при отказе выдачи токена (HTTP 400/401/403
+или OAuth-ошибка авторизации), API 403 либо повторном API 401 после обновления токена.
+Сетевые ошибки, 429 и 5xx не означают нерабочий ключ и не включают RSS.
+Если RSS или публичный JSON также недоступен, команда возвращает явную ошибку.
+При ошибке загрузки комментариев уже полученный список постов остаётся в кеше.
+
 ## Scripts
 
 ### Auth & identity
 
 | Script | Endpoint | Mode | Description |
 |--------|----------|------|-------------|
-| `auth_check.sh` | `GET /r/all/new?limit=1` | any | Sanity-check токена |
+| `auth_check.sh` | `GET /r/all/new?limit=1` или `.rss` | any | Проверка API или RSS |
 | `me.sh` | `GET /api/v1/me` | user only | Личный профиль (карма, имя) |
 
 ### Read
@@ -77,7 +118,7 @@ description: |
 | `subreddit_popular.sh` | `/subreddits/popular` | Популярные сабреддиты (Reddit «trending») |
 | `subreddit_top.sh --subreddit S` | `/r/{s}/top` (+ `/comments/{id}` per-post при `--include-comments`) | Топ-посты сабреддита; опционально с комментариями к каждому |
 | `search.sh --query "..."` | `/search` или `/r/{s}/search` | Поиск по Reddit (опц. `--subreddit`) |
-| `submission.sh --id I` или `--url U` | `/comments/{id}` | Пост + топ-комментарии |
+| `submission.sh --id I` или `--url U` | `/comments/{id}` или `/comments/{id}.json` | Пост + комментарии; работает без ключей |
 
 Общие read-флаги: `--limit N`, `--no-cache`, `--time T` (где применимо), `--sort S` (где применимо).
 
@@ -105,8 +146,12 @@ cache/
 ├── subreddits/<sub>.rules.json
 ├── subreddits/<sub>.moderators.json
 ├── listings/<hash>.json        # листинги (search, top, posts, comments, popular)
+├── top_with_comments/<hash>/   # копии постов с комментариями в подпапках api/ и rss/
 └── me.json                     # /api/v1/me
 ```
+
+Ключи кеша публичного чтения отделены от API. При неудачном обновлении поста или списка прежний
+файл сохраняется. Для свежих публикаций при повторном мониторинге передавай `--no-cache`.
 
 Поиск по кешу: `grep -r "term" cache/` или `rg "term" cache/`.
 
@@ -123,8 +168,8 @@ sh scripts/subreddit_top.sh --subreddit python --time week --limit 25
 sh scripts/search.sh --query "machine learning" --subreddit learnprogramming \
     --sort new --time month --limit 20
 
-# 4) Open a submission by URL (with comments)
-sh scripts/submission.sh \
+# 4) Пост и комментарии через публичный JSON без ключей
+REDDIT_RSS_MODE=1 sh scripts/submission.sh \
     --url "https://www.reddit.com/r/Python/comments/abc123/some_title/" \
     --limit-comments 50
 
@@ -136,7 +181,7 @@ REDDIT_ENABLE_WRITE=1 sh scripts/comment_reply.sh \
 REDDIT_ENABLE_WRITE=1 sh scripts/comment_reply.sh \
     --parent-id t3_abc123 --content "Looks great!" --confirm
 
-# 7) Top posts WITH comments per post (1 API call per post — use sparingly)
+# 7) Топ с комментариями (один дополнительный API или JSON запрос на пост)
 sh scripts/subreddit_top.sh --subreddit Python --time week --limit 5 \
     --include-comments --comments-per-post 25
 ```
@@ -156,6 +201,7 @@ No-network, проверяют:
 - детерминированность cache_key
 - корректность авто-выбора режима auth
 - что write-команды без `REDDIT_ENABLE_WRITE` или без `--confirm` ничего не отправляют
+- разбор Atom, публичный JSON, чтение без ключей, переход с API и разделение кеша
 
 ## Differences from upstream
 
@@ -164,5 +210,6 @@ No-network, проверяют:
 ## Документация
 
 - [Reddit API docs](https://www.reddit.com/dev/api/)
+- [RSS Reddit](https://www.reddit.com/wiki/rss)
 - [OAuth2 wiki](https://github.com/reddit-archive/reddit/wiki/OAuth2)
 - [API rules / User-Agent](https://github.com/reddit-archive/reddit/wiki/API)

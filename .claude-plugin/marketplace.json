@@ -123,7 +123,7 @@
     },
     {
       "name": "reddit-skill",
-      "description": "Reddit API на shell-скриптах: пользователи, сабреддиты, посты, комментарии, поиск, write с двойным предохранителем",
+      "description": "Reddit: посты и поиск через RSS без ключей, автоматический переход при отказе API, OAuth2 и защищённая запись",
       "source": "./plugins/reddit-skill",
       "category": "productivity"
     },

@@ -7,7 +7,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/common.sh"
-load_config
+load_config rss
 
 QUERY=""; SUB=""; SORT="relevance"; TIME="all"; LIMIT="25"; NO_CACHE=""
 while [ $# -gt 0 ]; do
@@ -34,21 +34,13 @@ else
     EXTRA_ARGS=""
 fi
 
-KEY=$(cache_key "search|${SUB}|${QUERY}|${SORT}|${TIME}|${LIMIT}")
-OUT="$REDDIT_CACHE_DIR/listings/${KEY}.json"
-mkdir -p "$REDDIT_CACHE_DIR/listings"
-
-if [ -z "$NO_CACHE" ] && [ -s "$OUT" ]; then
-    echo "(cached: $OUT)"
-else
-    # shellcheck disable=SC2086
-    reddit_get "$PATH_PART" "$OUT" \
-        --data-urlencode "q=${QUERY}" \
-        --data-urlencode "sort=${SORT}" \
-        --data-urlencode "t=${TIME}" \
-        --data-urlencode "limit=${LIMIT}" \
-        $EXTRA_ARGS
-fi
+# shellcheck disable=SC2086
+reddit_listing "search|${SUB}|${QUERY}|${SORT}|${TIME}|${LIMIT}" "$PATH_PART" "$NO_CACHE" \
+    --data-urlencode "q=${QUERY}" \
+    --data-urlencode "sort=${SORT}" \
+    --data-urlencode "t=${TIME}" \
+    --data-urlencode "limit=${LIMIT}" \
+    $EXTRA_ARGS
 
 echo "Search results for \"${QUERY}\" in ${SCOPE} (sort=${SORT}, time=${TIME}, limit=${LIMIT}):"
 print_listing_summary "$OUT" "$LIMIT"

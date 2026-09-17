@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Test posts</title>
+  <entry>
+    <id>t3_abc123</id>
+    <title>Python &amp; RSS</title>
+    <author><name>/u/alice</name></author>
+    <category term="Python" label="r/Python"/>
+    <link href="https://www.reddit.com/r/Python/comments/abc123/python_rss/"/>
+    <published>2026-09-17T12:00:00+03:00</published>
+    <updated>2026-09-17T13:00:00+03:00</updated>
+    <content type="html">&lt;p&gt;Hello &amp;amp; &lt;strong&gt;world&lt;/strong&gt;!&lt;/p&gt;&lt;p&gt;A&amp;nbsp;B&lt;br/&gt;Next line&lt;/p&gt;&lt;a href="https://example.com/article?a=1&amp;amp;b=2"&gt;[link]&lt;/a&gt; &lt;a href="https://www.reddit.com/r/Python/comments/abc123/python_rss/"&gt;[comments]&lt;/a&gt;</content>
+  </entry>
+  <entry>
+    <id>t3_def456</id>
+    <title>Post without optional metadata</title>
+    <link rel="self" href="https://www.reddit.com/r/Python/comments/def456/.rss"/>
+    <link rel="alternate" href="/r/Python/comments/def456/"/>
+    <updated>2026-09-17T09:30:00Z</updated>
+  </entry>
+</feed>
