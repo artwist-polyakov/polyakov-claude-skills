@@ -16,7 +16,7 @@ Analyze search demand and keyword statistics using Yandex Wordstat API.
 
 ## Настройка
 
-Скилл работает через Wordstat API в Yandex Cloud Search API v2. Для авторизации нужен ключ сервисного аккаунта: скрипты сами получают и обновляют IAM-токен.
+Скилл работает через Wordstat API в Yandex Cloud Search API v2. Для авторизации выберите IAM через авторизованный JSON-ключ сервисного аккаунта или API-ключ сервисного аккаунта. IAM-токен скрипты получают и обновляют автоматически; API-ключ автоматически не обновляется.
 
 Единая инструкция по настройке, переходу со старого API и устранению ошибок: [config/README.md](config/README.md).
 

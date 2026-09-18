@@ -34,6 +34,8 @@ WORDSTAT_README_URL="https://github.com/artwist-polyakov/polyakov-claude-skills/
 # Exported by load_config so callers and die_with_help can read them
 WORDSTAT_BACKEND=""
 WORDSTAT_CLOUD_FOLDER_ID=""
+WORDSTAT_CLOUD_AUTH_MODE=""
+WORDSTAT_CLOUD_API_KEY=""
 WORDSTAT_CLOUD_SA_KEY_PATH=""
 WORDSTAT_CLOUD_OPENSSL_BIN=""
 
@@ -56,7 +58,9 @@ die_with_help() {
         printf '  %s\n\n' "$WORDSTAT_README_URL"
         printf 'Quick checks:\n'
         printf '  - cloud mode:  config/config.json has yandex_cloud_folder_id?\n'
-        if [ -n "$WORDSTAT_CLOUD_SA_KEY_PATH" ]; then
+        if [ "${WORDSTAT_CLOUD_AUTH_MODE:-}" = "api_key" ] || [ "${_auth_mode:-}" = "api_key" ]; then
+            printf '                 YANDEX_AI_API_KEY set with yc.search-api.execute scope?\n'
+        elif [ -n "$WORDSTAT_CLOUD_SA_KEY_PATH" ]; then
             printf '                 SA key file: %s\n' "$WORDSTAT_CLOUD_SA_KEY_PATH"
             printf '                 (resolved from auth.service_account_key_file) — present and readable?\n'
         else
@@ -95,7 +99,7 @@ json_string() {
 # Configuration — load_config
 # ---------------------------------------------------------------------
 
-# Read old settings only to report migration errors for existing installations.
+# Read API-key settings and report obsolete OAuth configuration.
 _load_env_file() {
     _env_file="$WORDSTAT_CONFIG_DIR/.env"
     if [ -f "$_env_file" ]; then
@@ -163,17 +167,49 @@ load_config() {
     if [ -z "$_folder" ]; then
         die_with_help "В config/config.json отсутствует yandex_cloud_folder_id или файл содержит некорректный JSON."
     fi
-    if [ -z "$_sa_rel" ]; then
-        die_with_help "В config/config.json отсутствует auth.service_account_key_file."
-    fi
-
-    WORDSTAT_CLOUD_SA_KEY_PATH=$(_resolve_path "$_sa_rel")
-    if [ ! -r "$WORDSTAT_CLOUD_SA_KEY_PATH" ]; then
-        die_with_help "Файл ключа сервисного аккаунта не найден или недоступен для чтения: $WORDSTAT_CLOUD_SA_KEY_PATH"
-    fi
-
     WORDSTAT_CLOUD_FOLDER_ID="$_folder"
-    WORDSTAT_CLOUD_OPENSSL_BIN="${_ossl:-openssl}"
+    _auth_mode=$(_cfg_get auth.mode)
+    if [ -z "$_auth_mode" ]; then
+        if [ -n "${YANDEX_AI_API_KEY:-}" ] && [ -z "$_sa_rel" ]; then
+            _auth_mode="api_key"
+        else
+            _auth_mode="iam"
+        fi
+    fi
+
+    case "$_auth_mode" in
+        api_key)
+            if [ -z "${YANDEX_AI_API_KEY:-}" ]; then
+                WORDSTAT_BACKEND_DETECTED_VIA="cloud (auth.mode=api_key but YANDEX_AI_API_KEY missing)"
+                die_with_help "$WORDSTAT_BACKEND_DETECTED_VIA"
+            fi
+            WORDSTAT_CLOUD_AUTH_MODE="api_key"
+            WORDSTAT_CLOUD_API_KEY="$YANDEX_AI_API_KEY"
+            WORDSTAT_BACKEND="cloud"
+            return 0
+            ;;
+        iam)
+            if [ -z "$_sa_rel" ]; then
+                WORDSTAT_BACKEND_DETECTED_VIA="cloud (auth.mode=iam but auth.service_account_key_file missing)"
+                die_with_help "$WORDSTAT_BACKEND_DETECTED_VIA"
+            fi
+            _sa_resolved=$(_resolve_path "$_sa_rel")
+            if [ ! -r "$_sa_resolved" ]; then
+                WORDSTAT_CLOUD_SA_KEY_PATH="$_sa_resolved"
+                WORDSTAT_BACKEND_DETECTED_VIA="cloud (SA key file not found at resolved path)"
+                die_with_help "$WORDSTAT_BACKEND_DETECTED_VIA"
+            fi
+            WORDSTAT_CLOUD_AUTH_MODE="iam"
+            WORDSTAT_CLOUD_SA_KEY_PATH="$_sa_resolved"
+            WORDSTAT_CLOUD_OPENSSL_BIN="${_ossl:-openssl}"
+            WORDSTAT_BACKEND="cloud"
+            return 0
+            ;;
+        *)
+            WORDSTAT_BACKEND_DETECTED_VIA="cloud (invalid auth.mode=$_auth_mode)"
+            die_with_help "$WORDSTAT_BACKEND_DETECTED_VIA"
+            ;;
+    esac
     WORDSTAT_BACKEND="cloud"
 }
 
@@ -188,7 +224,8 @@ print_backend_info() {
     fi
     echo "Backend: cloud"
     echo "  folder_id: $WORDSTAT_CLOUD_FOLDER_ID"
-    echo "  SA key:    $WORDSTAT_CLOUD_SA_KEY_PATH"
+    echo "  auth:      $WORDSTAT_CLOUD_AUTH_MODE"
+    [ "$WORDSTAT_CLOUD_AUTH_MODE" != "iam" ] || echo "  SA key:    $WORDSTAT_CLOUD_SA_KEY_PATH"
     echo ""
     echo "=== Endpoints ==="
     echo "  POST $WORDSTAT_CLOUD_API/topRequests"
@@ -667,11 +704,22 @@ _cloud_request() {
     fi
     _cloud_body="$_xlate_out"
 
-    # 2. Get IAM token (uses cache, falls back to issue)
-    _tok=$(_iam_token_get)
-    if [ -z "$_tok" ]; then
-        die_with_help "Failed to obtain IAM token"
-    fi
+    # 2. Select the configured authorization header.
+    case "$WORDSTAT_CLOUD_AUTH_MODE" in
+        api_key)
+            _auth_header="Authorization: Api-Key $WORDSTAT_CLOUD_API_KEY"
+            ;;
+        iam)
+            _tok=$(_iam_token_get)
+            if [ -z "$_tok" ]; then
+                die_with_help "Failed to obtain IAM token"
+            fi
+            _auth_header="Authorization: Bearer $_tok"
+            ;;
+        *)
+            die_with_help "Unknown cloud auth mode: $WORDSTAT_CLOUD_AUTH_MODE"
+            ;;
+    esac
 
     # 3. POST with retry on 5xx and refresh on 401
     _attempt=0
@@ -683,7 +731,7 @@ _cloud_request() {
         _cr_resp_file="$_cr_tmp/resp"
         _status=$(curl -s -o "$_cr_resp_file" -w '%{http_code}' \
             -X POST "$WORDSTAT_CLOUD_API/$_method" \
-            -H "Authorization: Bearer $_tok" \
+            -H "$_auth_header" \
             -H "Content-Type: application/json" \
             -d "$_cloud_body")
 
@@ -695,14 +743,18 @@ _cloud_request() {
                 ;;
             401)
                 # Refresh once and retry
-                if [ "$_attempt" = "1" ]; then
+                if [ "$WORDSTAT_CLOUD_AUTH_MODE" = "iam" ] && [ "$_attempt" = "1" ]; then
                     rm -f "$WORDSTAT_CACHE_DIR/iam_token.json"
                     _tok=$(_iam_token_issue)
+                    _auth_header="Authorization: Bearer $_tok"
                     rm -rf "$_cr_tmp"
                     continue
                 fi
                 _err=$(cat "$_cr_resp_file" 2>/dev/null)
                 rm -rf "$_cr_tmp"
+                if [ "$WORDSTAT_CLOUD_AUTH_MODE" = "api_key" ]; then
+                    die_with_help "Cloud Wordstat 401 Unauthorized: API key was rejected" "$_err"
+                fi
                 die_with_help "Cloud Wordstat 401 Unauthorized after token refresh" "$_err"
                 ;;
             403)
