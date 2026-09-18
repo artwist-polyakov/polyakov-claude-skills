@@ -237,12 +237,6 @@ elif [ -n "$QUERIES_FILE" ]; then
         exit 1
     fi
 
-    # Ensure IAM token
-    _token=$(get_cached_iam_token)
-    if [ -z "$_token" ]; then
-        echo "No valid IAM token. Generating..." >&2
-        sh "$SCRIPT_DIR/iam_token_get.sh"
-    fi
 
     # Smart snippets есть только в синхронном API — предупреждаем ровно там,
     # где человек мог их ждать: при отправке нового батча. На --resume и на

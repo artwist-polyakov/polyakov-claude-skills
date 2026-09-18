@@ -99,12 +99,6 @@ if [ "${YSA_DRY_RUN:-0}" = "1" ]; then
     exit 0
 fi
 
-# Ensure IAM token is available
-_token=$(get_cached_iam_token)
-if [ -z "$_token" ]; then
-    echo "No valid IAM token. Generating..." >&2
-    sh "$SCRIPT_DIR/iam_token_get.sh"
-fi
 
 # Create results directory
 mkdir -p "$CACHE_DIR/results"

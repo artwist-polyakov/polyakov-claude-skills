@@ -51,15 +51,12 @@ stdout приходит индекс по строке на документ. Д
 
 ## Config
 
-Для работы нужен сервисный аккаунт Яндекс.Облака.
-Пошаговая инструкция (6 шагов, ~10 минут): [config/README.md](config/README.md).
+Для работы нужен сервисный аккаунт Яндекс.Облака с ролью `search-api.webSearch.user`.
+Поддерживаются IAM через авторизованный JSON-ключ и API-ключ сервисного аккаунта.
+Пошаговая настройка обоих вариантов: [config/README.md](config/README.md).
 
-Краткий чеклист:
-1. ID каталога Яндекс.Облака → в `config.json`
-2. Файл ключа сервисного аккаунта → в `config/service_account_key.json`
-3. Проверка: `bash scripts/iam_token_get.sh`
-
-> macOS: может потребоваться `brew install openssl` — подробности в config/README.md.
+Существующие IAM-конфигурации работают без изменений. Для API-ключа задайте
+`auth.mode: "api_key"` в `config.json` и `YANDEX_AI_API_KEY` в `config/.env`.
 
 ## Workflow
 
@@ -86,7 +83,8 @@ stdout приходит индекс по строке на документ. Д
    Исключение: если нужны инфоконтексты, режим всегда `sync`, а тип поиска —
    `SEARCH_TYPE_RU`; в асинхронном API и в других поисковых базах их нет.
 
-3. **Verify config**: `bash scripts/iam_token_get.sh`
+3. **Verify config**: убедись, что заданы `yandex_cloud_folder_id`,
+   соответствующий credential (поле `auth.mode` необязательно). Не печатай ключ или токен.
 4. **Run search** с полученным region ID
 5. **Present results**: со snippets — прочитай пак `cache/results/<hash>.md`
    и отвечай по нему, ссылаясь на источники; без snippets — позиция, заголовок,
@@ -95,7 +93,8 @@ stdout приходит индекс по строке на документ. Д
 ## Scripts
 
 ### iam_token_get.sh
-Generate or validate IAM token from Service Account key.
+Generate or validate IAM token from Service Account key. Needed only when
+`auth.mode` is `iam`.
 ```bash
 bash scripts/iam_token_get.sh
 ```
@@ -263,8 +262,7 @@ User: Разберись, как в 2026 считается НДС для УСН
 
 Claude: [Регион из контекста не следует, но вопрос общероссийский → 225]
 
-        [Проверяет токен]
-        bash scripts/iam_token_get.sh
+        [Проверяет конфигурацию авторизации без вывода секрета]
 
         [Ищет с выдержками — они включены по умолчанию]
         bash scripts/web_search_sync.sh --query "НДС для УСН 2026 порядок расчёта" --region-id 225
@@ -299,8 +297,7 @@ Claude: [Находит ID региона]
         bash scripts/search_region.sh --name "Москва"
         → Москва = 213
 
-        [Проверяет токен]
-        bash scripts/iam_token_get.sh
+        [Проверяет конфигурацию авторизации без вывода секрета]
 
         [Задача про позиции в выдаче, содержание страниц не нужно —
          отключает инфоконтексты: дешевле втрое]
@@ -330,8 +327,7 @@ Claude: [Находит ID региона]
         bash scripts/search_region.sh --name "Казань"
         → Казань = 43
 
-        [Проверяет токен]
-        bash scripts/iam_token_get.sh
+        [Проверяет конфигурацию авторизации без вывода секрета]
 
         [Батч по одному запросу; в stdout — строка на запрос,
          тексты и разбор лежат в файлах]
