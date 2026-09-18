@@ -43,7 +43,8 @@ WORDSTAT_SCRIPT_DIR="$SCRIPTS_DIR"
 WORDSTAT_SKILL_DIR="$(cd "$SCRIPTS_DIR/.." && pwd)"
 WORDSTAT_CONFIG_DIR="$td/config"
 WORDSTAT_CACHE_DIR="$td/cache"
-YANDEX_AI_API_KEY="test-api-secret"
+unset YANDEX_AI_API_KEY
+printf 'YANDEX_AI_API_KEY=test-api-secret\n' > "$td/config/.env"
 FAKE_CAPTURE="$td/curl-args"
 FAKE_RESPONSE="$TESTS_DIR/fixtures/cloud-topRequests-response.json"
 PATH="$td/bin:$PATH"
@@ -81,6 +82,20 @@ grep -Fxq 'Authorization: Api-Key test-api-secret' "$FAKE_CAPTURE" || {
 if grep -Fq 'Authorization: Bearer' "$FAKE_CAPTURE"; then
     echo "FAIL: IAM Bearer header leaked into API-key mode"
     exit 1
+fi
+
+# Existing installations omit auth.mode. An API key in .env must not change IAM.
+cat > "$td/config/config.json" <<EOF
+{"yandex_cloud_folder_id":"b1g-api-key-test","auth":{"service_account_key_file":"$td/config/sa.json"}}
+EOF
+: > "$td/config/sa.json"
+_iam_token_get() { printf 'test-iam-token'; }
+load_config
+[ "$WORDSTAT_CLOUD_AUTH_MODE" = iam ] || { echo 'FAIL: existing config switched away from IAM'; exit 1; }
+wordstat_request "topRequests" '{"phrase":"юрист дтп"}' >/dev/null
+grep -Fxq 'Authorization: Bearer test-iam-token' "$FAKE_CAPTURE" || { echo 'FAIL: IAM header missing'; exit 1; }
+if grep -Fq 'Authorization: Api-Key' "$FAKE_CAPTURE"; then
+    echo 'FAIL: existing IAM config used API key'; exit 1
 fi
 
 echo "test_api_key_auth: all passed"

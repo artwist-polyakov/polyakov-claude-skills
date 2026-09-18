@@ -48,6 +48,7 @@ EOF
     fi
 
     if _test_output=$( {
+        unset YANDEX_AI_API_KEY
         WORDSTAT_SCRIPT_DIR="$_test_dir/scripts"
         WORDSTAT_SKILL_DIR="$_test_dir"
         WORDSTAT_CONFIG_DIR="$_test_dir/config"
