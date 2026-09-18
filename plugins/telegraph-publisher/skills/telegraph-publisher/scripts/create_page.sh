@@ -17,8 +17,10 @@ TITLE=""
 CONTENT_FILE=""
 HTML_FILE=""
 HTML_INLINE=""
-AUTHOR_NAME=""
-AUTHOR_URL=""
+AUTHOR_NAME="${TELEGRAPH_AUTHOR_NAME-}"
+AUTHOR_URL="${TELEGRAPH_AUTHOR_URL-}"
+AUTHOR_NAME_SET="${TELEGRAPH_AUTHOR_NAME+x}"
+AUTHOR_URL_SET="${TELEGRAPH_AUTHOR_URL+x}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -26,8 +28,8 @@ while [ $# -gt 0 ]; do
         --content-file) CONTENT_FILE="$2"; shift 2 ;;
         --html-file)    HTML_FILE="$2"; shift 2 ;;
         --html)         HTML_INLINE="$2"; shift 2 ;;
-        --author-name)  AUTHOR_NAME="$2"; shift 2 ;;
-        --author-url)   AUTHOR_URL="$2"; shift 2 ;;
+        --author-name)  AUTHOR_NAME="$2"; AUTHOR_NAME_SET=1; shift 2 ;;
+        --author-url)   AUTHOR_URL="$2"; AUTHOR_URL_SET=1; shift 2 ;;
         *)              shift ;;
     esac
 done
@@ -57,19 +59,6 @@ else
     echo "Error: Provide --content-file, --html-file, or --html" >&2
     exit 1
 fi
-
-# --------------- Helper: build common author args ---------------
-# Appends --data-urlencode author_name/author_url to positional params
-# Call: _build_author_args; then use "$@"
-_build_author_args() {
-    if [ -n "$AUTHOR_NAME" ]; then
-        set -- "$@" --data-urlencode "author_name=$AUTHOR_NAME"
-    fi
-    if [ -n "$AUTHOR_URL" ]; then
-        set -- "$@" --data-urlencode "author_url=$AUTHOR_URL"
-    fi
-    # Return args via stdout, one per line — caller collects
-}
 
 # --------------- Check size and split if needed ---------------
 
@@ -110,10 +99,10 @@ if [ "$_size" -gt 61440 ]; then
         set -- "$@" --data-urlencode "title=$_part_title"
         set -- "$@" --data-urlencode "content=$_part_content"
         set -- "$@" -d "return_content=false"
-        if [ -n "$AUTHOR_NAME" ]; then
+        if [ -n "$AUTHOR_NAME_SET" ]; then
             set -- "$@" --data-urlencode "author_name=$AUTHOR_NAME"
         fi
-        if [ -n "$AUTHOR_URL" ]; then
+        if [ -n "$AUTHOR_URL_SET" ]; then
             set -- "$@" --data-urlencode "author_url=$AUTHOR_URL"
         fi
 
@@ -147,10 +136,10 @@ print(json.dumps(nodes, ensure_ascii=False))
     set -- "$@" --data-urlencode "title=$TITLE"
     set -- "$@" --data-urlencode "content=$_index_content"
     set -- "$@" -d "return_content=false"
-    if [ -n "$AUTHOR_NAME" ]; then
+    if [ -n "$AUTHOR_NAME_SET" ]; then
         set -- "$@" --data-urlencode "author_name=$AUTHOR_NAME"
     fi
-    if [ -n "$AUTHOR_URL" ]; then
+    if [ -n "$AUTHOR_URL_SET" ]; then
         set -- "$@" --data-urlencode "author_url=$AUTHOR_URL"
     fi
 
@@ -176,10 +165,10 @@ set -- "$@" --data-urlencode "title=$TITLE"
 set -- "$@" --data-urlencode "content=$_content"
 set -- "$@" -d "return_content=false"
 
-if [ -n "$AUTHOR_NAME" ]; then
+if [ -n "$AUTHOR_NAME_SET" ]; then
     set -- "$@" --data-urlencode "author_name=$AUTHOR_NAME"
 fi
-if [ -n "$AUTHOR_URL" ]; then
+if [ -n "$AUTHOR_URL_SET" ]; then
     set -- "$@" --data-urlencode "author_url=$AUTHOR_URL"
 fi
 

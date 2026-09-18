@@ -46,6 +46,12 @@ check_openssl "$OPENSSL_BIN"
 SECURE_TMP=$(make_secure_tmpdir)
 trap 'rm -rf "$SECURE_TMP"' EXIT INT TERM
 
+# make_secure_tmpdir restores the umask before returning, so set it again here:
+# key.pem, the JWT parts and openssl's signature must land 0600, not 0644.
+# Restored after the last read out of $SECURE_TMP.
+OLD_UMASK=$(umask)
+umask 077
+
 # Extract SA credentials and create JWT via python3
 python3 << PYEOF
 import json, base64, time, os
@@ -104,6 +110,9 @@ SIGNATURE=$(cat "$SECURE_TMP/signature.bin" | b64url_encode)
 # Assemble JWT
 HEADER_PAYLOAD=$(cat "$SECURE_TMP/header_payload.txt")
 JWT="${HEADER_PAYLOAD}.${SIGNATURE}"
+
+# Done with the key material.
+umask "$OLD_UMASK"
 
 # Exchange JWT for IAM token
 IAM_RESPONSE=$(http_request "POST" "$IAM_API_URL" \

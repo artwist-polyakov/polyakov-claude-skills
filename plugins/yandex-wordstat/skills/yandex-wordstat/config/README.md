@@ -1,27 +1,34 @@
 # Настройка скилла Yandex Wordstat
 
-Скилл поддерживает **два бэкенда**:
+Скилл поддерживает только Wordstat API в Yandex Cloud Search API v2: `https://searchapi.api.cloud.yandex.net/v2/wordstat`.
 
-| Бэкенд    | Endpoint                                       | Авторизация               | Статус |
-|-----------|------------------------------------------------|---------------------------|--------|
-| `cloud`   | `searchapi.api.cloud.yandex.net/v2/wordstat/*` | IAM token (Service Account JWT) | Preview, актуальный |
-| `legacy`  | `api.wordstat.yandex.net/v1/*`                 | OAuth Bearer              | Deprecated, новых пользователей не подключают |
+Для авторизации используется ключ сервисного аккаунта. Скрипты сами получают IAM-токен, сохраняют его в локальный кеш и обновляют по мере необходимости. Получать и вставлять токен вручную не нужно.
 
-С 2026 года Яндекс перестал выдавать новые токены для legacy. Старые токены всё ещё работают (бесплатно), но новые установки скилла должны использовать `cloud`.
+Старый API `api.wordstat.yandex.net/v1` не работает. Его OAuth-токен не подходит для Yandex Cloud Search API; инструкции получения и обновления старого токена больше не поддерживаются.
 
----
+## Переход со старого API
 
-## Cloud mode (рекомендуется для новых установок)
+Удалите `YANDEX_WORDSTAT_TOKEN` и `YANDEX_WORDSTAT_BACKEND` из `config/.env` и настроек окружения. Для текущей оболочки выполните:
 
-Нужен сервисный аккаунт в Яндекс.Облаке.
+```bash
+unset YANDEX_WORDSTAT_TOKEN YANDEX_WORDSTAT_BACKEND
+```
+
+Затем настройте доступ по инструкции ниже. Команды и аргументы скриптов анализа не меняются.
+
+## Настройка доступа
+
+Все команды ниже выполняются из каталога скилла `plugins/yandex-wordstat/skills/yandex-wordstat`.
 
 ### Шаг 1: Создайте каталог в Яндекс.Облаке
-1. Откройте https://console.yandex.cloud/
+
+1. Откройте [консоль Yandex Cloud](https://console.yandex.cloud/)
 2. Зарегистрируйтесь (нужен Яндекс ID), если ещё нет аккаунта
 3. Создайте **каталог** или используйте существующий
 4. Скопируйте **ID каталога** (`b1g...`) — он понадобится дальше
 
 ### Шаг 2: Создайте сервисный аккаунт
+
 1. В консоли откройте ваш каталог
 2. Слева выберите **Сервисные аккаунты** (раздел IAM)
 3. Нажмите **Создать сервисный аккаунт**
@@ -29,10 +36,12 @@
 5. Нажмите **Создать**
 
 ### Шаг 3: Назначьте роль
+
 1. Откройте созданный сервисный аккаунт
-2. Назначьте роль `search-api.webSearch.user` (та же роль используется для Yandex Search API — см. yandex-search-api скилл)
+2. Назначьте роль `search-api.webSearch.user` на созданный каталог
 
 ### Шаг 4: Создайте ключ авторизации
+
 1. В сервисном аккаунте → **Авторизованные ключи** → **Создать**
 2. Скачайте JSON-файл
 3. Переименуйте в `service_account_key.json`
@@ -41,11 +50,13 @@
 > Файл секретный — он уже в `.gitignore`.
 
 ### Шаг 5: Создайте config.json
+
 ```bash
 cp config/config.example.json config/config.json
 ```
 
 Откройте `config.json` и подставьте ваш `yandex_cloud_folder_id`:
+
 ```json
 {
   "yandex_cloud_folder_id": "b1g_ваш_id_каталога",
@@ -56,82 +67,27 @@ cp config/config.example.json config/config.json
 }
 ```
 
-`auth.service_account_key_file` — путь к ключу. Относительные пути резолвятся от корня скилла, не от `config/`. Можно указать абсолютный путь.
+`auth.service_account_key_file` — путь к ключу. Относительные пути отсчитываются от корня скилла, не от `config/`. Можно указать абсолютный путь.
+
+Если доступ уже настроен для скилла `yandex-search-api`, можно использовать тот же ключ сервисного аккаунта и каталог: схема `config.json` одинакова. Скопируйте файлы в `config/` этого скилла или укажите абсолютный путь к существующему ключу.
 
 ### Шаг 6: Проверьте
+
 ```bash
 sh scripts/quota.sh
 ```
-Должно вывести `Backend: cloud (auto: config.json present)` и список endpoints.
 
-### Если используете уже настроенный yandex-search-api
-Если у вас уже есть `service_account_key.json` для скилла `yandex-search-api`, схема `config.json` идентична — можно скопировать оба файла:
-```bash
-cp ../yandex-search-api/skills/yandex-search-api/config/service_account_key.json config/
-cp ../yandex-search-api/skills/yandex-search-api/config/config.json config/
-```
-(Скиллы независимы — никакой filesystem-зависимости между ними нет, просто схема одинаковая.)
+При успешном запросе скрипт выведет `Wordstat API: OK`. Проверка обращается к API.
 
----
+## Dynamics: ограничения операторов
 
-## Legacy mode (deprecated, free)
-
-Работает только для тех, кто получил OAuth-токен ДО депрекейта. Новые пользователи перейти не могут.
-
-### Шаг 1: Получите OAuth токен
-Если у вас уже есть зарегистрированный OAuth client_id:
-```bash
-bash scripts/get_token.sh --client-id ВАШ_CLIENT_ID
-```
-Скрипт выведет URL для авторизации в браузере, попросит вставить токен из URL после редиректа, и сохранит его в `config/.env`.
-
-Альтернативно — вручную:
-```bash
-cp config/.env.example config/.env
-# отредактируйте .env, вставьте YANDEX_WORDSTAT_TOKEN
-```
-
-### Шаг 2: Проверьте
-```bash
-sh scripts/quota.sh
-```
-Должно вывести `Backend: legacy (...)` и список v1 endpoints + лимиты (1000/день, 10/сек).
-
-### Срок жизни токена
-Токен действует **1 год**. После истечения нужно получить новый.
-
----
-
-## Как скилл выбирает бэкенд
-
-Логика в `load_config` (`scripts/common.sh`):
-
-1. **Явный override** — `YANDEX_WORDSTAT_BACKEND=legacy|cloud` в `config/.env` или env shell.
-2. **Cloud structurally configured** → `cloud`. Это значит:
-   - `config/config.json` существует и валидно парсится
-   - `yandex_cloud_folder_id` непустой
-   - `auth.service_account_key_file` резолвится в существующий читаемый файл
-3. **`YANDEX_WORDSTAT_TOKEN` задан** → `legacy`
-4. **Ничего не задано** → ошибка с ссылкой на этот README
-
-**Cloud wins on tie**: если заданы и legacy, и cloud — используется cloud. Чтобы остаться на legacy явно, добавьте в `config/.env`:
-```
-YANDEX_WORDSTAT_BACKEND=legacy
-```
-
-**Selector делает только структурную проверку** — никаких сетевых запросов, никакой проверки IAM. Если SA-ключ битый или роль не назначена, ошибка появится при первом реальном API-запросе.
-
----
-
-## Dynamics: ограничение оператора в cloud режиме
-
-В cloud-бэкенде метод `dynamics` (`scripts/dynamics.sh`) поддерживает все [операторы поиска Wordstat](https://yandex.ru/support/direct/keywords/symbols-and-operators.html) **только при детализации `daily`**. При `weekly` и `monthly` доступен **только оператор `+`**.
+Метод `dynamics` (`scripts/dynamics.sh`) поддерживает все [операторы поиска Wordstat](https://yandex.ru/support/direct/keywords/symbols-and-operators.html) **только при детализации `daily`**. При `weekly` и `monthly` доступен **только оператор `+`**.
 
 Это ограничение на стороне Yandex Cloud Search API — задокументировано в [официальной документации](https://aistudio.yandex.ru/docs/ru/search-api/operations/wordstat-getdynamics.html).
 
-Скилл делает preflight-проверку: если вы запустите `dynamics.sh --period weekly --phrase "юрист -бесплатно"`, скрипт упадёт с понятной ошибкой ДО запроса, чтобы вы не тратили запрос впустую.
+Скилл проверяет фразу перед отправкой: если вы запустите `dynamics.sh --period weekly --phrase "юрист -бесплатно"`, скрипт завершится с понятной ошибкой до запроса.
 
-| Phrase                 | period=daily | period=weekly/monthly |
+| Фраза                  | period=daily | period=weekly/monthly |
 |------------------------|--------------|-----------------------|
 | `юрист дтп`            | ✓            | ✓                     |
 | `юрист +по дтп`        | ✓            | ✓ (`+` разрешён)      |
@@ -142,26 +98,28 @@ YANDEX_WORDSTAT_BACKEND=legacy
 | `санкт-петербург`      | ✓            | ✓ (внутрисловный дефис) |
 | `б/у дымоход`          | ✓            | ✓ (слэш)              |
 
-Legacy-бэкенд исторически принимает все операторы; preflight в legacy режиме не срабатывает.
-
----
-
-## Troubleshooting
+## Устранение ошибок
 
 ### `Wordstat API: Error` / `wordstat 401`
-- **Cloud**: SA-ключ битый или истёк → пересоздайте ключ; либо роль `search-api.webSearch.user` не назначена → назначьте.
-- **Legacy**: токен истёк (срок жизни 1 год) → получите новый через `get_token.sh`.
+
+- Проверьте, что файл ключа содержит действующий авторизованный ключ сервисного аккаунта. Если ключ отозван или повреждён, создайте новый по основной инструкции.
+- IAM-токен обновляется автоматически. Вручную получать OAuth-токен не нужно.
 
 ### `Wordstat 403 Forbidden`
+
 - Роль `search-api.webSearch.user` не назначена сервисному аккаунту, либо вы пытаетесь обратиться не к тому каталогу.
 - Проверьте `yandex_cloud_folder_id` в `config.json`.
 
 ### `LibreSSL detected` (macOS)
+
 macOS по умолчанию использует LibreSSL, который не поддерживает PS256 для подписи JWT.
+
 ```bash
 brew install openssl@3
 ```
+
 И в `config.json`:
+
 ```json
 {
   "auth": {
@@ -169,37 +127,17 @@ brew install openssl@3
   }
 }
 ```
+
 Узнать точный путь: `brew --prefix openssl`.
 
-### `config/config.json present but invalid`
+### Неполная или неверная настройка `config/config.json`
+
 - `yandex_cloud_folder_id` пустой → заполните
-- Файл ключа не найден по пути из `auth.service_account_key_file` → проверьте, что файл есть и читается. Помните: относительные пути резолвятся от корня скилла, а не от `config/`.
-
-### Хочу переключиться на другой бэкенд
-В `config/.env` добавьте:
-```
-YANDEX_WORDSTAT_BACKEND=cloud   # или legacy
-```
-
-### Хочу удалить cloud конфиг и вернуться на legacy
-```bash
-rm config/config.json
-# legacy подхватится автоматически (если YANDEX_WORDSTAT_TOKEN задан)
-```
-
----
+- Файл ключа не найден по пути из `auth.service_account_key_file` → проверьте, что файл есть и читается. Помните: относительные пути отсчитываются от корня скилла, а не от `config/`.
 
 ## Дополнительно
 
-- Wordstat Cloud API docs: https://aistudio.yandex.ru/docs/ru/search-api/concepts/wordstat.html
-- Pricing: https://yandex.cloud/ru/docs/search-api/pricing
-- Operators: https://yandex.ru/support/direct/keywords/symbols-and-operators.html
-- Альтернативная настройка SA через CLI:
-  ```bash
-  yc iam service-account create --name wordstat-sa
-  yc resource-manager folder add-access-binding <FOLDER_ID> \
-    --role search-api.webSearch.user \
-    --subject serviceAccount:<SA_ID>
-  yc iam key create --service-account-name wordstat-sa \
-    --output config/service_account_key.json
-  ```
+- [Документация Wordstat API](https://aistudio.yandex.ru/docs/ru/search-api/concepts/wordstat.html)
+- [Актуальные квоты и лимиты Wordstat](https://aistudio.yandex.ru/ru/docs/search-api/concepts/limits)
+- [Тарификация](https://yandex.cloud/ru/docs/search-api/pricing)
+- [Операторы поиска](https://yandex.ru/support/direct/keywords/symbols-and-operators.html)

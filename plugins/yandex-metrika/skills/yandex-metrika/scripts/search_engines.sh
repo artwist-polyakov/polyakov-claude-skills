@@ -22,7 +22,7 @@ DIMENSIONS="ym:s:${ATTRIBUTION}SourceEngine"
 _se_filters="$FILTERS AND ym:s:${ATTRIBUTION}TrafficSource=='organic'"
 
 # Cache key
-_params_str="search_${COUNTER}_${DATE1}_${DATE2}_${GROUP}_${DEVICE}_${ATTRIBUTION}_${LIMIT}"
+_params_str="search_${COUNTER}_${DATE1}_${DATE2}_${GROUP}_${DEVICE}_${ATTRIBUTION}_${_se_filters}_${LIMIT}"
 _hash=$(cache_key "$_params_str")
 COUNTER_DIR=$(cache_dir_for_counter "$COUNTER")
 CACHE_FILE="$COUNTER_DIR/reports/search_${DATE1}_${DATE2}_${_hash}.csv"

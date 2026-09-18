@@ -6,13 +6,13 @@
 #
 # --include-comments fetches /comments/{id} for each top post and stores the
 # combined artifact under cache/top_with_comments/<key>/. Use sparingly —
-# each post = 1 extra API call.
+# each post = 1 extra API or public JSON call.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/common.sh"
-load_config
+load_config rss
 
 SUB=""; TIME="day"; LIMIT="25"; NO_CACHE=""
 INCLUDE_COMMENTS=""; COMMENTS_PER_POST="25"
@@ -30,17 +30,9 @@ done
 [ -n "$SUB" ] || die "Usage: subreddit_top.sh --subreddit <name> [--time T] [--limit N] [--include-comments]"
 SUB=$(printf '%s' "$SUB" | sed 's|^/*r/||')
 
-KEY=$(cache_key "top|${SUB}|${TIME}|${LIMIT}")
-OUT="$REDDIT_CACHE_DIR/listings/${KEY}.json"
-mkdir -p "$REDDIT_CACHE_DIR/listings"
-
-if [ -z "$NO_CACHE" ] && [ -s "$OUT" ]; then
-    echo "(cached: $OUT)"
-else
-    reddit_get "/r/${SUB}/top" "$OUT" \
-        --data-urlencode "t=${TIME}" \
-        --data-urlencode "limit=${LIMIT}"
-fi
+reddit_listing "top|${SUB}|${TIME}|${LIMIT}" "/r/${SUB}/top" "$NO_CACHE" \
+    --data-urlencode "t=${TIME}" \
+    --data-urlencode "limit=${LIMIT}"
 
 echo "Top posts in r/${SUB} (time=${TIME}, limit=${LIMIT}):"
 print_listing_summary "$OUT" "$LIMIT"
@@ -80,13 +72,17 @@ PY
     _count=0
     for _id in $IDS; do
         _count=$((_count + 1))
-        _file="$DETAIL_DIR/${_id}.json"
-        if [ -z "$NO_CACHE" ] && [ -s "$_file" ]; then
-            continue
-        fi
-        reddit_get "/comments/${_id}" "$_file" \
+        # Reuse the same per-post cache as submission.sh; separate public/API copies.
+        reddit_listing "submission|${_id}|${COMMENTS_PER_POST}" "/comments/${_id}" "$NO_CACHE" \
             --data-urlencode "limit=${COMMENTS_PER_POST}" \
             >/dev/null
+        case "$REDDIT_AUTH_MODE" in
+            rss) DETAIL_SOURCE="rss" ;;
+            *) DETAIL_SOURCE="api" ;;
+        esac
+        mkdir -p "$DETAIL_DIR/$DETAIL_SOURCE"
+        cp "$OUT" "$DETAIL_DIR/$DETAIL_SOURCE/${_id}.json"
     done
     echo "Comments cached for ${_count} posts: ${DETAIL_DIR}"
+    echo "Comment responses may be partial (limit / more); nested replies are in the JSON files."
 fi

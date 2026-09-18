@@ -57,14 +57,20 @@
     },
     {
       "name": "yandex-search-api",
-      "description": "Парсинг выдачи Яндекса через Yandex Cloud Search API v2 (sync + async)",
+      "description": "Поиск в Яндексе через Search API v2: содержательные выдержки страниц (smart snippets) + парсинг выдачи (sync + async)",
       "source": "./plugins/yandex-search-api",
       "category": "productivity"
     },
     {
       "name": "yandex-metrika",
-      "description": "Аналитика Yandex Metrika: трафик, конверсии, UTM, поисковые системы",
+      "description": "Яндекс Метрика: отчёты, API-сегменты и управление доступом рекламных кабинетов",
       "source": "./plugins/yandex-metrika",
+      "category": "productivity"
+    },
+    {
+      "name": "yandex-direct",
+      "description": "Яндекс Директ: статистика по ценным целям, позиции в поиске и управление рекламой с показом до/после",
+      "source": "./plugins/yandex-direct",
       "category": "productivity"
     },
     {
@@ -77,6 +83,12 @@
       "name": "yandex-webmaster",
       "description": "Yandex Webmaster API: управление сайтами, индексация, поисковые запросы, переобход",
       "source": "./plugins/yandex-webmaster",
+      "category": "productivity"
+    },
+    {
+      "name": "zoomkit",
+      "description": "ZoomKit: подключение, проекты, кампании, ставки и проверка рекламных ссылок",
+      "source": "./plugins/zoomkit",
       "category": "productivity"
     },
     {
@@ -111,7 +123,7 @@
     },
     {
       "name": "reddit-skill",
-      "description": "Reddit API на shell-скриптах: пользователи, сабреддиты, посты, комментарии, поиск, write с двойным предохранителем",
+      "description": "Reddit: чтение без ключей через веб-инструмент агента, JSON и RSS; скрипты с кешем, OAuth2 и защищённая запись",
       "source": "./plugins/reddit-skill",
       "category": "productivity"
     },
@@ -119,6 +131,12 @@
       "name": "knowledge-compiler",
       "description": "Компилятор прикладных знаний из книг и длинных источников в личные скиллы с картой источников",
       "source": "./plugins/knowledge-compiler",
+      "category": "productivity"
+    },
+    {
+      "name": "perplexity-search",
+      "description": "Perplexity API на shell: сырая выдача, ответ с цитатами, deep research в фоне, чтение страниц; cache-first",
+      "source": "./plugins/perplexity-search",
       "category": "productivity"
     }
   ]

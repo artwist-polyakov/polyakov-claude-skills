@@ -54,6 +54,14 @@ assert_eq "$got" "abc123" "URL without trailing slash"
 got=$(parse_submission_id "https://redd.it/abc123")
 assert_eq "$got" "abc123" "redd.it short URL"
 
+# Public JSON URLs with and without a title.
+for url in \
+    "https://www.reddit.com/r/Python/comments/abc123/some_title/.json" \
+    "https://www.reddit.com/comments/abc123.json?limit=25"; do
+    got=$(parse_submission_id "$url")
+    assert_eq "$got" "abc123" "public JSON URL"
+done
+
 # 8. Invalid input → non-zero exit
 if parse_submission_id "" >/dev/null 2>&1; then
     echo "FAIL: empty input should fail" >&2

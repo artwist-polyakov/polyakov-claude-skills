@@ -58,9 +58,14 @@ get_review_root() {
 }
 
 # --- State directory (per-branch isolation inside .codex-review/) ---
+# An optional root lets one command resolve .codex-review once for config + state.
+# Entry scripts pass that argument; standalone helpers intentionally omit it.
+# shellcheck disable=SC2120
 get_state_dir() {
-    local review_root
-    review_root="$(get_review_root)"
+    local review_root="${1:-}"
+    if [[ -z "$review_root" ]]; then
+        review_root="$(get_review_root)"
+    fi
     local branch
     branch="$(get_branch_slug)"
     local state_dir="$review_root/$branch"
@@ -69,10 +74,22 @@ get_state_dir() {
     echo "$state_dir"
 }
 
+# --- State directory for the current command ---
+# Entry scripts resolve STATE_DIR once. Reuse it so helpers do not repeat git,
+# mkdir and touch calls; standalone callers still get the normal fallback.
+ensure_state_dir() {
+    if [[ -z "${STATE_DIR:-}" ]]; then
+        STATE_DIR="$(get_state_dir)"
+    fi
+}
+
 # --- Load config (shared config.env → env vars → defaults) ---
+# Accepts the same optional pre-resolved root as get_state_dir.
 load_config() {
-    local review_root
-    review_root="$(get_review_root)"
+    local review_root="${1:-}"
+    if [[ -z "$review_root" ]]; then
+        review_root="$(get_review_root)"
+    fi
     local config_file="$review_root/config.env"
 
     if [[ -f "$config_file" ]]; then
@@ -82,49 +99,66 @@ load_config() {
 
     CODEX_MODEL="${CODEX_MODEL:-}"
     CODEX_REASONING_EFFORT="${CODEX_REASONING_EFFORT:-}"
+    CODEX_FAST_MODE="${CODEX_FAST_MODE:-false}"
     CODEX_MAX_ITERATIONS="${CODEX_MAX_ITERATIONS:-5}"
     CODEX_YOLO="${CODEX_YOLO:-true}"
     AUTO_REVIEW="${AUTO_REVIEW:-false}"
     CODEX_REVIEWER_PROMPT="${CODEX_REVIEWER_PROMPT:-}"
     CODEX_PLAN_GUIDE="${CODEX_PLAN_GUIDE:-}"
     CODEX_CODE_GUIDE="${CODEX_CODE_GUIDE:-}"
+    CODEX_SEVERITY_CALIBRATION="${CODEX_SEVERITY_CALIBRATION:-true}"
 }
 
 # --- Read a field from state.json (no jq dependency) ---
+# An optional second argument supplies an in-memory snapshot. This lets callers
+# that need several fields read the file once without maintaining a stale cache.
 read_state_field() {
     local field="$1"
-    local state_dir
-    state_dir="$(get_state_dir)"
-    local state_file="$state_dir/state.json"
+    local state_json
 
-    if [[ ! -f "$state_file" ]]; then
-        echo ""
-        return
+    if [[ $# -ge 2 ]]; then
+        state_json="$2"
+    else
+        ensure_state_dir
+        local state_file="$STATE_DIR/state.json"
+        if [[ ! -f "$state_file" ]]; then
+            echo ""
+            return
+        fi
+        state_json="$(<"$state_file")"
     fi
 
-    grep -o "\"$field\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$state_file" \
-        | head -1 \
-        | sed 's/.*:[[:space:]]*"//' \
-        | tr -d '"'
+    local pattern="\"${field}\"[[:space:]]*:[[:space:]]*\"([^\"]*)\""
+    if [[ "$state_json" =~ $pattern ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+    else
+        echo ""
+    fi
 }
 
 # --- Read numeric field from state.json ---
 read_state_number() {
     local field="$1"
-    local state_dir
-    state_dir="$(get_state_dir)"
-    local state_file="$state_dir/state.json"
+    local state_json
 
-    if [[ ! -f "$state_file" ]]; then
-        echo "0"
-        return
+    if [[ $# -ge 2 ]]; then
+        state_json="$2"
+    else
+        ensure_state_dir
+        local state_file="$STATE_DIR/state.json"
+        if [[ ! -f "$state_file" ]]; then
+            echo "0"
+            return
+        fi
+        state_json="$(<"$state_file")"
     fi
 
-    local val
-    val=$(grep -o "\"$field\"[[:space:]]*:[[:space:]]*[0-9]*" "$state_file" \
-        | head -1 \
-        | sed 's/.*:[[:space:]]*//')
-    echo "${val:-0}"
+    local pattern="\"${field}\"[[:space:]]*:[[:space:]]*([0-9]+)"
+    if [[ "$state_json" =~ $pattern ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+    else
+        echo "0"
+    fi
 }
 
 # --- Effective session_id: config.env → state.json ---
@@ -136,33 +170,270 @@ get_effective_session_id() {
     echo "$sid"
 }
 
+# --- A value state.json can store and give back unchanged ---
+# Values in state.json are written into string literals and read back with a
+# quote-delimited match that does not decode JSON escapes. So a stored value has
+# to survive that round trip unchanged: one line, no double quote (readers cut
+# the value there), no backslash and no control character (a JSON-escaped one
+# would be read back as the escape itself, e.g. C:\tmp coming out as C:\\tmp).
+# Anything else is refused rather than rewritten — a mangled value in front of
+# every reader is worse than an error, and only the caller knows what it meant
+# to store.
+#
+# `what` names the value in the message; `hint` says how to fix it. Prints the
+# value exactly as it came in; on rejection prints the reason to stderr and
+# returns 1 (the caller must pass that on — a bare exit inside $(...) would only
+# leave the subshell).
+state_string_value() {
+    local value="$1"
+    local what="$2"
+    local hint="$3"
+
+    if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+        echo "ERROR: $what must be a single line. $hint" >&2
+        return 1
+    fi
+    if [[ "$value" == *[$'\001'-$'\037']* ]]; then
+        echo "ERROR: $what contains control characters. $hint" >&2
+        return 1
+    fi
+    if [[ "$value" == *'"'* ]]; then
+        echo "ERROR: $what must not contain a double quote — every reader of state.json cuts the value there. $hint" >&2
+        return 1
+    fi
+    if [[ "$value" == *'\'* ]]; then
+        echo "ERROR: $what must not contain a backslash — readers of state.json do not decode JSON escapes, so it would come back doubled. $hint" >&2
+        return 1
+    fi
+
+    printf '%s' "$value"
+}
+
+# --- A counter state.json can store and this script can add to ---
+# The counters are written as JSON numbers, so only a canonical decimal is
+# storable: a leading zero produces a file no parser accepts. The digit limit
+# keeps the stored value inside the range shell arithmetic adds to — a counter
+# at the edge of that range wraps to a negative on the next +1, and the limit
+# check that guards a review cycle would never fire again.
+#
+# `what` names the value in the message; `hint` says how to fix it. Prints the
+# value as it came in; on rejection prints the reason to stderr and returns 1.
+STATE_COUNTER_MAX_DIGITS=9
+
+state_counter_value() {
+    local value="$1"
+    local what="$2"
+    local hint="$3"
+
+    if [[ ! "$value" =~ ^(0|[1-9][0-9]*)$ ]]; then
+        echo "ERROR: $what expects a whole number without a leading zero, got: $value. $hint" >&2
+        return 1
+    fi
+    if [[ ${#value} -gt $STATE_COUNTER_MAX_DIGITS ]]; then
+        echo "ERROR: $what is ${#value} digits, the limit is $STATE_COUNTER_MAX_DIGITS. $hint" >&2
+        return 1
+    fi
+
+    printf '%s' "$value"
+}
+
+# --- Task label for state.json ---
+# The label is a stored value, so it is checked as one first, and then against
+# what a name has to be on top of that: present, one line the caller can read
+# back in STATUS.md, and short enough to sit on that line.
+#
+# Prints the label exactly as it came in; on rejection prints the reason to stderr and
+# returns 1 (the caller must pass that on — a bare exit inside $(...) would only
+# leave the subshell).
+TASK_LABEL_MAX=200
+
+task_label_for_state() {
+    local label="$1"
+    local hint="$2"
+
+    # Everything is checked on the value as it arrived. Nothing here rewrites
+    # the label — not even trimming it, which would put a name in state.json
+    # that the caller never wrote.
+    state_string_value "$label" "task label" "$hint" > /dev/null || return 1
+
+    if [[ -z "$label" ]]; then
+        echo "ERROR: task label is empty. $hint" >&2
+        return 1
+    fi
+    if [[ "$label" == " "* || "$label" == *" " ]]; then
+        echo "ERROR: task label has a space at its start or end — readers of state.json keep it, so trim it yourself rather than have it stored. $hint" >&2
+        return 1
+    fi
+    if [[ ${#label} -gt $TASK_LABEL_MAX ]]; then
+        echo "ERROR: task label is ${#label} characters, the limit is $TASK_LABEL_MAX. $hint" >&2
+        return 1
+    fi
+
+    # No escaping: everything that would need it has been refused above, so the
+    # label reaches every reader exactly as the caller wrote it.
+    printf '%s' "$label"
+}
+
+# --- Fields of state.json, in the order they are written ---
+# Every writer used to carry its own copy of the file's literal, and a field
+# added to one copy reached the file only through that one writer. These two
+# lists and render_state_fields are the single description of the file's shape.
+STATE_STRING_FIELDS="session_id phase last_review_status last_review_timestamp task_description"
+STATE_NUMBER_FIELDS="iteration max_iterations reviews_completed"
+
+# --- Is a field present in a state.json snapshot? ---
+# read_state_field answers "" and read_state_number answers 0 for a field that
+# is absent — the same answer they give for an empty string and for a zero. A
+# caller that has to tell an absent field from a written one asks here.
+state_has_field() {
+    local field="$1"
+    local state_json="$2"
+    local pattern="\"${field}\"[[:space:]]*:"
+    [[ "$state_json" =~ $pattern ]]
+}
+
+# --- Render state.json from named fields ---
+# Called as: render_state_fields session_id=... phase=... — every field of the
+# file, by name. Names rather than positions: three of the fields are counters
+# that read alike, and a writer that swapped two of them would produce a
+# plausible file. An unknown name, a name given twice, a name left out, a
+# counter this file cannot hold and a string that state.json cannot give back
+# unchanged are all errors — every path that writes the file passes through
+# here, so a value that would break it never reaches the disk.
+render_state_fields() {
+    local session_id phase last_review_status last_review_timestamp task_description
+    local iteration max_iterations reviews_completed
+    local seen=" "
+    local arg key value field
+
+    for arg in "$@"; do
+        if [[ "$arg" != *=* ]]; then
+            echo "ERROR: state field must be given as name=value, got: $arg" >&2
+            return 1
+        fi
+        key="${arg%%=*}"
+        value="${arg#*=}"
+
+        case " $STATE_STRING_FIELDS $STATE_NUMBER_FIELDS " in
+            *" $key "*) ;;
+            *)
+                echo "ERROR: Unsupported state field: $key" >&2
+                echo "Known fields: $STATE_STRING_FIELDS $STATE_NUMBER_FIELDS" >&2
+                return 1
+                ;;
+        esac
+        if [[ "$seen" == *" $key "* ]]; then
+            echo "ERROR: State field given twice: $key" >&2
+            return 1
+        fi
+        case " $STATE_NUMBER_FIELDS " in
+            *" $key "*)
+                state_counter_value "$value" "$key" \
+                    "Pass a counter state.json can store." > /dev/null || return 1
+                ;;
+        esac
+        case " $STATE_STRING_FIELDS " in
+            *" $key "*)
+                state_string_value "$value" "$key" \
+                    "Pass a value state.json can store as written." > /dev/null || return 1
+                ;;
+        esac
+
+        printf -v "$key" '%s' "$value"
+        seen="$seen$key "
+    done
+
+    for field in $STATE_STRING_FIELDS $STATE_NUMBER_FIELDS; do
+        if [[ "$seen" != *" $field "* ]]; then
+            echo "ERROR: State field not given: $field" >&2
+            return 1
+        fi
+    done
+
+    cat <<STATE
+{
+  "session_id": "$session_id",
+  "phase": "$phase",
+  "iteration": $iteration,
+  "max_iterations": $max_iterations,
+  "last_review_status": "$last_review_status",
+  "last_review_timestamp": "$last_review_timestamp",
+  "reviews_completed": $reviews_completed,
+  "task_description": "$task_description"
+}
+STATE
+}
+
+# --- Write state.json from named fields ---
+write_state_fields() {
+    local json
+    json="$(render_state_fields "$@")" || return 1
+    write_state "$json"
+}
+
 # --- Write state.json ---
+# The file is replaced, never truncated in place: a write that dies part way
+# through — a full disk above all — would otherwise leave the session with an
+# empty or half-written state.json and nothing to fall back on. The temporary
+# file sits in the same directory, so the rename that publishes it is atomic.
 write_state() {
     local json="$1"
-    local state_dir
-    state_dir="$(get_state_dir)"
-    echo "$json" > "$state_dir/state.json"
+    ensure_state_dir
+    local state_file="$STATE_DIR/state.json"
+    local tmp_file="$STATE_DIR/.state.json.$$"
+
+    # A write killed by a signal leaves its temporary file behind — the cleanup
+    # below never runs for it. The name carries the pid that made it, so an
+    # orphan can be told from the file of a run that is still going; a pid that
+    # answers is left alone, which also covers a pid reused by something else.
+    local orphan orphan_pid
+    for orphan in "$STATE_DIR"/.state.json.*; do
+        [[ -e "$orphan" ]] || continue
+        orphan_pid="${orphan##*.}"
+        [[ "$orphan_pid" =~ ^[0-9]+$ ]] || continue
+        kill -0 "$orphan_pid" 2>/dev/null && continue
+        rm -f "$orphan"
+    done
+
+    if ! printf '%s\n' "$json" > "$tmp_file"; then
+        rm -f "$tmp_file"
+        echo "ERROR: Failed to write $tmp_file." >&2
+        return 1
+    fi
+    if ! mv "$tmp_file" "$state_file"; then
+        rm -f "$tmp_file"
+        echo "ERROR: Failed to replace $state_file." >&2
+        return 1
+    fi
 }
 
 # --- Write STATUS.md from current state.json ---
 write_status() {
-    local state_dir
-    state_dir="$(get_state_dir)"
+    ensure_state_dir
+    local state_dir="$STATE_DIR"
+    local state_file="$state_dir/state.json"
     local status_file="$state_dir/STATUS.md"
+    local state_json=""
+
+    if [[ -f "$state_file" ]]; then
+        state_json="$(<"$state_file")"
+    fi
 
     local task phase iteration max_iter review_status
-    task="$(read_state_field "task_description")"
-    phase="$(read_state_field "phase")"
-    iteration="$(read_state_number "iteration")"
-    max_iter="$(read_state_number "max_iterations")"
-    review_status="$(read_state_field "last_review_status")"
+    task="$(read_state_field "task_description" "$state_json")"
+    phase="$(read_state_field "phase" "$state_json")"
+    iteration="$(read_state_number "iteration" "$state_json")"
+    max_iter="$(read_state_number "max_iterations" "$state_json")"
+    review_status="$(read_state_field "last_review_status" "$state_json")"
 
-    local branch
-    branch="$(get_branch_slug)"
+    local branch="${state_dir##*/}"
 
     {
         echo "# Active Codex Review"
         echo "- Task: ${task:-not set}"
+        if [[ -f "$state_dir/codex-init.request.md" ]]; then
+            echo "- Task text: \`.codex-review/${branch}/codex-init.request.md\`"
+        fi
         echo "- Branch: ${branch}"
         echo "- Phase: ${phase:-initialized}"
         echo "- Iteration: ${iteration}/${max_iter}"
@@ -173,9 +444,8 @@ write_status() {
 
 # --- Remove STATUS.md (review complete or full reset) ---
 remove_status() {
-    local state_dir
-    state_dir="$(get_state_dir)"
-    rm -f "$state_dir/STATUS.md"
+    ensure_state_dir
+    rm -f "$STATE_DIR/STATUS.md"
 }
 
 # --- Parse verdict file ---
@@ -192,12 +462,203 @@ parse_verdict_file() {
     esac
 }
 
+# --- Branch lock ------------------------------------------------------------
+# A command that changes the review state of a branch holds this lock for its
+# whole run. Reading the iteration counter, sending the round and writing the
+# result back is one sequence: two of them interleaved read the same counter,
+# delete each other's verdict file and file their notes under one number.
+#
+# The claim is `mkdir` on a directory — atomic on every filesystem the plugin
+# runs on, and unlike `flock` it needs nothing a stock macOS lacks.
+#
+# A lock is never removed by anyone but the run that took it. Judging another
+# run dead means reading a pid, and a pid answers three ways, not two: running,
+# not running, and unknowable — another user's process and a process that has
+# ended look the same, and a lock left on a shared filesystem is a pid on a
+# machine this one cannot see. A lock left behind is therefore reported, with
+# what is known about its owner, and removed by a person.
+STATE_LOCK_DIR=""
+
+# The owner record this run published, held verbatim so that releasing can ask
+# whether the lock on disk is still the one this run made. Empty until the
+# record is published: until then the lock names nobody, and a lock that names
+# nobody may belong to a claim still in progress.
+STATE_LOCK_RECORD=""
+
+# Tries, a tenth of a second apart, to read the owner record of a lock someone
+# else just claimed. The record is published by a rename, so a reader sees all
+# of it or none; this only covers the gap between creating the directory and
+# that rename.
+STATE_LOCK_OWNER_TRIES=20
+
+state_lock_field() {
+    local field="$1" file="$2"
+    [[ -f "$file" ]] || return 0
+    sed -n "s/^${field}=//p" "$file" | head -1
+}
+
+# Waits for the owner record to appear, then prints the pid in it.
+state_lock_owner_pid() {
+    local file="$1"
+    local tries=0 pid=""
+    while [[ $tries -lt $STATE_LOCK_OWNER_TRIES ]]; do
+        pid="$(state_lock_field pid "$file")"
+        [[ -n "$pid" ]] && break
+        sleep 0.1 2>/dev/null || true
+        tries=$((tries + 1))
+    done
+    printf '%s' "$pid"
+}
+
+# What can be said about the owner of a lock: `running`, `gone`, or `unknown`
+# when the answer would be a guess — a lock from another machine, or a pid this
+# user cannot signal.
+state_lock_owner_state() {
+    local owner_file="$1" host="$2"
+    local pid
+    pid="$(state_lock_field pid "$owner_file")"
+    [[ "$pid" =~ ^[1-9][0-9]*$ ]] || { printf 'unknown'; return 0; }
+    [[ "$(state_lock_field host "$owner_file")" == "$host" ]] || { printf 'unknown'; return 0; }
+    if kill -0 "$pid" 2>/dev/null; then
+        printf 'running'
+        return 0
+    fi
+    # `kill -0` refuses a live process of another user exactly as it refuses a
+    # pid that is not there, so only a pid of this user can be called gone.
+    if [[ "$(state_lock_field uid "$owner_file")" == "$(id -u)" ]]; then
+        printf 'gone'
+    else
+        printf 'unknown'
+    fi
+}
+
+# Releases the lock this process took, and only while the lock on disk is still
+# the one it made. A lock removed by hand under a run that had already announced
+# itself, and claimed again in the meantime, belongs to whoever holds it now: it
+# may carry the new holder's record, or none yet while that holder is still
+# writing one. Neither is this run's to remove. Before this run's own record is
+# published it has told no one that it holds anything, so a lock naming nobody
+# is its own, and removing it is how a failed claim gives back what it made.
+release_state_lock() {
+    local dir="$STATE_LOCK_DIR"
+    [[ -n "$dir" ]] || return 0
+    STATE_LOCK_DIR=""
+    if [[ -n "$STATE_LOCK_RECORD" ]]; then
+        # The whole record, not the pid in it: a state directory on a shared
+        # filesystem is reached from more than one machine, and a pid says
+        # nothing on its own about which of them a claim came from.
+        local on_disk=""
+        if [[ -f "$dir/owner" ]]; then
+            # A record that cannot be read is not a record that matches. The
+            # lock stays, and saying which one it is beats an interrupted trap
+            # and an exit status nobody asked for.
+            if ! on_disk="$(<"$dir/owner")"; then
+                echo "ERROR: Failed to read the owner record of $dir. The lock was left in place; remove it by hand if no run is working on this branch." >&2
+                return 0
+            fi
+        fi
+        [[ "$on_disk" == "$STATE_LOCK_RECORD" ]] || return 0
+    else
+        local owner_pid
+        owner_pid="$(state_lock_field pid "$dir/owner")"
+        [[ -z "$owner_pid" || "$owner_pid" == "$$" ]] || return 0
+    fi
+    STATE_LOCK_RECORD=""
+    if ! rm -rf "$dir"; then
+        # The work of this command is done and recorded, so its exit status
+        # stands. What is left is the lock, and the next run says so.
+        echo "ERROR: Failed to remove the review lock $dir. Remove it by hand before the next run on this branch." >&2
+    fi
+}
+
+acquire_state_lock() {
+    local what="$1"
+    ensure_state_dir
+    local lock_dir="$STATE_DIR/.lock"
+    local owner_file="$lock_dir/owner"
+    local host
+    host="$(uname -n 2>/dev/null || echo "unknown host")"
+
+    if mkdir "$lock_dir" 2>/dev/null; then
+        STATE_LOCK_DIR="$lock_dir"
+        trap release_state_lock EXIT
+        trap 'release_state_lock; exit 130' INT
+        trap 'release_state_lock; exit 143' TERM
+
+        # The record is written whole and published by a rename: a reader finds
+        # all of it or nothing. A claim that cannot say who holds it is no
+        # claim — it would leave a lock nobody can account for.
+        local record tmp_file="$lock_dir/.owner.tmp"
+        record="$(printf 'pid=%s\nuid=%s\nhost=%s\ncommand=%s\nstarted=%s\n' \
+            "$$" "$(id -u)" "$host" "$what" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")")"
+        if ! printf '%s' "$record" > "$tmp_file" || ! mv "$tmp_file" "$owner_file"; then
+            rm -f "$tmp_file"
+            STATE_LOCK_DIR=""
+            echo "ERROR: Failed to record the owner of $lock_dir." >&2
+            if rm -rf "$lock_dir"; then
+                echo "Nothing was changed." >&2
+            else
+                echo "  The half-made lock is still there. Remove $lock_dir by hand before the next run on this branch." >&2
+                echo "Nothing else was changed." >&2
+            fi
+            return 1
+        fi
+        STATE_LOCK_RECORD="$record"
+        return 0
+    fi
+
+    if [[ ! -d "$lock_dir" ]]; then
+        echo "ERROR: Failed to create $lock_dir. Nothing was changed." >&2
+        return 1
+    fi
+
+    state_lock_owner_pid "$owner_file" >/dev/null
+    local owner_pid owner_host owner_cmd owner_started owner_state
+    owner_pid="$(state_lock_field pid "$owner_file")"
+    owner_host="$(state_lock_field host "$owner_file")"
+    owner_cmd="$(state_lock_field command "$owner_file")"
+    owner_started="$(state_lock_field started "$owner_file")"
+    owner_state="$(state_lock_owner_state "$owner_file" "$host")"
+
+    echo "ERROR: the review state of this branch is in use by another run." >&2
+    echo "  Holder: ${owner_cmd:-an unrecorded command} (pid ${owner_pid:-unknown} on ${owner_host:-an unrecorded host}, since ${owner_started:-unknown})" >&2
+    case "$owner_state" in
+        running)
+            echo "  That process is still running. Wait for it to finish." >&2
+            ;;
+        gone)
+            echo "  That process is no longer running. If no other command is working on this branch, remove $lock_dir and try again." >&2
+            ;;
+        *)
+            echo "  Whether that process is still running cannot be told from here. If no other command is working on this branch, remove $lock_dir and try again." >&2
+            ;;
+    esac
+    echo "Nothing was changed." >&2
+    return 1
+}
+
+# --- Move artifacts into an archive directory ---
+# A pattern that matches nothing is normal: not every session leaves notes or
+# replies. A move that fails is not — the file stays behind under a name the
+# next session reuses — so that failure travels back to the caller.
+archive_move() {
+    local dest="$1"
+    shift
+    local f
+    for f in "$@"; do
+        [[ -e "$f" ]] || continue
+        if ! mv "$f" "$dest/"; then
+            echo "ERROR: Failed to move $f into $dest." >&2
+            return 1
+        fi
+    done
+}
+
 # --- Archive previous session artifacts ---
 archive_previous_session() {
-    local state_dir
-    state_dir="$(get_state_dir)"
-    local review_root
-    review_root="$(get_review_root)"
+    ensure_state_dir
+    local state_dir="$STATE_DIR"
+    local review_root="${state_dir%/*}"
     local has_artifacts=false
 
     # Check if there's anything to archive
@@ -206,6 +667,9 @@ archive_previous_session() {
     done
     if ls "$state_dir"/notes/*.md &>/dev/null; then has_artifacts=true; fi
     if ls "$state_dir"/codex-*.log &>/dev/null; then has_artifacts=true; fi
+    if ls "$state_dir"/codex-*.request.md &>/dev/null; then has_artifacts=true; fi
+    if ls "$state_dir"/codex-*.prompt.md &>/dev/null; then has_artifacts=true; fi
+    if ls "$state_dir"/codex-*.reply.md &>/dev/null; then has_artifacts=true; fi
 
     if [[ "$has_artifacts" == "false" ]]; then
         return
@@ -213,19 +677,53 @@ archive_previous_session() {
 
     local timestamp
     timestamp="$(date -u +"%Y%m%dT%H%M%SZ")"
-    local archive_dir="$review_root/archive/${timestamp}"
-    mkdir -p "$archive_dir/notes"
+    # Two sessions archived inside the same second would otherwise share a
+    # directory and mix their artefacts. `mkdir` without -p fails when the
+    # directory is already there, and that failure is the claim: whoever
+    # created it owns that name, and the next one moves on to a suffix.
+    # Only an existing directory sends the loop on; every other failure --
+    # a read-only or full filesystem, a denied permission -- ends the archiver.
+    if ! mkdir -p "$review_root/archive"; then
+        echo "ERROR: Failed to create $review_root/archive. Nothing was archived." >&2
+        return 1
+    fi
+    local archive_base="$review_root/archive/${timestamp}"
+    local archive_dir="$archive_base"
+    local suffix=2
+    while ! mkdir "$archive_dir" 2>/dev/null; do
+        if [[ ! -d "$archive_dir" ]]; then
+            echo "ERROR: Failed to create archive directory $archive_dir. Nothing was archived." >&2
+            return 1
+        fi
+        archive_dir="${archive_base}-${suffix}"
+        suffix=$((suffix + 1))
+    done
+    if ! mkdir -p "$archive_dir/notes"; then
+        echo "ERROR: Failed to create $archive_dir/notes. Nothing was archived." >&2
+        return 1
+    fi
 
     # Generate summary.json before moving artifacts (non-critical, must not block archiving)
     generate_archive_summary "$state_dir" "$archive_dir" "$timestamp" || \
         echo "WARNING: Failed to generate summary.json for archive." >&2
 
-    # Move artifacts
-    for f in state.json verdict.txt last_response.txt STATUS.md; do
-        [[ -f "$state_dir/$f" ]] && mv "$state_dir/$f" "$archive_dir/"
-    done
-    mv "$state_dir"/codex-*.log "$archive_dir/" 2>/dev/null || true
-    mv "$state_dir"/notes/*.md "$archive_dir/notes/" 2>/dev/null || true
+    # Move artifacts. A failure here leaves an artifact under a name the next
+    # session reuses, so it stops the archiver instead of passing for success.
+    archive_move "$archive_dir" \
+        "$state_dir/state.json" "$state_dir/verdict.txt" \
+        "$state_dir/verdict.phase" "$state_dir/last_response.txt" \
+        "$state_dir/STATUS.md" || return 1
+    archive_move "$archive_dir" "$state_dir"/codex-*.log || return 1
+    # Requests travel with the logs of the attempts that sent them: left behind,
+    # they would be overwritten once a new session reuses the attempt numbers.
+    archive_move "$archive_dir" "$state_dir"/codex-*.request.md || return 1
+    # The prompts travel with them: codex-init.prompt.md carries a fixed name, so
+    # a new session would overwrite it where it stands.
+    archive_move "$archive_dir" "$state_dir"/codex-*.prompt.md || return 1
+    # So do the replies of rounds that came back without a verdict — they are
+    # named after the attempt, and a new session reuses those numbers.
+    archive_move "$archive_dir" "$state_dir"/codex-*.reply.md || return 1
+    archive_move "$archive_dir/notes" "$state_dir"/notes/*.md || return 1
 
     echo "Previous session archived to: $archive_dir" >&2
 }
@@ -241,12 +739,11 @@ generate_archive_summary() {
 
     # Read from state.json (still in state_dir at this point)
     if [[ -f "$state_dir/state.json" ]]; then
-        task_desc="$(grep -o '"task_description"[[:space:]]*:[[:space:]]*"[^"]*"' "$state_dir/state.json" \
-            | head -1 | sed 's/.*:[[:space:]]*"//;s/"$//')"
-        session_id="$(grep -o '"session_id"[[:space:]]*:[[:space:]]*"[^"]*"' "$state_dir/state.json" \
-            | head -1 | sed 's/.*:[[:space:]]*"//;s/"$//')"
-        last_status="$(grep -o '"last_review_status"[[:space:]]*:[[:space:]]*"[^"]*"' "$state_dir/state.json" \
-            | head -1 | sed 's/.*:[[:space:]]*"//;s/"$//')"
+        local state_json
+        state_json="$(<"$state_dir/state.json")"
+        task_desc="$(read_state_field "task_description" "$state_json")"
+        session_id="$(read_state_field "session_id" "$state_json")"
+        last_status="$(read_state_field "last_review_status" "$state_json")"
     fi
 
     # Read final verdict via format-agnostic helper
@@ -266,8 +763,7 @@ generate_archive_summary() {
     # Escape task_desc for JSON (replace " with \", newlines with \n)
     task_desc="$(echo "$task_desc" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')"
 
-    local branch
-    branch="$(get_branch_slug)"
+    local branch="${state_dir##*/}"
 
     cat > "$archive_dir/summary.json" <<SUMMARY_EOF
 {

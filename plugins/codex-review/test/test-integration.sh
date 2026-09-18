@@ -107,6 +107,7 @@ assert_eq "codex-state.sh dir = <repo>/.codex-review/main" \
 
 claim_session_in "$state_dir"
 printf 'APPROVED' > "$state_dir/verdict.txt"
+printf 'plan\n' > "$state_dir/verdict.phase"
 out1="$(run_hook_in "$T1")"
 assert_allow "hook reads verdict from same dir" "$out1"
 rm -rf "$T1"
@@ -129,6 +130,7 @@ assert_eq "slash → dash in dir name" \
 
 claim_session_in "$state_dir2"
 printf 'APPROVED' > "$state_dir2/verdict.txt"
+printf 'plan\n' > "$state_dir2/verdict.phase"
 out2="$(run_hook_in "$T2")"
 assert_allow "hook reads from slash-normalized dir" "$out2"
 rm -rf "$T2"
@@ -153,6 +155,7 @@ assert_eq "no-commit repo uses branch name, not 'HEAD'" \
 
 claim_session_in "$state_dir3"
 printf 'APPROVED' > "$state_dir3/verdict.txt"
+printf 'plan\n' > "$state_dir3/verdict.phase"
 out3="$(run_hook_in "$T3")"
 assert_allow "hook allows in no-commit repo" "$out3"
 rm -rf "$T3"
@@ -182,6 +185,7 @@ assert_eq "worktree state dir lives in MAIN repo" \
 
 claim_session_in "$state_dir4"
 printf 'APPROVED' > "$state_dir4/verdict.txt"
+printf 'plan\n' > "$state_dir4/verdict.phase"
 out4="$(run_hook_in "$T4-wt")"
 assert_allow "hook (run from worktree) reads main-repo verdict" "$out4"
 

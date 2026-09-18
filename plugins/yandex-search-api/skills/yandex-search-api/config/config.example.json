@@ -1,7 +1,8 @@
 {
   "yandex_cloud_folder_id": "b1g...",
   "auth": {
-    "mode": "api_key"
+    "service_account_key_file": "config/service_account_key.json",
+    "openssl_bin": "openssl"
   },
   "search": {
     "mode": "sync",
@@ -10,7 +11,11 @@
     "family_mode": "FAMILY_MODE_MODERATE",
     "fix_typo_mode": "FIX_TYPO_MODE_ON",
     "results_per_page": 10,
-    "pages": 1
+    "pages": 1,
+    "smart_snippets": {
+      "enabled": true,
+      "docs": 20
+    }
   },
   "async": {
     "poll_interval_minutes": 10,

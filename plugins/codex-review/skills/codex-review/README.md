@@ -45,16 +45,18 @@ npm install -g @openai/codex
 Добавь в `.gitignore` (или `.git/info/exclude`) проекта:
 
 ```
-.codex-review/config.env
-.codex-review/*/state.json
-.codex-review/*/STATUS.md
-.codex-review/*/verdict.txt
-.codex-review/*/last_response.txt
-.codex-review/*/codex-*.log
-.codex-review/archive/
+.codex-review/
 ```
 
-> `notes/` **НЕ** игнорируем — это журнал ревью для команды.
+Весь каталог, включая `notes/`, содержит локальное состояние ревью и не должен попадать в Git.
+
+Если проект следовал прежней рекомендации и уже отслеживает `notes/`, после обновления `.gitignore` убери каталог только из индекса Git:
+
+```bash
+git rm -r --cached --ignore-unmatch .codex-review/
+```
+
+Локальные файлы сохранятся. Закоммить подготовленные удаления вместе с новым правилом `.gitignore`.
 
 ### AGENTS.md (для Codex)
 
@@ -95,8 +97,21 @@ npm install -g @openai/codex
 # Существующая сессия Codex (или используй init для создания новой)
 # CODEX_SESSION_ID=sess_your_session_id
 
-CODEX_MODEL=gpt-5.2
+# Базовый вариант. Без строки используется модель из настроек Codex
+# или его текущий вариант по умолчанию.
+CODEX_MODEL=gpt-5.5
+
+# Актуальное семейство GPT-5.6 — оставь один вариант вместо строки выше:
+# CODEX_MODEL=gpt-5.6-sol    # максимальное качество для сложных ревью
+# CODEX_MODEL=gpt-5.6-terra  # сбалансированный вариант на каждый день
+# CODEX_MODEL=gpt-5.6-luna   # быстрые и хорошо ограниченные задачи
+
+# Обычно: low, medium, high, xhigh; max поддерживают модели GPT-5.6.
 CODEX_REASONING_EFFORT=high
+
+# Ускоренный сервисный уровень. По умолчанию выключен.
+CODEX_FAST_MODE=false
+
 CODEX_MAX_ITERATIONS=5
 CODEX_YOLO=true
 
@@ -114,7 +129,22 @@ CODEX_YOLO=true
 
 # Additional guidance for code review phase (optional, appended to built-in focus areas)
 # CODEX_CODE_GUIDE="Check that all DB queries use parameterized statements"
+
+# Severity calibration (default: true) — see «Severity и вердикт» below.
+# CODEX_SEVERITY_CALIBRATION=false
 ```
+
+`CODEX_FAST_MODE=true` передаёт `service_tier="fast"` при создании сессии и при каждом ревью. Режим сработает, если выбранная модель и учётная запись его поддерживают. При `false` или отсутствии настройки плагин не переопределяет сервисный уровень Codex.
+
+### Severity и вердикт
+
+Ревьюер оценивает каждую находку как `critical`, `important` или `minor` и раскладывает находки по трём разделам ответа: `## Blocking` (`critical` и `important` в текущей работе), `## Non-blocking` (`minor` в текущей работе) и `## Pre-existing` (дефекты затронутого, но не изменённого кода — по той же шкале, с сохранением уровня).
+
+`CHANGES_REQUESTED` приходит только при непустом `## Blocking`. `APPROVED` со списком в `## Non-blocking` — нормальный вердикт.
+
+С третьего круга ревьюер отчитывается по блокерам прошлых кругов и открывает новую тему только уровня `critical`.
+
+`CODEX_SEVERITY_CALIBRATION=false` возвращает прежний промпт, где вердикт может удержать любое замечание.
 
 ## Использование
 
@@ -125,8 +155,6 @@ CODEX_YOLO=true
 ```bash
 CODEX_SESSION_ID=sess_ваш_id
 ```
-
-Узнать id: `codex session list`
 
 Альтернативно — через CLI: `bash scripts/codex-state.sh set session_id sess_ваш_id`
 
@@ -157,26 +185,39 @@ bash scripts/codex-state.sh reset         # Сброс итераций
 bash scripts/codex-state.sh reset --full  # Полный сброс
 bash scripts/codex-state.sh set session_id <value>  # Ручная установка
 bash scripts/codex-state.sh set phase implementing  # Обновить фазу
+bash scripts/codex-state.sh set iteration 2        # Откатить счётчик кругов
 ```
+
+Записываемые поля: `session_id`, `phase`, `iteration`, `max_iterations`,
+`reviews_completed`, `last_review_status`, `last_review_timestamp`,
+`task_description`. Неизвестное имя поля, нецелое значение счётчика и значение
+с кавычкой, обратным слэшем, переводом строки или табуляцией — ошибка с кодом
+возврата 1, состояние не меняется.
 
 ## Структура .codex-review/
 
-В корне основного репо (не worktree) создается директория с per-branch изоляцией:
+В корне основного репо (не worktree) создается директория с per-branch изоляцией. Всё её содержимое локальное:
 
 ```
 .codex-review/
-├── config.env                  # gitignore — общие настройки проекта
+├── config.env                  # общие локальные настройки проекта
 ├── .gitkeep
-├── archive/                    # gitignore — общий архив всех сессий
+├── archive/                    # локальный архив всех сессий
 │   └── {timestamp}/            # артефакты одной сессии (branch в summary.json)
 ├── feat-auth/                  # per-branch state (имя ветки, / → -)
-│   ├── state.json              # gitignore — транзиентное состояние
-│   ├── STATUS.md               # gitignore — автогенерируемый статус для Claude
-│   ├── verdict.txt             # gitignore — последний вердикт от Codex
-│   ├── last_response.txt       # gitignore — последний ответ Codex
-│   ├── codex-init.log          # gitignore — лог инициализации сессии
-│   ├── codex-{phase}-{N}.log   # gitignore — логи итераций ревью
-│   └── notes/                  # В GIT — журнал текущего ревью для команды
+│   ├── state.json              # транзиентное состояние
+│   ├── STATUS.md               # автогенерируемый статус для Claude
+│   ├── verdict.txt             # последний вердикт от Codex
+│   ├── last_response.txt       # последний ответ Codex
+│   ├── current_session.txt     # привязка вердикта к сессии Claude
+│   ├── codex-init.log          # лог инициализации сессии
+│   ├── codex-init.request.md   # текст задачи, отправленный в сессию
+│   ├── codex-init.prompt.md    # промпт, который получил Codex
+│   ├── codex-{phase}-{N}.log   # логи итераций ревью
+│   ├── codex-{phase}-{N}.request.md  # текст, отправленный на итерацию
+│   ├── codex-{phase}-{N}.prompt.md   # промпт, который получил Codex
+│   ├── plan.md                 # копия последнего плана, ушедшего на ревью
+│   └── notes/                  # локальный журнал текущего ревью
 │       ├── .gitkeep
 │       ├── plan-review-1.md
 │       └── code-review-1.md

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Check Yandex Wordstat API connection (backend-aware)
+# Check the Yandex Cloud Wordstat API connection.
 
 set -e
 

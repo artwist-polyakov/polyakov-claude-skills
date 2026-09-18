@@ -55,9 +55,9 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-printf '{}' > "$response_file"
+printf '%s' "${FAKE_BODY:-{}}" > "$response_file"
 : > "$headers_file"
-printf '200'
+printf '%s' "${FAKE_STATUS:-200}"
 EOF
 chmod +x "$td/bin/curl"
 
@@ -94,6 +94,13 @@ fi
     exit 1
 }
 
+if FAKE_STATUS=401 FAKE_BODY='{"code":16,"message":"Unknown api key"}' sh "$td/skill/scripts/harness.sh" >"$td/rejected.out" 2>"$td/rejected.err"; then
+    echo 'FAIL: rejected key succeeded'; exit 1
+fi
+grep -Fq 'Unknown api key' "$td/rejected.err" || { echo 'FAIL: API error lost'; exit 1; }
+[ ! -s "$td/rejected.out" ] || { echo 'FAIL: error on stdout'; exit 1; }
+[ ! -e "$IAM_MARKER" ] || { echo 'FAIL: rejected key refreshed IAM'; exit 1; }
+
 rm "$td/skill/config/.env" "$CURL_CAPTURE"
 if sh "$td/skill/scripts/harness.sh" >"$td/missing-key.out" 2>&1; then
     echo 'FAIL: explicit API-key mode succeeded without a key'
@@ -116,7 +123,6 @@ cat > "$td/skill/config/config.json" <<'EOF'
 {
   "yandex_cloud_folder_id": "b1g-test-folder",
   "auth": {
-    "mode": "iam",
     "service_account_key_file": "config/service-account.json"
   }
 }
@@ -124,6 +130,7 @@ EOF
 cat > "$td/skill/cache/iam_token.json" <<'EOF'
 {"iam_token":"test-iam-secret","expires_at":4102444800}
 EOF
+printf 'YANDEX_AI_API_KEY=test-api-secret\n' > "$td/skill/config/.env"
 rm -f "$IAM_MARKER" "$CURL_CAPTURE"
 
 sh "$td/skill/scripts/harness.sh" >/dev/null
@@ -141,4 +148,4 @@ fi
     exit 1
 }
 
-echo 'test_api_key_auth: all passed'
+echo PASS

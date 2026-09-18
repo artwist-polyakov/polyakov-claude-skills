@@ -1,0 +1,5 @@
+{
+  "check_urls_enabled": true,
+  "suspend_urls_enabled": false,
+  "check_urls_max_time": 15
+}

@@ -1,28 +1,40 @@
 #!/bin/sh
-# Offline test runner for yandex-search-api.
+# Прогнать все офлайн-тесты. Ни сети, ни сервисного аккаунта не нужно.
+# Usage: sh scripts/tests/run.sh
+#
+# Тест обязан закончиться строкой PASS (или SKIP). Упавший `.` внутри sh-скрипта
+# умеет вернуть 0, поэтому одного кода возврата для зелёного результата мало.
 
-set -eu
+set -e
 
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
-passed=0
-failed=0
+PASS=0
+SKIP=0
+FAIL=0
+FAILED_NAMES=""
 
-for test_file in "$TESTS_DIR"/test_*.sh; do
-    [ -f "$test_file" ] || continue
-    test_name=$(basename "$test_file" .sh)
-    printf '%s ... ' "$test_name"
-    if sh "$test_file" >/dev/null 2>&1; then
-        echo PASS
-        passed=$((passed + 1))
-    else
-        echo FAIL
-        failed=$((failed + 1))
-        echo "--- $test_name output ---"
-        sh "$test_file" 2>&1 || true
-        echo "--- end output ---"
+for t in "$TESTS_DIR"/test_*.sh; do
+    name=$(basename "$t" .sh)
+    printf '  %-28s ' "$name"
+    if out=$(sh "$t" 2>&1); then
+        case "$(printf '%s' "$out" | tail -1)" in
+            PASS) echo "OK";   PASS=$((PASS + 1)); continue ;;
+            SKIP) echo "SKIP"; SKIP=$((SKIP + 1)); continue ;;
+        esac
     fi
+    echo "FAIL"
+    FAIL=$((FAIL + 1))
+    FAILED_NAMES="${FAILED_NAMES}${name} "
+    # Без этого падение выглядит как голое FAIL: сообщение теста, ради которого
+    # он и писался, оставалось в проглоченной переменной. Хвост — чтобы
+    # питоновский traceback не вынес буфер stdout песочницы.
+    printf '%s\n' "$out" | tail -20 | sed 's/^/      /'
 done
 
 echo ""
-echo "Results: $passed passed, $failed failed"
-[ "$failed" -eq 0 ]
+echo "Results: ${PASS} passed, ${SKIP} skipped, ${FAIL} failed"
+if [ "$FAIL" -gt 0 ]; then
+    echo "Failed: ${FAILED_NAMES}"
+    echo "Полный вывод одного теста: sh scripts/tests/<name>.sh"
+    exit 1
+fi

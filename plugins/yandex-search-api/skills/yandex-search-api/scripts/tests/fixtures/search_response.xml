@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<yandexsearch version="1.0">
+  <response date="20260831T090000">
+    <reqid>test-request-id</reqid>
+    <found priority="phrase">1234</found>
+    <found-human>Нашлось 1 тыс. результатов</found-human>
+    <results>
+      <grouping attr="" mode="flat" groups-on-page="3" docs-in-group="1">
+        <page first="1" last="3">0</page>
+        <group>
+          <categ attr="d" name="example.com"/>
+          <doccount>1</doccount>
+          <doc id="Z1">
+            <url>https://example.com/a</url>
+            <domain>example.com</domain>
+            <title>Пример <hlword>дымоход</hlword> купить</title>
+            <modtime>20260101T101010</modtime>
+            <passages>
+              <passage>Короткий <hlword>сниппет</hlword> выдачи.</passage>
+            </passages>
+            <properties><lang>ru</lang></properties>
+          </doc>
+        </group>
+        <group>
+          <categ attr="d" name="second.example.org"/>
+          <doccount>1</doccount>
+          <doc id="Z2">
+            <url>https://second.example.org/b</url>
+            <domain>second.example.org</domain>
+            <title>Второй документ</title>
+            <passages>
+              <passage>Сниппет второго документа.</passage>
+            </passages>
+            <properties><lang>ru</lang></properties>
+          </doc>
+        </group>
+        <group>
+          <categ attr="d" name="third.example.net"/>
+          <doccount>1</doccount>
+          <doc id="Z3">
+            <url>https://third.example.net/c</url>
+            <domain>third.example.net</domain>
+            <title>Третий документ</title>
+            <passages>
+              <passage>Сниппет третьего документа.</passage>
+            </passages>
+            <properties><lang>ru</lang></properties>
+          </doc>
+        </group>
+      </grouping>
+    </results>
+  </response>
+</yandexsearch>

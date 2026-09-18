@@ -1,7 +1,7 @@
 {
   "name": "reddit-skill",
-  "version": "1.0.0",
-  "description": "Reddit API skill: users, subreddits, posts, comments, search. Cache-first, OAuth2, optional write operations with double safeguard.",
+  "version": "1.1.1",
+  "description": "Reddit: чтение без ключей через веб-инструмент агента, публичный JSON и RSS. Скрипты с кешем, OAuth2 и защищённые операции записи.",
   "author": {
     "name": "Polyakov"
   }

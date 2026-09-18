@@ -153,7 +153,8 @@ Combine with `AND`, `OR`.
 ## Known API Limitations
 
 - **Drilldown does not support CSV**: requesting `/stat/v1/data/drilldown.csv` (the `.csv` variant of the drilldown endpoint) returns HTTP 406 "Unsupported format" (verified by test). Use `/stat/v1/data/drilldown` (JSON) via `metrika_get` instead.
-- **Bytime column limit**: `/stat/v1/data/bytime` returns max ~7 unique dimension values as columns. The rest are silently dropped. Workaround: query `/stat/v1/data` separately per period instead of using bytime.
+- **Metric limit**: at most 20 metrics per request. `conversions.sh` requests six goals per batch (18 metrics), with up to two helper metrics, then combines the CSV batches.
+- **Bytime source limit**: `/stat/v1/data/bytime` selects 7 dimension values by default; `top_keys` allows up to 30. `conversions.sh` uses 30 by default and the same source sorting for every batch. Other report scripts still use the API default unless they explicitly set `top_keys`.
 - **searchPhrase + startURL = empty**: combining `lastsignSearchPhrase` and `startURL` dimensions returns 0 rows. Query them separately and correlate.
 - **URL Path Levels**: `startURLPathLevel1` returns only the domain. Deeper levels require drilldown (which doesn't support CSV). Use `startURL` with `=@` filter for section analysis instead.
 - **Pageview vs Visit scopes**: cannot mix `ym:pv:` and `ym:s:` prefixes in one query.

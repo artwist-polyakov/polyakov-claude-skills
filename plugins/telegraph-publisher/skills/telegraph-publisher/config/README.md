@@ -18,11 +18,41 @@
 
 ## Access Token
 
-The `TELEGRAPH_ACCESS_TOKEN` is required for all operations except reading public pages.
+The `TELEGRAPH_ACCESS_TOKEN` is required for creating, editing, and listing pages,
+reading account details, and rotating the token. Creating an account and reading
+public page views do not require an existing token.
 
 You can set it in two ways:
 - **File**: `config/.env` (recommended)
 - **Environment variable**: `export TELEGRAPH_ACCESS_TOKEN=...`
+
+## Author Defaults
+
+Set optional author fields in `config/.env` or the environment:
+
+```bash
+TELEGRAPH_AUTHOR_NAME="Поляков считает | Про ИИ, рекламу и аналитику данных"
+TELEGRAPH_AUTHOR_URL="https://t.me/polyakov_schitaet"
+```
+
+`create_page.sh` and `edit_page.sh` use these values when the corresponding
+`--author-name` or `--author-url` flag is absent. Each field is independent:
+overriding the name does not discard the configured URL. Split articles use
+the same author for every part and the index page.
+
+Priority: explicit flag, then a value declared in `config/.env`, then environment.
+An explicit empty value is sent as an empty API field, not replaced by a default.
+If a field is neither configured nor passed, it is omitted from the request.
+
+**Editing:** configured defaults are sent on edits too, so they can replace a
+page's existing author. For a page with a different author, pass the intended
+name and URL explicitly instead of using these defaults.
+
+`create_account.sh` also uses these defaults: `--name` and `--author-url` override
+them, and `--name` may be omitted when a nonempty default name is configured.
+The full name becomes the public `author_name` (up to 128 characters). Its first
+32 Unicode characters become the private account label, `short_name`, to fit
+Telegraph's smaller limit. `--revoke` does not change author information.
 
 ## GitHub Media Hosting (recommended)
 

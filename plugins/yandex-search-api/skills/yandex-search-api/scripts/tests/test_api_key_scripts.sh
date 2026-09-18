@@ -8,9 +8,11 @@ SOURCE_SKILL_DIR="$(cd "$TESTS_DIR/../.." && pwd)"
 td="${TMPDIR:-/tmp}/ysa_api_key_scripts_test_$$"
 trap 'rm -rf "$td"' EXIT INT TERM
 
-mkdir -p "$td/skill" "$td/bin"
-cp -R "$SOURCE_SKILL_DIR/." "$td/skill/"
-mkdir -p "$td/skill/cache"
+mkdir -p "$td/skill/scripts" "$td/skill/config" "$td/bin"
+for script in common.sh web_search_sync.sh web_search_async.sh; do
+    cp "$SOURCE_SKILL_DIR/scripts/$script" "$td/skill/scripts/"
+done
+# No cache directory: exercise a first run on a fresh installation.
 
 cat > "$td/skill/config/config.json" <<'EOF'
 {
@@ -131,4 +133,4 @@ grep -Fq 'https://example.com/' "$result_file" || {
     exit 1
 }
 
-echo 'test_api_key_scripts: all passed'
+echo PASS

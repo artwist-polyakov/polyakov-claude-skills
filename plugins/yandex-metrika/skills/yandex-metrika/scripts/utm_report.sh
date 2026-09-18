@@ -19,7 +19,7 @@ METRICS="ym:s:visits,ym:s:users,ym:s:bounceRate,ym:s:pageDepth,ym:s:avgVisitDura
 DIMENSIONS="ym:s:${ATTRIBUTION}UTMSource,ym:s:${ATTRIBUTION}UTMMedium,ym:s:${ATTRIBUTION}UTMCampaign"
 
 # Cache key
-_params_str="utm_${COUNTER}_${DATE1}_${DATE2}_${GROUP}_${DEVICE}_${SOURCE}_${ATTRIBUTION}_${LIMIT}"
+_params_str="utm_${COUNTER}_${DATE1}_${DATE2}_${GROUP}_${DEVICE}_${SOURCE}_${ATTRIBUTION}_${FILTERS}_${LIMIT}"
 _hash=$(cache_key "$_params_str")
 COUNTER_DIR=$(cache_dir_for_counter "$COUNTER")
 CACHE_FILE="$COUNTER_DIR/reports/utm_${DATE1}_${DATE2}_${_hash}.csv"
