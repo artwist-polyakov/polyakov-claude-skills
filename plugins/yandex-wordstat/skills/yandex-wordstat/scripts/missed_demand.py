@@ -13,8 +13,8 @@ Subcommands:
 
 NOTE: query-total is transport-agnostic. It does NOT make HTTP calls.
 The caller (query_total.sh) routes the request through common.sh:wordstat_request,
-which handles backend selection (legacy vs cloud) and writes the legacy-shape
-JSON response to a file. This file is what query-total reads.
+which calls Yandex Cloud and writes the normalized JSON response to a file.
+This file is what query-total reads.
 """
 import argparse
 import json
@@ -28,6 +28,8 @@ STOP_WORDS = frozenset([
     "на", "в", "к", "за", "с", "по", "из", "от", "до", "для",
     "без", "при", "под", "над", "между", "через", "об", "перед",
 ])
+
+WORDSTAT_PHRASE_MAX_LENGTH = 400
 
 # Characters forbidden in slot variants (OR-syntax operators and leading modifiers)
 # Hyphen inside words is OK (б/у, санкт-петербург)
@@ -331,7 +333,7 @@ class SlotMerger:
             "additional_patterns": additional_patterns,
         }
 
-    def finalize(self, max_query_length=4096):
+    def finalize(self, max_query_length=WORDSTAT_PHRASE_MAX_LENGTH):
         """Finalize merged slots: deduplicate, remove subsets, build query."""
         self._remove_subsets()
 
@@ -580,8 +582,8 @@ def cmd_query_total(args):
     """Extract totalCount from a pre-fetched Wordstat response file.
 
     Transport-agnostic: caller (query_total.sh) is responsible for the HTTP call
-    via common.sh:wordstat_request, which handles legacy vs cloud backend
-    selection. This function only parses the resulting legacy-shape JSON.
+    via common.sh:wordstat_request. This function only parses the resulting
+    normalized JSON.
     """
     try:
         with open(args.json_file, "r", encoding="utf-8") as f:
@@ -645,7 +647,15 @@ def main():
     # build-query
     p_build = sub.add_parser("build-query", help="Build OR-query from slots")
     p_build.add_argument("slots_json", help="JSON string with slots")
-    p_build.add_argument("--max-query-length", type=int, default=4096, help="Max query length (default: 4096)")
+    p_build.add_argument(
+        "--max-query-length",
+        type=int,
+        default=WORDSTAT_PHRASE_MAX_LENGTH,
+        help=(
+            "Максимальная длина базовой OR-схемы "
+            f"(по умолчанию: {WORDSTAT_PHRASE_MAX_LENGTH})"
+        ),
+    )
 
     # merge-slots
     p_merge = sub.add_parser(
@@ -653,8 +663,13 @@ def main():
         help="Merge batch segmentation results (stdin JSON)",
     )
     p_merge.add_argument(
-        "--max-query-length", type=int, default=4096,
-        help="Max query length (default: 4096)",
+        "--max-query-length",
+        type=int,
+        default=WORDSTAT_PHRASE_MAX_LENGTH,
+        help=(
+            "Максимальная длина базовой OR-схемы "
+            f"(по умолчанию: {WORDSTAT_PHRASE_MAX_LENGTH})"
+        ),
     )
 
     # query-total
@@ -665,7 +680,7 @@ def main():
     p_query.add_argument(
         "--json-file",
         required=True,
-        help="Path to JSON file containing legacy-shape Wordstat response (written by common.sh:wordstat_request)",
+        help="Path to JSON file containing normalized Wordstat response (written by common.sh:wordstat_request)",
     )
     p_query.add_argument("--phrase", required=True, help="Original search phrase (for output formatting)")
 

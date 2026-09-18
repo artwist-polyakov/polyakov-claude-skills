@@ -19,6 +19,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+SEARCH_NORMALIZED=$(normalize_host_search "$SEARCH")
 ensure_user_id
 
 CACHE_TSV="$CACHE_DIR/hosts.tsv"
@@ -27,7 +28,7 @@ CACHE_TSV="$CACHE_DIR/hosts.tsv"
 if [ -z "$NO_CACHE" ] && [ -f "$CACHE_TSV" ] && [ -s "$CACHE_TSV" ]; then
     if [ -n "$SEARCH" ]; then
         echo "host_id	url	verified"
-        grep -i "$SEARCH" "$CACHE_TSV" || echo "(no matches for '$SEARCH')"
+        grep -i -- "$SEARCH_NORMALIZED" "$CACHE_TSV" || echo "(no matches for '$SEARCH')"
     else
         # Prepend header for print_tsv_head
         _tmp_display="${WM_TMPDIR}/wm_hosts_display_$$.tsv"
@@ -66,7 +67,7 @@ cp "$TMPFILE" "$CACHE_DIR/hosts.json"
 # Output
 echo "host_id	url	verified"
 if [ -n "$SEARCH" ]; then
-    grep -i "$SEARCH" "$CACHE_TSV" || echo "(no matches for '$SEARCH')"
+    grep -i -- "$SEARCH_NORMALIZED" "$CACHE_TSV" || echo "(no matches for '$SEARCH')"
 else
     print_tsv_head "$CACHE_TSV" 30
 fi

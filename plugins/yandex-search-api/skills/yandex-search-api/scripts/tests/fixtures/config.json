@@ -1,0 +1,25 @@
+{
+  "yandex_cloud_folder_id": "b1gtestfolder000000",
+  "auth": {
+    "service_account_key_file": "config/service_account_key.json",
+    "openssl_bin": "openssl"
+  },
+  "search": {
+    "mode": "sync",
+    "region_id": 225,
+    "search_type": "SEARCH_TYPE_RU",
+    "family_mode": "FAMILY_MODE_MODERATE",
+    "fix_typo_mode": "FIX_TYPO_MODE_ON",
+    "results_per_page": 10,
+    "pages": 1,
+    "smart_snippets": {
+      "enabled": true,
+      "docs": 20
+    }
+  },
+  "async": {
+    "poll_interval_minutes": 10,
+    "max_wait_minutes": 120,
+    "batch_size": 10
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "docs": [
+    {
+      "Num": 1,
+      "DocumentTitle": "Yandex Cloud",
+      "FullUrl": "https://yandex.cloud/ru/docs",
+      "Description": "Облачная платформа Yandex Cloud",
+      "info_context": "Yandex Cloud — технологическая платформа Яндекса для создания и развития цифровых продуктов.\nПлатформа предоставляет более 100 сервисов в области вычислений, хранения данных и машинного обучения."
+    },
+    {
+      "Num": 2,
+      "DocumentTitle": "Документ без инфоконтекста",
+      "FullUrl": "https://nopack.example.org/b",
+      "Description": "Описание есть, инфоконтекста нет",
+      "info_context": ""
+    },
+    {
+      "Num": 3,
+      "DocumentTitle": "Compute Cloud",
+      "FullUrl": "https://split.example.net/c?utm=1",
+      "Description": "",
+      "info_context": "Compute Cloud — сервис виртуальных машин Yandex Cloud."
+    }
+  ]
+}

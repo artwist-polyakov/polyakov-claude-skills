@@ -74,7 +74,7 @@ csv_escape() {
     printf '"%s"' "$_csv_val"
 }
 
-# Build legacy-shape JSON payload (common.sh translates to cloud format if needed)
+# Build JSON parameters (common.sh translates them to the cloud format).
 PHRASE_ESCAPED=$(json_escape "$PHRASE")
 PARAMS="{\"phrase\":\"$PHRASE_ESCAPED\""
 
@@ -102,8 +102,8 @@ echo "Backend: $WORDSTAT_BACKEND"
 echo ""
 echo "Fetching data..."
 
-# Backend-aware request — common.sh writes legacy-shape JSON to stdout
-wordstat_request "topRequests" "$PARAMS" | tr -d '\n\r' > "$TMPFILE"
+# common.sh writes compact normalized JSON to stdout.
+wordstat_request "topRequests" "$PARAMS" > "$TMPFILE"
 
 # Check for error
 if grep -q '"error"' "$TMPFILE"; then

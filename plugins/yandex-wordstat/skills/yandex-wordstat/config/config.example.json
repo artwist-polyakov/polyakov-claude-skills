@@ -1,6 +1,7 @@
 {
   "yandex_cloud_folder_id": "b1g...",
   "auth": {
-    "mode": "api_key"
+    "service_account_key_file": "config/service_account_key.json",
+    "openssl_bin": "openssl"
   }
 }

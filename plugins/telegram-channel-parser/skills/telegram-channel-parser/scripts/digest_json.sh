@@ -43,8 +43,8 @@ for _channel in $CHANNELS; do
     _cache_dir=$(cache_dir_for_channel "$_channel")
     _html_file="$_cache_dir/raw/page_latest.html"
 
-    # Fetch page
-    tg_fetch "${TG_BASE_URL}/${_channel}" > "$_html_file" 2>/dev/null || true
+    # Fetch posts and save the fresh latest page for channel info
+    _result=$(fetch_channel_pages "$_channel" "50" "" "$_after_date" 2>/dev/null) || true
 
     # Channel info → append to channels temp
     if [ -s "$_html_file" ]; then
@@ -55,7 +55,6 @@ for _channel in $CHANNELS; do
     fi
 
     # Posts → stream TSV through awk → append JSONL to posts temp
-    _result=$(fetch_channel_pages "$_channel" "50" "" "$_after_date" 2>/dev/null) || true
     [ -z "$_result" ] && continue
 
     echo "$_result" | awk -F'\t' -v ch="$_channel" '

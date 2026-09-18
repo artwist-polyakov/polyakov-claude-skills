@@ -1,20 +1,17 @@
 #!/bin/sh
-# Common functions for Yandex Wordstat skill — dual backend (legacy + cloud)
+# Common functions for Yandex Wordstat through Yandex Cloud Search API.
 #
 # Public API (sourced by other scripts):
-#   load_config            — picks backend, exports WORDSTAT_BACKEND, _DETECTED_VIA, _CLOUD_*
-#   wordstat_request M P   — request to Wordstat API, always returns LEGACY-shaped JSON
-#   print_backend_info     — backend-aware diagnostic block (used by quota.sh)
+#   load_config            — validates config, sets WORDSTAT_BACKEND and WORDSTAT_CLOUD_*
+#   wordstat_request M P   — request to Wordstat API, returns the scripts' JSON format
+#   print_backend_info     — connection details (used by quota.sh)
 #   die_with_help MSG      — structured error pointing user at config README
-#   json_escape, format_number, json_value, json_string  — legacy helpers (unchanged)
+#   json_escape, format_number, json_value, json_string  — output helpers
 #
-# Backend dispatch:
-#   - WORDSTAT_BACKEND=legacy → POST api.wordstat.yandex.net/v1/{method} (Bearer OAuth)
-#   - WORDSTAT_BACKEND=cloud  → POST searchapi.api.cloud.yandex.net/v2/wordstat/{method}
-#                              with AI Studio Api-Key or IAM Bearer + folderId;
-#                              response normalized back to legacy shape so callers don't change.
+# Requests use IAM Bearer + folderId. Responses are normalized to the existing
+# format so callers keep their current parsers.
 #
-# Selection in load_config is STRUCTURAL ONLY — no network, no IAM preflight.
+# Validation in load_config is STRUCTURAL ONLY — no network, no IAM preflight.
 # IAM/network errors surface on the first wordstat_request call.
 
 # Resolve directories. Use $0 because we're sourced from many shells (sh + bash).
@@ -30,14 +27,12 @@ fi
 WORDSTAT_CONFIG_DIR="${WORDSTAT_CONFIG_DIR:-$WORDSTAT_SKILL_DIR/config}"
 WORDSTAT_CACHE_DIR="${WORDSTAT_CACHE_DIR:-$WORDSTAT_SKILL_DIR/cache}"
 
-WORDSTAT_LEGACY_API="https://api.wordstat.yandex.net/v1"
 WORDSTAT_CLOUD_API="https://searchapi.api.cloud.yandex.net/v2/wordstat"
 WORDSTAT_IAM_API="https://iam.api.cloud.yandex.net/iam/v1/tokens"
 WORDSTAT_README_URL="https://github.com/artwist-polyakov/polyakov-claude-skills/blob/main/plugins/yandex-wordstat/skills/yandex-wordstat/config/README.md"
 
 # Exported by load_config so callers and die_with_help can read them
 WORDSTAT_BACKEND=""
-WORDSTAT_BACKEND_DETECTED_VIA=""
 WORDSTAT_CLOUD_FOLDER_ID=""
 WORDSTAT_CLOUD_AUTH_MODE=""
 WORDSTAT_CLOUD_API_KEY=""
@@ -55,10 +50,7 @@ die_with_help() {
     {
         printf '[wordstat] %s\n' "$_msg"
         if [ -n "$WORDSTAT_BACKEND" ]; then
-            printf 'Backend: %s' "$WORDSTAT_BACKEND"
-            [ -n "$WORDSTAT_BACKEND_DETECTED_VIA" ] && \
-                printf ' (%s)' "$WORDSTAT_BACKEND_DETECTED_VIA"
-            printf '\n'
+            printf 'Backend: %s\n' "$WORDSTAT_BACKEND"
         fi
         [ -n "$_extra" ] && printf '%s\n' "$_extra"
         printf '\n'
@@ -66,17 +58,21 @@ die_with_help() {
         printf '  %s\n\n' "$WORDSTAT_README_URL"
         printf 'Quick checks:\n'
         printf '  - cloud mode:  config/config.json has yandex_cloud_folder_id?\n'
-        printf '                 API key: YANDEX_AI_API_KEY is set and valid?\n'
-        printf '                 IAM: auth.service_account_key_file is present and readable?\n'
-        printf "                 account has role 'search-api.webSearch.user'?\n"
-        printf '  - legacy mode: YANDEX_WORDSTAT_TOKEN still valid? (tokens expire after 1 year)\n'
-        printf '  - to switch:   set YANDEX_WORDSTAT_BACKEND=legacy|cloud in config/.env\n'
+        if [ "${WORDSTAT_CLOUD_AUTH_MODE:-}" = "api_key" ] || [ "${_auth_mode:-}" = "api_key" ]; then
+            printf '                 YANDEX_AI_API_KEY set with yc.search-api.execute scope?\n'
+        elif [ -n "$WORDSTAT_CLOUD_SA_KEY_PATH" ]; then
+            printf '                 SA key file: %s\n' "$WORDSTAT_CLOUD_SA_KEY_PATH"
+            printf '                 (resolved from auth.service_account_key_file) — present and readable?\n'
+        else
+            printf '                 SA key file from auth.service_account_key_file — present and readable?\n'
+        fi
+        printf "                 SA has role 'search-api.webSearch.user'?\n"
     } >&2
     exit 1
 }
 
 # ---------------------------------------------------------------------
-# Legacy helpers (kept for compatibility with bash callers)
+# Output helpers
 # ---------------------------------------------------------------------
 
 json_escape() {
@@ -100,10 +96,10 @@ json_string() {
 }
 
 # ---------------------------------------------------------------------
-# Backend selection — load_config
+# Configuration — load_config
 # ---------------------------------------------------------------------
 
-# Read .env if present (legacy creds + override). Sourced into current shell.
+# Read API-key settings and report obsolete OAuth configuration.
 _load_env_file() {
     _env_file="$WORDSTAT_CONFIG_DIR/.env"
     if [ -f "$_env_file" ]; then
@@ -145,24 +141,34 @@ _resolve_path() {
     esac
 }
 
-# Detect cloud structural config. Sets WORDSTAT_CLOUD_* variables on success.
-# Returns 0 if cloud is structurally configured, 1 if not, 2 if config.json is
-# present but malformed (caller should die loudly).
-_detect_cloud_config() {
+# Validate cloud configuration without contacting the API.
+load_config() {
+    _load_env_file
+
+    _migration_help="Старый Wordstat API (api.wordstat.yandex.net) не работает. OAuth-токен YANDEX_WORDSTAT_TOKEN больше не подходит. Удалите YANDEX_WORDSTAT_TOKEN и YANDEX_WORDSTAT_BACKEND из config/.env и окружения; настройте Yandex Cloud по инструкции ниже."
+    case "${YANDEX_WORDSTAT_BACKEND:-cloud}" in
+        cloud) ;;
+        legacy) die_with_help "$_migration_help" ;;
+        *) die_with_help "Поддерживается только Yandex Cloud. Удалите YANDEX_WORDSTAT_BACKEND из config/.env и окружения." ;;
+    esac
+
     _cfg_file="$WORDSTAT_CONFIG_DIR/config.json"
-    [ -f "$_cfg_file" ] || return 1
+    if [ ! -f "$_cfg_file" ]; then
+        if [ -n "${YANDEX_WORDSTAT_TOKEN:-}" ]; then
+            die_with_help "$_migration_help"
+        fi
+        die_with_help "Не найден config/config.json. Настройте Yandex Cloud по инструкции ниже."
+    fi
 
     _folder=$(_cfg_get yandex_cloud_folder_id)
-    _auth_mode=$(_cfg_get auth.mode)
     _sa_rel=$(_cfg_get auth.service_account_key_file)
     _ossl=$(_cfg_get auth.openssl_bin)
 
     if [ -z "$_folder" ]; then
-        WORDSTAT_BACKEND_DETECTED_VIA="cloud (config.json present but yandex_cloud_folder_id missing)"
-        return 2
+        die_with_help "В config/config.json отсутствует yandex_cloud_folder_id или файл содержит некорректный JSON."
     fi
     WORDSTAT_CLOUD_FOLDER_ID="$_folder"
-
+    _auth_mode=$(_cfg_get auth.mode)
     if [ -z "$_auth_mode" ]; then
         if [ -n "${YANDEX_AI_API_KEY:-}" ] && [ -z "$_sa_rel" ]; then
             _auth_mode="api_key"
@@ -175,95 +181,36 @@ _detect_cloud_config() {
         api_key)
             if [ -z "${YANDEX_AI_API_KEY:-}" ]; then
                 WORDSTAT_BACKEND_DETECTED_VIA="cloud (auth.mode=api_key but YANDEX_AI_API_KEY missing)"
-                return 2
+                die_with_help "$WORDSTAT_BACKEND_DETECTED_VIA"
             fi
             WORDSTAT_CLOUD_AUTH_MODE="api_key"
             WORDSTAT_CLOUD_API_KEY="$YANDEX_AI_API_KEY"
+            WORDSTAT_BACKEND="cloud"
             return 0
             ;;
         iam)
             if [ -z "$_sa_rel" ]; then
                 WORDSTAT_BACKEND_DETECTED_VIA="cloud (auth.mode=iam but auth.service_account_key_file missing)"
-                return 2
+                die_with_help "$WORDSTAT_BACKEND_DETECTED_VIA"
             fi
             _sa_resolved=$(_resolve_path "$_sa_rel")
             if [ ! -r "$_sa_resolved" ]; then
                 WORDSTAT_CLOUD_SA_KEY_PATH="$_sa_resolved"
                 WORDSTAT_BACKEND_DETECTED_VIA="cloud (SA key file not found at resolved path)"
-                return 2
+                die_with_help "$WORDSTAT_BACKEND_DETECTED_VIA"
             fi
             WORDSTAT_CLOUD_AUTH_MODE="iam"
             WORDSTAT_CLOUD_SA_KEY_PATH="$_sa_resolved"
             WORDSTAT_CLOUD_OPENSSL_BIN="${_ossl:-openssl}"
+            WORDSTAT_BACKEND="cloud"
             return 0
             ;;
         *)
             WORDSTAT_BACKEND_DETECTED_VIA="cloud (invalid auth.mode=$_auth_mode)"
-            return 2
+            die_with_help "$WORDSTAT_BACKEND_DETECTED_VIA"
             ;;
     esac
-}
-
-load_config() {
-    _load_env_file
-
-    # 1. Explicit override
-    if [ -n "${YANDEX_WORDSTAT_BACKEND:-}" ]; then
-        case "$YANDEX_WORDSTAT_BACKEND" in
-            cloud)
-                _rc=0
-                _detect_cloud_config || _rc=$?
-                if [ "$_rc" = "2" ]; then
-                    WORDSTAT_BACKEND="cloud"
-                    die_with_help "YANDEX_WORDSTAT_BACKEND=cloud but config is incomplete: $WORDSTAT_BACKEND_DETECTED_VIA"
-                fi
-                if [ "$_rc" = "1" ]; then
-                    WORDSTAT_BACKEND="cloud"
-                    die_with_help "YANDEX_WORDSTAT_BACKEND=cloud but config/config.json is missing"
-                fi
-                WORDSTAT_BACKEND="cloud"
-                WORDSTAT_BACKEND_DETECTED_VIA="explicit override"
-                return 0
-                ;;
-            legacy)
-                if [ -z "${YANDEX_WORDSTAT_TOKEN:-}" ]; then
-                    WORDSTAT_BACKEND="legacy"
-                    WORDSTAT_BACKEND_DETECTED_VIA="explicit override"
-                    die_with_help "YANDEX_WORDSTAT_BACKEND=legacy but YANDEX_WORDSTAT_TOKEN is not set"
-                fi
-                WORDSTAT_BACKEND="legacy"
-                WORDSTAT_BACKEND_DETECTED_VIA="explicit override"
-                return 0
-                ;;
-            *)
-                die_with_help "Invalid YANDEX_WORDSTAT_BACKEND='$YANDEX_WORDSTAT_BACKEND' (expected 'legacy' or 'cloud')"
-                ;;
-        esac
-    fi
-
-    # 2. Cloud structurally configured → cloud (cloud wins on tie)
-    _rc=0
-    _detect_cloud_config || _rc=$?
-    if [ "$_rc" = "0" ]; then
-        WORDSTAT_BACKEND="cloud"
-        WORDSTAT_BACKEND_DETECTED_VIA="auto: config.json present"
-        return 0
-    fi
-    if [ "$_rc" = "2" ]; then
-        # Malformed cloud config → fail loudly, do NOT silently fall back
-        WORDSTAT_BACKEND="cloud"
-        die_with_help "config/config.json present but invalid: $WORDSTAT_BACKEND_DETECTED_VIA"
-    fi
-
-    # 3. Legacy creds present → legacy
-    if [ -n "${YANDEX_WORDSTAT_TOKEN:-}" ]; then
-        WORDSTAT_BACKEND="legacy"
-        WORDSTAT_BACKEND_DETECTED_VIA="auto: YANDEX_WORDSTAT_TOKEN set"
-        return 0
-    fi
-
-    # 4. Nothing
-    die_with_help "No Wordstat credentials found"
+    WORDSTAT_BACKEND="cloud"
 }
 
 # ---------------------------------------------------------------------
@@ -271,54 +218,39 @@ load_config() {
 # ---------------------------------------------------------------------
 
 print_backend_info() {
-    case "$WORDSTAT_BACKEND" in
-        legacy)
-            echo "Backend: legacy ($WORDSTAT_BACKEND_DETECTED_VIA)"
-            echo ""
-            echo "=== Endpoints ==="
-            echo "  POST $WORDSTAT_LEGACY_API/topRequests"
-            echo "  POST $WORDSTAT_LEGACY_API/dynamics"
-            echo "  POST $WORDSTAT_LEGACY_API/regions"
-            echo ""
-            echo "=== API Limits ==="
-            echo "  - Rate limit: 10 requests/second"
-            echo "  - Daily quota: 1000 requests"
-            echo ""
-            echo "Note: This API is deprecated for new users. Existing tokens still work."
-            ;;
-        cloud)
-            echo "Backend: cloud ($WORDSTAT_BACKEND_DETECTED_VIA)"
-            echo "  folder_id: $WORDSTAT_CLOUD_FOLDER_ID"
-            echo "  auth:      $WORDSTAT_CLOUD_AUTH_MODE"
-            if [ "$WORDSTAT_CLOUD_AUTH_MODE" = "iam" ]; then
-                echo "  SA key:    $WORDSTAT_CLOUD_SA_KEY_PATH"
-            fi
-            echo ""
-            echo "=== Endpoints ==="
-            echo "  POST $WORDSTAT_CLOUD_API/topRequests"
-            echo "  POST $WORDSTAT_CLOUD_API/dynamics"
-            echo "  POST $WORDSTAT_CLOUD_API/regions"
-            echo ""
-            echo "=== API Limits ==="
-            echo "  Wordstat in Search API is currently in Preview."
-            echo "  See https://yandex.cloud/ru/docs/search-api/pricing for current limits and billing."
-            ;;
-        *)
-            echo "Backend: (not configured)"
-            ;;
-    esac
+    if [ -z "$WORDSTAT_BACKEND" ]; then
+        echo "Backend: (not configured)"
+        return 0
+    fi
+    echo "Backend: cloud"
+    echo "  folder_id: $WORDSTAT_CLOUD_FOLDER_ID"
+    echo "  auth:      $WORDSTAT_CLOUD_AUTH_MODE"
+    [ "$WORDSTAT_CLOUD_AUTH_MODE" != "iam" ] || echo "  SA key:    $WORDSTAT_CLOUD_SA_KEY_PATH"
+    echo ""
+    echo "=== Endpoints ==="
+    echo "  POST $WORDSTAT_CLOUD_API/topRequests"
+    echo "  POST $WORDSTAT_CLOUD_API/dynamics"
+    echo "  POST $WORDSTAT_CLOUD_API/regions"
+    echo ""
+    echo "=== API Limits ==="
+    echo "  See https://yandex.cloud/ru/docs/search-api/pricing for current limits and billing."
 }
 
 # ---------------------------------------------------------------------
 # IAM token — JWT PS256 with SA key (inline-copied from yandex-search-api)
 # ---------------------------------------------------------------------
 
+# Create a 0700 temp directory under $TMPDIR. The umask is restored before
+# returning, so a caller that writes secrets into the directory must set its
+# own umask 077 around those writes (see _iam_token_issue).
+# POSIX sh has no locals: every variable here is prefixed to avoid clobbering
+# a caller's variable of the same name.
 _make_secure_tmpdir() {
-    _old_umask=$(umask)
+    _mstd_old_umask=$(umask)
     umask 077
-    _td=$(mktemp -d "${TMPDIR:-/tmp}/wordstat_XXXXXX")
-    umask "$_old_umask"
-    echo "$_td"
+    _mstd_td=$(mktemp -d "${TMPDIR:-/tmp}/wordstat_XXXXXX")
+    umask "$_mstd_old_umask"
+    echo "$_mstd_td"
 }
 
 _check_openssl() {
@@ -340,9 +272,9 @@ _check_openssl() {
 }
 
 _get_cached_iam_token() {
-    _cf="$WORDSTAT_CACHE_DIR/iam_token.json"
-    [ -f "$_cf" ] || return 0
-    _CACHE_FILE="$_cf" python3 - <<'PYEOF' 2>/dev/null
+    _gcit_cf="$WORDSTAT_CACHE_DIR/iam_token.json"
+    [ -f "$_gcit_cf" ] || return 0
+    _CACHE_FILE="$_gcit_cf" python3 - <<'PYEOF' 2>/dev/null
 import json, os, time
 cf = os.environ["_CACHE_FILE"]
 try:
@@ -356,22 +288,26 @@ except Exception:
 PYEOF
 }
 
+# NOTE: every variable is prefixed _sit_ on purpose. This function is called
+# from _iam_token_issue while that function still owns a temp directory; an
+# unprefixed _tmp here would overwrite the caller's path and strand the
+# private key on disk (that bug shipped once already).
 _save_iam_token() {
-    _tok="$1"
-    _exp="$2"
+    _sit_tok="$1"
+    _sit_exp="$2"
     mkdir -p "$WORDSTAT_CACHE_DIR"
-    _cf="$WORDSTAT_CACHE_DIR/iam_token.json"
-    _old_umask=$(umask)
+    _sit_cf="$WORDSTAT_CACHE_DIR/iam_token.json"
+    _sit_old_umask=$(umask)
     umask 077
-    _tmp="$WORDSTAT_CACHE_DIR/.iam_token_tmp_$$.json"
-    _SAVE_TOKEN="$_tok" _SAVE_EXP="$_exp" _TMP_FILE="$_tmp" python3 - <<'PYEOF'
+    _sit_tmp="$WORDSTAT_CACHE_DIR/.iam_token_tmp_$$.json"
+    _SAVE_TOKEN="$_sit_tok" _SAVE_EXP="$_sit_exp" _TMP_FILE="$_sit_tmp" python3 - <<'PYEOF'
 import json, os
 d = {"iam_token": os.environ["_SAVE_TOKEN"], "expires_at": int(os.environ["_SAVE_EXP"])}
 with open(os.environ["_TMP_FILE"], "w") as f:
     json.dump(d, f)
 PYEOF
-    mv "$_tmp" "$_cf"
-    umask "$_old_umask"
+    mv "$_sit_tmp" "$_sit_cf"
+    umask "$_sit_old_umask"
 }
 
 # Issue a fresh IAM token from the SA key. Echoes token on stdout.
@@ -382,12 +318,19 @@ _iam_token_issue() {
         die_with_help "Service account key file not readable: $WORDSTAT_CLOUD_SA_KEY_PATH"
     fi
 
-    _tmp=$(_make_secure_tmpdir)
+    _iti_tmp=$(_make_secure_tmpdir)
     # shellcheck disable=SC2064
-    trap "rm -rf '$_tmp'" EXIT INT TERM
+    trap "rm -rf '$_iti_tmp'" EXIT INT TERM
+
+    # Every file below (key.pem, the JWT parts, openssl's signature) is written
+    # while umask 077 is in effect, so they land 0600 rather than 0644.
+    # _make_secure_tmpdir restores the umask before it returns, so we set our
+    # own here and restore it on the way out.
+    _iti_old_umask=$(umask)
+    umask 077
 
     # Build JWT header + payload, write key.pem and signing_input.txt
-    _SA_KEY="$WORDSTAT_CLOUD_SA_KEY_PATH" _TMP="$_tmp" python3 - <<'PYEOF' || die_with_help "Failed to build JWT from SA key"
+    _SA_KEY="$WORDSTAT_CLOUD_SA_KEY_PATH" _TMP="$_iti_tmp" python3 - <<'PYEOF' || die_with_help "Failed to build JWT from SA key"
 import json, base64, time, os, sys
 sa_key_file = os.environ["_SA_KEY"]
 tmp_dir = os.environ["_TMP"]
@@ -426,17 +369,17 @@ PYEOF
     "$WORDSTAT_CLOUD_OPENSSL_BIN" dgst -sha256 \
         -sigopt rsa_padding_mode:pss \
         -sigopt rsa_pss_saltlen:-1 \
-        -sign "$_tmp/key.pem" \
-        -out "$_tmp/signature.bin" \
-        "$_tmp/signing_input.txt" 2>/dev/null \
+        -sign "$_iti_tmp/key.pem" \
+        -out "$_iti_tmp/signature.bin" \
+        "$_iti_tmp/signing_input.txt" 2>/dev/null \
         || die_with_help "openssl PS256 signing failed"
 
     _sig=$(python3 -c "
 import base64, sys
-with open('$_tmp/signature.bin', 'rb') as f:
+with open('$_iti_tmp/signature.bin', 'rb') as f:
     print(base64.urlsafe_b64encode(f.read()).rstrip(b'=').decode())
 ")
-    _hp=$(cat "$_tmp/header_payload.txt")
+    _hp=$(cat "$_iti_tmp/header_payload.txt")
     _jwt="${_hp}.${_sig}"
 
     _resp=$(curl -s -X POST "$WORDSTAT_IAM_API" \
@@ -478,13 +421,18 @@ print(f'{tok}|{exp}')
         NO_TOKEN:*)    die_with_help "IAM response missing iamToken" "${_result#NO_TOKEN:}" ;;
     esac
 
-    _tok=$(printf '%s' "$_result" | cut -d'|' -f1)
-    _exp=$(printf '%s' "$_result" | cut -d'|' -f2)
-    _save_iam_token "$_tok" "$_exp"
+    _iti_tok=$(printf '%s' "$_result" | cut -d'|' -f1)
+    _iti_exp=$(printf '%s' "$_result" | cut -d'|' -f2)
 
-    rm -rf "$_tmp"
+    # Drop the key material first: nothing below needs the temp directory, and
+    # doing it here means no later call can clobber $_iti_tmp before the rm.
+    rm -rf "$_iti_tmp"
+    umask "$_iti_old_umask"
     trap - EXIT INT TERM
-    printf '%s' "$_tok"
+
+    _save_iam_token "$_iti_tok" "$_iti_exp"
+
+    printf '%s' "$_iti_tok"
 }
 
 _iam_token_get() {
@@ -497,13 +445,13 @@ _iam_token_get() {
 }
 
 # ---------------------------------------------------------------------
-# Request translation + response normalization (cloud ↔ legacy)
+# Request translation + response normalization for the scripts' JSON format
 # ---------------------------------------------------------------------
 
-# Translate legacy-shape params JSON → cloud request body JSON.
-# Args: $1 = method (topRequests|dynamics|regions), $2 = legacy params JSON
+# Translate script parameters to a cloud request body.
+# Args: $1 = method (topRequests|dynamics|regions), $2 = parameters as JSON
 # Output: cloud-shape JSON on stdout.
-# Exits 1 with die_with_help on dynamics preflight failure.
+# Exits non-zero when local request validation fails.
 _xlate_request() {
     _method="$1"
     _params="$2"
@@ -514,6 +462,19 @@ import json, os, re, sys
 method = os.environ["_METHOD"]
 params = json.loads(os.environ["_PARAMS"])
 folder = os.environ["_FOLDER"]
+
+PHRASE_MAX_LENGTH = 400
+phrase = params.get("phrase")
+if (
+    method in ("topRequests", "dynamics", "regions")
+    and isinstance(phrase, str)
+    and len(phrase) > PHRASE_MAX_LENGTH
+):
+    print(
+        f"PHRASE_TOO_LONG:{len(phrase)}:{PHRASE_MAX_LENGTH}",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 DEVICE_MAP = {
     "all": "DEVICE_ALL",
@@ -612,9 +573,9 @@ print(json.dumps(body, ensure_ascii=False))
 PYEOF
 }
 
-# Normalize cloud response JSON → legacy shape JSON.
+# Normalize cloud responses to the scripts' existing JSON format.
 # Args: $1 = method, $2 = path to cloud response file (optional; if missing, spool stdin)
-# Output: legacy-shape JSON on stdout
+# Output: normalized JSON on stdout
 #
 # Implementation note: cloud responses for topRequests --limit 2000 can be
 # multi-MB. Passing through env var is unsafe (ARG_MAX / E2BIG). We use a file
@@ -640,7 +601,7 @@ except Exception as e:
     print(json.dumps({"error": f"Cloud response parse error: {e}"}))
     sys.exit(0)
 
-# Translate cloud error JSON to legacy {"error": ...}
+# Translate cloud error JSON to the scripts' {"error": ...} format
 if "code" in d and "message" in d and "results" not in d and "topRequests" not in d:
     print(json.dumps({"error": d.get("message", "cloud error"), "code": d.get("code")}))
     sys.exit(0)
@@ -693,7 +654,7 @@ elif method == "regions":
 else:
     out = d
 
-# Compact separators — no spaces. Matches the legacy API JSON shape that
+# Compact separators — no spaces. Matches the JSON format that
 # existing grep/sed parsers in top_requests.sh, dynamics.sh, regions_stats.sh expect.
 # E.g. "topRequests":[{"phrase":"...","count":123}] not "topRequests": [{"phrase": "...", "count": 123}]
 print(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
@@ -703,30 +664,30 @@ PYEOF
 }
 
 # ---------------------------------------------------------------------
-# wordstat_request — public dispatcher
+# Wordstat requests
 # ---------------------------------------------------------------------
 
-# Legacy backend: direct curl to api.wordstat.yandex.net/v1
-_legacy_request() {
-    _method="$1"
-    _params="$2"
-    curl -s -X POST "$WORDSTAT_LEGACY_API/$_method" \
-        -H "Authorization: Bearer $YANDEX_WORDSTAT_TOKEN" \
-        -H "Content-Type: application/json; charset=utf-8" \
-        -H "Accept-Language: ru" \
-        -d "$_params"
-}
-
-# Cloud backend: translate, authorize, POST, normalize
+# Cloud backend: translate, sign, POST, normalize
 _cloud_request() {
     _method="$1"
     _params="$2"
 
     # 1. Translate request
-    _xlate_out=$(_xlate_request "$_method" "$_params" 2>&1)
-    _xlate_rc=$?
+    _xlate_rc=0
+    _xlate_out=$(_xlate_request "$_method" "$_params" 2>&1) || _xlate_rc=$?
     if [ "$_xlate_rc" != "0" ]; then
         case "$_xlate_out" in
+            *PHRASE_TOO_LONG:*)
+                _lengths=${_xlate_out##*PHRASE_TOO_LONG:}
+                _actual_length=${_lengths%%:*}
+                _max_length=${_lengths#*:}
+                {
+                    printf '[wordstat] Облачный Wordstat: длина фразы — %s, допустимо не более %s символов.\n' \
+                        "$_actual_length" "$_max_length"
+                    printf 'Сократите фразу; для OR-запроса сначала уберите необязательные кампанийные минус-фразы либо разделите анализ на несколько запросов.\n'
+                } >&2
+                exit 1
+                ;;
             *PREFLIGHT_FAIL:*)
                 _ops=${_xlate_out#*PREFLIGHT_FAIL:}
                 die_with_help \
@@ -766,9 +727,9 @@ _cloud_request() {
     _backoff=2
     while [ "$_attempt" -lt "$_max_attempts" ]; do
         _attempt=$((_attempt + 1))
-        _tmp=$(_make_secure_tmpdir)
-        _resp_file="$_tmp/resp"
-        _status=$(curl -s -o "$_resp_file" -w '%{http_code}' \
+        _cr_tmp=$(_make_secure_tmpdir)
+        _cr_resp_file="$_cr_tmp/resp"
+        _status=$(curl -s -o "$_cr_resp_file" -w '%{http_code}' \
             -X POST "$WORDSTAT_CLOUD_API/$_method" \
             -H "$_auth_header" \
             -H "Content-Type: application/json" \
@@ -776,46 +737,46 @@ _cloud_request() {
 
         case "$_status" in
             2[0-9][0-9])
-                _normalize_response "$_method" "$_resp_file"
-                rm -rf "$_tmp"
+                _normalize_response "$_method" "$_cr_resp_file"
+                rm -rf "$_cr_tmp"
                 return 0
                 ;;
             401)
-                # IAM tokens can be refreshed once. Static API keys cannot.
+                # Refresh once and retry
                 if [ "$WORDSTAT_CLOUD_AUTH_MODE" = "iam" ] && [ "$_attempt" = "1" ]; then
                     rm -f "$WORDSTAT_CACHE_DIR/iam_token.json"
                     _tok=$(_iam_token_issue)
                     _auth_header="Authorization: Bearer $_tok"
-                    rm -rf "$_tmp"
+                    rm -rf "$_cr_tmp"
                     continue
                 fi
-                _err=$(cat "$_resp_file" 2>/dev/null)
-                rm -rf "$_tmp"
+                _err=$(cat "$_cr_resp_file" 2>/dev/null)
+                rm -rf "$_cr_tmp"
                 if [ "$WORDSTAT_CLOUD_AUTH_MODE" = "api_key" ]; then
-                    die_with_help "Cloud Wordstat 401 Unauthorized: AI Studio API key was rejected" "$_err"
+                    die_with_help "Cloud Wordstat 401 Unauthorized: API key was rejected" "$_err"
                 fi
                 die_with_help "Cloud Wordstat 401 Unauthorized after token refresh" "$_err"
                 ;;
             403)
-                _err=$(cat "$_resp_file" 2>/dev/null)
-                rm -rf "$_tmp"
+                _err=$(cat "$_cr_resp_file" 2>/dev/null)
+                rm -rf "$_cr_tmp"
                 die_with_help "Cloud Wordstat 403 Forbidden" \
-                    "Check role 'search-api.webSearch.user', API-key scope 'yc.search-api.execute', and folder $WORDSTAT_CLOUD_FOLDER_ID. Raw: $_err"
+                    "Check that your service account has the role 'search-api.webSearch.user' on folder $WORDSTAT_CLOUD_FOLDER_ID. Raw: $_err"
                 ;;
             5[0-9][0-9]|000)
                 if [ "$_attempt" -lt "$_max_attempts" ]; then
-                    rm -rf "$_tmp"
+                    rm -rf "$_cr_tmp"
                     sleep "$_backoff"
                     _backoff=$((_backoff * 2))
                     continue
                 fi
-                _err=$(cat "$_resp_file" 2>/dev/null)
-                rm -rf "$_tmp"
+                _err=$(cat "$_cr_resp_file" 2>/dev/null)
+                rm -rf "$_cr_tmp"
                 die_with_help "Cloud Wordstat $_status after $_max_attempts retries" "$_err"
                 ;;
             *)
-                _err=$(cat "$_resp_file" 2>/dev/null)
-                rm -rf "$_tmp"
+                _err=$(cat "$_cr_resp_file" 2>/dev/null)
+                rm -rf "$_cr_tmp"
                 die_with_help "Cloud Wordstat HTTP $_status" "$_err"
                 ;;
         esac
@@ -831,9 +792,5 @@ wordstat_request() {
         die_with_help "wordstat_request called before load_config"
     fi
 
-    case "$WORDSTAT_BACKEND" in
-        legacy) _legacy_request "$_method" "$_params" ;;
-        cloud)  _cloud_request "$_method" "$_params" ;;
-        *)      die_with_help "Unknown backend: $WORDSTAT_BACKEND" ;;
-    esac
+    _cloud_request "$_method" "$_params"
 }

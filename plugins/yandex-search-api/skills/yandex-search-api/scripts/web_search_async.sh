@@ -44,6 +44,10 @@ done
 mkdir -p "$CACHE_DIR/ops"
 mkdir -p "$CACHE_DIR/results"
 
+# См. комментарий в web_search_sync.sh: кеш folderId греется в теле скрипта,
+# иначе подоболочка $(build_search_body ...) выбросит его на каждом запросе.
+ysa_warm_folder_id
+
 # --- Helper: count pending operations ---
 count_pending() {
     _pending=0
@@ -85,29 +89,8 @@ submit_query() {
     _aq_query="$1"
     _aq_hash=$(file_hash "$_aq_query")
 
-    # Query passed via env to avoid shell injection
-    _body=$(_YSA_QUERY="$_aq_query" python3 -c "
-import json, os
-body = {
-    'query': {
-        'searchType': '$SEARCH_TYPE',
-        'queryText': os.environ['_YSA_QUERY'],
-        'familyMode': '$FAMILY_MODE',
-        'fixTypoMode': '$FIX_TYPO'
-    },
-    'sortSpec': {},
-    'groupSpec': {
-        'groupMode': 'GROUP_MODE_FLAT',
-        'groupsOnPage': $RESULTS_PER_PAGE,
-        'docsInGroup': 1
-    },
-    'maxPassages': 3,
-    'region': '$REGION_ID',
-    'l10n': 'LOCALIZATION_RU',
-    'folderId': '$(cfg_get "yandex_cloud_folder_id")'
-}
-print(json.dumps(body, ensure_ascii=False))
-")
+    # Smart snippets живут только в синхронном API, поэтому здесь всегда 0.
+    _body=$(build_search_body "$_aq_query" "$REGION_ID" "$RESULTS_PER_PAGE" "0" "0")
 
     _response=$(auth_request "POST" "$SEARCH_API_URL/v2/web/searchAsync" "$_body") || {
         echo "Error: Failed to submit async query: $_aq_query" >&2
@@ -168,7 +151,10 @@ print(resp.get('rawData', ''))
         if [ -n "$_raw_b64" ]; then
             # Decode and parse
             echo "$_raw_b64" | b64_decode > "$CACHE_DIR/results/${_result_hash}.raw"
-            parse_search_xml "$CACHE_DIR/results/${_result_hash}.raw" > "$CACHE_DIR/results/${_result_hash}.json"
+            parse_search_response "$CACHE_DIR/results/${_result_hash}.raw" > "$CACHE_DIR/results/${_result_hash}.json"
+            # Асинхронный ответ инфоконтекстов не несёт, а пак от прошлого
+            # синхронного поиска той же фразы лежит под тем же хэшем.
+            drop_stale_pack "$_result_hash"
 
             # Update operation status
             python3 -c "
@@ -256,6 +242,14 @@ elif [ -n "$QUERIES_FILE" ]; then
     if [ -z "$_token" ]; then
         echo "No valid IAM token. Generating..." >&2
         sh "$SCRIPT_DIR/iam_token_get.sh"
+    fi
+
+    # Smart snippets есть только в синхронном API — предупреждаем ровно там,
+    # где человек мог их ждать: при отправке нового батча. На --resume и на
+    # подсказке по использованию это была бы пустая ругань.
+    if [ "$(cfg_get "search.smart_snippets.enabled" "true")" = "true" ]; then
+        echo "Note: smart snippets are sync-only — this batch returns links and short snippets." >&2
+        echo "      Need page extracts? Use web_search_sync.sh --file instead." >&2
     fi
 
     echo "=== Async Search: Submitting queries ==="

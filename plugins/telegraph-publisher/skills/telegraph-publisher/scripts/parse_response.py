@@ -4,6 +4,7 @@
 Usage:
   echo '{"ok":true,"result":{...}}' | python3 parse_response.py account_info
   echo '{"ok":true,"result":{...}}' | python3 parse_response.py page_list
+  echo '{"ok":true,"result":{"views":42}}' | python3 parse_response.py page_views
 """
 
 import json
@@ -57,10 +58,16 @@ def parse_page_list(data):
     return '\n'.join(lines)
 
 
+def parse_page_views(data):
+    """Format getViews response."""
+    views = data.get('result', {}).get('views', 0)
+    return f'=== Page Views ===\nViews: {views}'
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: parse_response.py <command>", file=sys.stderr)
-        print("Commands: account_info, page_list", file=sys.stderr)
+        print("Commands: account_info, page_list, page_views", file=sys.stderr)
         sys.exit(1)
 
     command = sys.argv[1]
@@ -70,6 +77,8 @@ def main():
         print(parse_account_info(data))
     elif command == 'page_list':
         print(parse_page_list(data))
+    elif command == 'page_views':
+        print(parse_page_views(data))
     else:
         # Fallback: pretty-print JSON
         print(json.dumps(data, indent=2, ensure_ascii=False))

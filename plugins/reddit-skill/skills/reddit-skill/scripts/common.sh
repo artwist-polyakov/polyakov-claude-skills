@@ -3,10 +3,11 @@
 # POSIX sh — no bashisms (cloud-sandbox compatible)
 #
 # Public API (sourced by other scripts):
-#   load_config              — read .env, pick auth mode (app-only|user)
+#   load_config [rss]        — read .env, pick auth mode (app-only|user|rss)
 #   reddit_token             — get a valid access token (cached, auto-refresh)
 #   reddit_get  PATH OUTFILE [-d k=v ...]    — authenticated GET, body to OUTFILE
 #   reddit_post PATH OUTFILE [-d k=v ...]    — authenticated POST, body to OUTFILE
+#   reddit_listing KEY PATH NO_CACHE [args] — cached post listing, sets OUT
 #   cache_key STRING         — deterministic 32-bit hex from input
 #   require_write_enabled    — fail unless REDDIT_ENABLE_WRITE=1 and --confirm
 #   parse_submission_id ARG  — extract base36 id from URL or raw id
@@ -14,7 +15,7 @@
 #   print_listing_summary FILE [N]  — print first N rows of cached JSON listing
 #
 # Variables exported by load_config:
-#   REDDIT_AUTH_MODE         — "app-only" | "user"
+#   REDDIT_AUTH_MODE         — "app-only" | "user" | "rss"
 #   REDDIT_OAUTH_BASE        — "https://oauth.reddit.com"
 #   REDDIT_TOKEN_URL         — "https://www.reddit.com/api/v1/access_token"
 #   REDDIT_USER_AGENT        — required for all requests
@@ -52,10 +53,27 @@ die() {
 # --- Config loader ---------------------------------------------------
 
 load_config() {
+    REDDIT_ALLOW_RSS="${1:-}"
     _env_file="$REDDIT_CONFIG_DIR/.env"
-    if [ -f "$_env_file" ]; then
+    # An explicit environment override also works without reading credentials.
+    if [ "${REDDIT_RSS_MODE:-0}" != "1" ] && [ -f "$_env_file" ]; then
         # shellcheck disable=SC1090
         . "$_env_file"
+    fi
+
+    case "${REDDIT_RSS_MODE:-0}" in
+        0|1) ;;
+        *) die "REDDIT_RSS_MODE must be 0 or 1" ;;
+    esac
+    if [ "${REDDIT_RSS_MODE:-0}" = "1" ] || {
+        [ "$REDDIT_ALLOW_RSS" = "rss" ] &&
+        { [ -z "${REDDIT_CLIENT_ID:-}" ] || [ -z "${REDDIT_CLIENT_SECRET:-}" ]; }
+    }; then
+        [ "$REDDIT_ALLOW_RSS" = "rss" ] || die "This operation requires Reddit API; unavailable in RSS mode"
+        REDDIT_AUTH_MODE="rss"
+        REDDIT_USER_AGENT="${REDDIT_USER_AGENT:-reddit-skill:rss:1.1.0}"
+        export REDDIT_AUTH_MODE
+        return 0
     fi
 
     [ -n "${REDDIT_CLIENT_ID:-}" ]     || die "REDDIT_CLIENT_ID not set in config/.env"
@@ -150,16 +168,22 @@ print(f"grant_type=password&username={u}&password={p}")
         *) die "Unknown REDDIT_AUTH_MODE: $REDDIT_AUTH_MODE" ;;
     esac
 
-    _status=$(curl -s -o "$_resp_file" -D "$_hdr_file" -w '%{http_code}' \
+    _status=$(curl -sS --connect-timeout 10 --max-time 60 -o "$_resp_file" -D "$_hdr_file" -w '%{http_code}' \
         -X POST "$REDDIT_TOKEN_URL" \
         -u "$REDDIT_CLIENT_ID:$REDDIT_CLIENT_SECRET" \
         -A "$REDDIT_USER_AGENT" \
-        --data "$_body")
+        --data "$_body") || die "Token request failed (network error)"
 
     if [ "$_status" != "200" ]; then
         _err=$(cat "$_resp_file" 2>/dev/null)
         rm -f "$_resp_file" "$_hdr_file"
         trap - EXIT INT TERM
+        case "$_status" in
+            400|401|403)
+                echo "[reddit-skill] Token request rejected (HTTP $_status, mode=$REDDIT_AUTH_MODE)" >&2
+                return 2
+                ;;
+        esac
         die "Token request failed (HTTP $_status, mode=$REDDIT_AUTH_MODE)" "$_err"
     fi
 
@@ -187,7 +211,15 @@ PY
 
     case "$_result" in
         PARSE:*) die "Token response parse error: ${_result#PARSE:}" ;;
-        ERR:*)   die "Token response error: ${_result#ERR:}" ;;
+        ERR:*)
+            case "${_result#ERR:}" in
+                invalid_client|invalid_grant|unauthorized_client|access_denied)
+                    echo "[reddit-skill] Token response error: ${_result#ERR:}" >&2
+                    return 2
+                    ;;
+                *) die "Token response error: ${_result#ERR:}" ;;
+            esac
+            ;;
     esac
 
     _tok=$(printf '%s' "$_result" | cut -d'|' -f1)
@@ -221,7 +253,20 @@ _reddit_request() {
     _out="$3"
     shift 3
 
-    _tok=$(reddit_token)
+    if [ "$REDDIT_AUTH_MODE" = "rss" ]; then
+        [ "$_method" = "GET" ] || die "RSS mode supports reading posts only"
+        _reddit_public_get "$_path" "$_out" "$@"
+        return $?
+    fi
+
+    if _tok=$(reddit_token); then
+        :
+    else
+        _token_status=$?
+        [ "$_token_status" -eq 2 ] || die "Failed to obtain access token"
+        _reddit_auth_failed "$_method" "$_path" "$_out" "$@"
+        return $?
+    fi
     [ -n "$_tok" ] || die "Failed to obtain access token"
 
     _hdr="$REDDIT_TMPDIR/reddit_hdr.$$.txt"
@@ -234,17 +279,17 @@ _reddit_request() {
     esac
 
     if [ "$_method" = "GET" ]; then
-        _status=$(curl -s -G -o "$_out" -D "$_hdr" -w '%{http_code}' \
+        _status=$(curl -sS --connect-timeout 10 --max-time 60 -G -o "$_out" -D "$_hdr" -w '%{http_code}' \
             -A "$REDDIT_USER_AGENT" \
             -H "Authorization: Bearer $_tok" \
             "$@" \
-            "$_url")
+            "$_url") || die "Request failed (network error): $_path"
     else
-        _status=$(curl -s -X "$_method" -o "$_out" -D "$_hdr" -w '%{http_code}' \
+        _status=$(curl -sS --connect-timeout 10 --max-time 60 -X "$_method" -o "$_out" -D "$_hdr" -w '%{http_code}' \
             -A "$REDDIT_USER_AGENT" \
             -H "Authorization: Bearer $_tok" \
             "$@" \
-            "$_url")
+            "$_url") || die "Request failed (network error): $_path"
     fi
 
     case "$_status" in
@@ -260,9 +305,14 @@ _reddit_request() {
                 _REDDIT_RETRY_401=1 _reddit_request "$_method" "$_path" "$_out" "$@"
                 return $?
             fi
-            _err=$(cat "$_out" 2>/dev/null)
             rm -f "$_hdr"
-            die "HTTP 401 Unauthorized after token refresh" "$_err"
+            _reddit_auth_failed "$_method" "$_path" "$_out" "$@"
+            return $?
+            ;;
+        403)
+            rm -f "$_hdr"
+            _reddit_auth_failed "$_method" "$_path" "$_out" "$@"
+            return $?
             ;;
         429)
             _retry=$(grep -i '^Retry-After:' "$_hdr" | sed 's/[^0-9]//g' | head -1)
@@ -290,7 +340,117 @@ _reddit_request() {
 reddit_get()  { _reddit_request "GET"  "$@"; }
 reddit_post() { _reddit_request "POST" "$@"; }
 
+# Public feeds and individual posts supported without an API token.
+_reddit_public_supported() {
+    case "$1" in
+        /r/*/top|/r/all/new|/search|/r/*/search|/user/*/submitted|/comments/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+_reddit_auth_failed() {
+    if [ "$1" = "GET" ] && [ "${REDDIT_ALLOW_RSS:-}" = "rss" ] && _reddit_public_supported "$2"; then
+        echo "[reddit-skill] API authorization failed; switching to RSS mode (public reading)" >&2
+        REDDIT_AUTH_MODE="rss"
+        shift
+        _reddit_public_get "$@"
+    else
+        die "Reddit API authorization failed; RSS is unavailable for this operation"
+    fi
+}
+
+# Run in a subshell to isolate temporary files and the cleanup trap.
+_reddit_public_get() (
+    _public_path="$1"; _public_out="$2"; shift 2
+    _reddit_public_supported "$_public_path" || die "Public reading is unavailable for $_public_path"
+    case "$_public_path" in
+        /comments/*)
+            _public_format="JSON"; _public_suffix=".json"
+            set -- --data-urlencode "raw_json=1" "$@"
+            ;;
+        *) _public_format="RSS"; _public_suffix=".rss" ;;
+    esac
+    _public_dir=$(mktemp -d "$REDDIT_TMPDIR/reddit_public.XXXXXX")
+    trap 'rm -rf "$_public_dir"' EXIT
+    _public_retry=0
+    while :; do
+        _public_status=$(curl -sS --connect-timeout 10 --max-time 60 -G \
+            -o "$_public_dir/response" -D "$_public_dir/headers" -w '%{http_code}' \
+            -A "$REDDIT_USER_AGENT" "$@" \
+            "https://www.reddit.com${_public_path}${_public_suffix}") || die "Public $_public_format request failed (network error)"
+        case "$_public_status" in
+            200) break ;;
+            429)
+                _public_wait=$(grep -i '^Retry-After:' "$_public_dir/headers" | tr -d '\r' | awk '{print $2}' | head -1)
+                case "$_public_wait" in
+                    ''|*[!0-9]*) ;;
+                    *)
+                        if [ "$_public_retry" = "0" ] && [ "$_public_wait" -le 60 ]; then
+                            echo "Public $_public_format rate limited (429). Waiting ${_public_wait}s..." >&2
+                            sleep "$_public_wait"
+                            _public_retry=1
+                            continue
+                        fi
+                        ;;
+                esac
+                die "Public $_public_format HTTP 429 Too Many Requests (wait=${_public_wait:-?}s)"
+                ;;
+            *) die "Public $_public_format HTTP $_public_status from $_public_path" ;;
+        esac
+    done
+    if [ "$_public_format" = "RSS" ]; then
+        python3 "$REDDIT_SCRIPT_DIR/rss_to_listing.py" "$_public_dir/response" "$_public_out" ||
+            die "Invalid Reddit RSS feed"
+    else
+        python3 - "$_public_dir/response" "$_public_out" "${_public_path##*/}" <<'JSON' || die "Invalid Reddit public JSON response"
+import json, sys
+try:
+    with open(sys.argv[1]) as stream:
+        payload = json.load(stream)
+    if not isinstance(payload, list) or len(payload) != 2:
+        raise ValueError("expected post and comment listings")
+    for listing in payload:
+        if listing.get("kind") != "Listing" or not isinstance(listing["data"]["children"], list):
+            raise ValueError("invalid listing")
+        listing["source"] = "public-json"
+    posts = payload[0]["data"]["children"]
+    if not posts or posts[0].get("kind") != "t3" or posts[0]["data"].get("id") != sys.argv[3]:
+        raise ValueError("missing requested post")
+    with open(sys.argv[2], "w") as stream:
+        json.dump(payload, stream, ensure_ascii=False)
+except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+    sys.exit(f"[reddit-skill] Invalid public JSON: {error}")
+JSON
+    fi
+)
+
 # --- Cache helpers ---------------------------------------------------
+
+# RSS and API payloads must not replace one another in the cache.
+_listing_cache_file() {
+    if [ "$REDDIT_AUTH_MODE" = "rss" ]; then
+        echo "$REDDIT_CACHE_DIR/listings/$(cache_key "rss|$1").json"
+    else
+        echo "$REDDIT_CACHE_DIR/listings/$(cache_key "$1").json"
+    fi
+}
+
+reddit_listing() {
+    _listing_key="$1"; _listing_path="$2"; _listing_no_cache="$3"; shift 3
+    mkdir -p "$REDDIT_CACHE_DIR/listings"
+    OUT=$(_listing_cache_file "$_listing_key")
+    if [ -z "$_listing_no_cache" ] && [ -s "$OUT" ]; then
+        echo "(cached: $OUT)"
+        return 0
+    fi
+    _listing_tmp=$(mktemp "$REDDIT_CACHE_DIR/listings/.listing.XXXXXX")
+    trap 'rm -f "$_listing_tmp"' EXIT
+    reddit_get "$_listing_path" "$_listing_tmp" "$@"
+    # Authorization failure may have switched the source to RSS.
+    OUT=$(_listing_cache_file "$_listing_key")
+    mv "$_listing_tmp" "$OUT"
+    trap - EXIT
+}
 
 # cache_key STRING — 32-bit hex hash via cksum
 cache_key() {
@@ -354,7 +514,7 @@ arg = os.environ["_ARG"].strip()
 if not arg:
     sys.exit(1)
 # Try URL paths
-m = re.search(r"/comments/([a-z0-9]{4,12})(?:/|$)", arg, re.I)
+m = re.search(r"/comments/([a-z0-9]{4,12})(?:/|\.json(?:\?|$)|$)", arg, re.I)
 if m:
     print(m.group(1).lower())
     sys.exit(0)
@@ -410,9 +570,11 @@ for c in children[:n]:
     if kind == "t3":  # post
         title = (cd.get("title") or "").strip().replace("\n", " ")[:120]
         sub = cd.get("subreddit", "")
-        score = cd.get("score", 0)
-        n_comm = cd.get("num_comments", 0)
-        author = cd.get("author", "")
+        score = cd.get("score")
+        n_comm = cd.get("num_comments")
+        score = "?" if score is None else score
+        n_comm = "?" if n_comm is None else n_comm
+        author = cd.get("author") or "?"
         url = "https://www.reddit.com" + cd.get("permalink", "")
         print(f"  [{score:>5} ↑ {n_comm:>4} 💬] r/{sub}  by u/{author}")
         print(f"    {title}")

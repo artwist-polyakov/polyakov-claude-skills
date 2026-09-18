@@ -18,16 +18,19 @@
   - [codex-review](#codex-review) — кросс-агентное ревью
   - [fal-ai-image](#fal-ai-image) — генерация изображений
   - [yandex-search-api](#yandex-search-api) — парсинг выдачи Яндекса
-  - [yandex-metrika](#yandex-metrika) — аналитика Yandex Metrika
+  - [yandex-direct](#yandex-direct) — статистика и управление Яндекс Директом
+  - [yandex-metrika](#yandex-metrika) — отчёты, сегменты и доступы Яндекс Метрики
   - [yandex-webmaster](#yandex-webmaster) — управление сайтами в Яндекс.Вебмастере
+  - [zoomkit](#zoomkit) — баланс, счета, отчёты и настройки Яндекс.Директа через ZoomKit API
   - [telegraph-publisher](#telegraph-publisher) — публикация в Telegraph
   - [crawl4ai-seo](#crawl4ai-seo) — SEO-краулер сайтов
   - [telegram-channel-parser](#telegram-channel-parser) — парсинг Telegram-каналов
   - [x-research](#x-research) — рисерч X/Twitter через xAI Grok API
   - [github-pages-publisher](#github-pages-publisher) — публикация на GitHub Pages
   - [sourcecraft-publisher](#sourcecraft-publisher) — публикация на SourceCraft Sites
-  - [reddit-skill](#reddit-skill) — Reddit API: пользователи, сабреддиты, поиск, посты
+  - [reddit-skill](#reddit-skill) — Reddit без ключей: посты, комментарии, RSS; OAuth2 API
   - [knowledge-compiler](#knowledge-compiler) — компиляция книг и длинных источников в личные скиллы
+  - [perplexity-search](#perplexity-search) — поиск и ресёрч через Perplexity API
 - [Структура репозитория](#структура-репозитория)
 - [Лицензия](#лицензия)
 
@@ -47,10 +50,12 @@
 /plugin install ssh-remote-connection
 /plugin install yandex-wordstat
 /plugin install yandex-search-api
+/plugin install yandex-direct
 /plugin install yandex-metrika
 /plugin install codex-review
 /plugin install fal-ai-image
 /plugin install yandex-webmaster
+/plugin install zoomkit
 /plugin install telegraph-publisher
 /plugin install crawl4ai-seo
 /plugin install telegram-channel-parser
@@ -59,6 +64,7 @@
 /plugin install sourcecraft-publisher
 /plugin install reddit-skill
 /plugin install knowledge-compiler
+/plugin install perplexity-search
 ```
 
 ### Ручная установка (без маркетплейса)
@@ -181,7 +187,7 @@ SSH подключение к удалённым серверам по ключ�
 
 ### [yandex-wordstat](plugins/yandex-wordstat/skills/yandex-wordstat)
 
-Анализ поискового спроса через Yandex Wordstat API.
+Анализ поискового спроса через Wordstat API в Yandex Cloud Search API. [Настройка доступа](plugins/yandex-wordstat/skills/yandex-wordstat/config/README.md) — через ключ сервисного аккаунта.
 
 - Топ поисковых запросов по фразе
 - Динамика спроса по месяцам
@@ -204,7 +210,7 @@ SSH подключение к удалённым серверам по ключ�
 Кросс-агентное ревью: Claude реализует, Codex (GPT-5.2) ревьюит.
 
 - Workflow: init session → plan review → implementation → code review
-- Журнал ревью в `.codex-review/notes/` (коммитится в git)
+- Локальный журнал ревью в `.codex-review/<ветка>/notes/`
 - Анти-рекурсия через env guard `CODEX_REVIEWER`
 
 **Триггеры (RU):**
@@ -259,19 +265,41 @@ SSH подключение к удалённым серверам по ключ�
 
 ---
 
+### [yandex-direct](plugins/yandex-direct/skills/yandex-direct)
+
+Статистика и управление рекламой через официальный API Яндекс Директа.
+Инструкция объясняет общий порядок анализа, формулы показателей и работу
+с рекламными объектами. Конверсии считаются по целям, выбранным пользователем.
+Доступны аудит, сравнение периодов, анализ спроса и позиций, создание и изменение
+кампаний, объявлений, фраз и ставок с показом «до/после».
+
+Сохранены выгрузка кампании, минус-фразы и кросс-минусовка, работа с несколькими
+кабинетами, подготовка комплектов объявлений и HTML-предпросмотр. Полные данные
+хранятся локально; в диалог выводится краткая сводка. Нужен Python 3.11+ или `uv`,
+сторонних библиотек нет.
+
+[Инструкции](plugins/yandex-direct/skills/yandex-direct/SKILL.md) ·
+[Подключение](plugins/yandex-direct/skills/yandex-direct/config/README.md)
+
+---
+
 ### [yandex-metrika](plugins/yandex-metrika/skills/yandex-metrika)
 
-Аналитика Yandex Metrika: трафик, конверсии, UTM, поисковые системы.
+Аналитика и управление Яндекс Метрикой: отчёты, API-сегменты и доступы.
 
 - Cache-first стратегия с TSV-индексами для grep
 - Отчёты: трафик по источникам, конверсии по целям, UTM-разметка, поисковые системы
 - Фильтры: устройство, источник, модель атрибуции, без роботов по умолчанию
 - Автоматический пропуск кеша для текущей даты
+- Создание сегментов по выражениям `filters` для подбора аудитории в Директе
+- Проверка логинов, выдача и изменение прямого доступа с выбором роли
 
 **Триггеры (RU):**
 - "покажи трафик по счётчику"
 - "конверсии за период"
 - "аналитика метрики"
+- "создай сегмент для Директа"
+- "проверь и выдай доступ к счётчику"
 
 **Триггеры (EN):**
 - "yandex metrika analytics"
@@ -301,6 +329,40 @@ SSH подключение к удалённым серверам по ключ�
 - "yandex webmaster"
 - "check site indexing"
 - "recrawl url"
+
+---
+
+### [zoomkit](plugins/zoomkit/skills/zoomkit)
+
+Знакомство с ZoomKit, подключение и работа с интерфейсом и официальным API: расчёты, отчёты статистики и настройки Яндекс.Директа.
+
+- Объяснение пользы, опубликованных тарифов и условий, при которых сервис оправдывает расходы
+- Проверка ключа и предупреждение о скором окончании срока
+- Баланс сервиса и список уже выставленных счетов с отбором по состоянию
+- Двухшаговые отчёты рекламной статистики с ожиданием готовности
+- Правила ставок и подробные результаты проверки ссылок Яндекс.Директа
+- Список кампаний кабинета через API с датой последней синхронизации и признаком управления ставками
+- Подсказка по маркировке непонятных агентских кабинетов через поле «Комментарий»
+- Предварительный просмотр и обязательный `--confirm` для изменений
+- Понятная инструкция по подключению при отсутствии ключа
+- Явная защита от несуществующих методов: API 1.9.0 не умеет выставлять счета и создавать ссылки на оплату
+
+**Триггеры (RU):**
+- "проверь баланс ZoomKit"
+- "покажи счета ZoomKit"
+- "сделай отчёт ZoomKit"
+- "что умеет ZoomKit и сколько стоит"
+- "какие проекты подключены в ZoomKit"
+- "покажи кампании клиента в ZoomKit"
+- "не могу найти кабинет в ZoomKit"
+- "найди кампании без проверки ссылок"
+- "проверь правила ставок ZoomKit"
+
+**Триггеры (EN):**
+- "zoomkit api"
+- "zoomkit balance"
+- "zoomkit invoices"
+- "zoomkit pricing"
 
 ---
 
@@ -438,8 +500,15 @@ SEO-краулер сайтов на базе Crawl4AI.
 
 ### [reddit-skill](plugins/reddit-skill/skills/reddit-skill)
 
-Reddit API на shell-скриптах: пользователи, сабреддиты, посты, комментарии, поиск.
+Чтение Reddit без ключей через доступный веб-инструмент агента: публичный JSON
+для постов и комментариев, RSS для списков. Shell-скрипты с кешем и OAuth2 API —
+запасной способ и основа для автоматизации.
 
+- Сначала встроенный `fetch` / `open`, если доступен; без проверки ключей приложения
+- Подписки для RSS хранятся в [config/subscriptions.txt](plugins/reddit-skill/skills/reddit-skill/config/subscriptions.txt); браузерная сессия не нужна
+- `REDDIT_RSS_MODE=1`: топ сабреддита, поиск и посты пользователя без приложения и ключей
+- Отдельный пост и доступные комментарии через публичный `.json` в том же режиме
+- Автоматический переход на RSS при отказе авторизации API; оценки и число комментариев остаются неизвестными
 - Прямые вызовы Reddit OAuth2 API через curl (без PRAW и Python-зависимостей)
 - Авто-выбор режима: app-only (`client_credentials`) для read, user (`password`) для write/me
 - Cache-first: токены, юзеры, сабреддиты, листинги
@@ -485,6 +554,31 @@ Reddit API на shell-скриптах: пользователи, сабредд
 
 ---
 
+### [perplexity-search](plugins/perplexity-search/skills/perplexity-search)
+
+Поиск и ресёрч через Perplexity API на POSIX-shell.
+
+- Search API — сырая ранжированная выдача со сниппетами, до 5 запросов за один оплаченный вызов
+- Agent API — ответ с цитатами, выбор пресета и модели (Sonar, GPT, Claude, Gemini, Grok)
+- Deep research в background mode с поллингом и `--resume` по response id
+- Извлечение содержимого конкретных URL через инструмент `fetch_url`
+- Структурированный вывод по JSON Schema
+- Cache-first: ключ кеша — само тело запроса; крупные результаты уходят в `cache/` и читаются грепом
+- Профили источников в `.env`: домены + свежесть + глубина извлечения одним флагом
+- Оффлайн-тесты: разбор `.env`, сборка тел запросов, рендер ответов, CLI-контракт, HTTP-слой на loopback-моке
+
+**Триггеры (RU):**
+- "найди в интернете"
+- "что пишут про [тему]"
+- "глубокое исследование"
+
+**Триггеры (EN):**
+- "perplexity search"
+- "web search with sources"
+- "deep research"
+
+---
+
 ## Структура репозитория
 
 ```
@@ -501,8 +595,10 @@ polyakov-claude-skills/
 │   ├── codex-review/         # Плагин для кросс-агентного ревью
 │   ├── fal-ai-image/         # Плагин для генерации изображений
 │   ├── yandex-search-api/    # Плагин для Yandex Search API
-│   ├── yandex-metrika/       # Плагин для аналитики Yandex Metrika
+│   ├── yandex-direct/        # Статистика и управление Яндекс Директом
+│   ├── yandex-metrika/       # Отчёты, сегменты и доступы Яндекс Метрики
 │   ├── yandex-webmaster/     # Плагин для Yandex Webmaster API
+│   ├── zoomkit/               # Плагин для ZoomKit API
 │   ├── telegraph-publisher/  # Плагин для публикации в Telegraph
 │   ├── crawl4ai-seo/         # Плагин для SEO-краулинга
 │   ├── telegram-channel-parser/ # Плагин для парсинга Telegram-каналов
@@ -510,7 +606,8 @@ polyakov-claude-skills/
 │   ├── github-pages-publisher/  # Плагин для публикации на GitHub Pages
 │   ├── sourcecraft-publisher/   # Плагин для публикации на SourceCraft Sites
 │   ├── reddit-skill/            # Плагин для Reddit API
-│   └── knowledge-compiler/      # Плагин для компиляции источников в скиллы
+│   ├── knowledge-compiler/      # Плагин для компиляции источников в скиллы
+│   └── perplexity-search/       # Плагин для поиска и ресёрча через Perplexity API
 └── README.md
 ```
 

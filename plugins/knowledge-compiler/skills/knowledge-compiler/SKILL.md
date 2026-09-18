@@ -79,12 +79,16 @@ description: |
    - `references/source-map.json` — связь тезисов с сегментами;
    - `references/knowledge-manifest.json` — источник, хеш, способ извлечения, ограничения.
 
-7. **Проверь качество**
+   Соблюдай соглашение о `claim_id`, заголовках и ссылках из `references/OUTPUT_SCHEMA.md`. Не копируй исходный текст или сегменты в готовый навык: они остаются в кеше.
+
+7. **Проверь качество и создай указатель источников**
    ```bash
    uv run --script scripts/quality_gate.py \
      --source cache/jobs/<job-id>/source.txt \
-     --skill-dir dist/my-source-skill
+     --skill-dir dist/my-source-skill \
+     --write-source-index
    ```
+   После успешных проверок команда создаст `references/source-index.md` из заполненной карты источников. Для проверки без изменений запускай её без `--write-source-index`; после изменения карты пересоздай указатель тем же флагом.
 
 ## Фокус сборки
 

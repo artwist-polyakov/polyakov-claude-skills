@@ -23,13 +23,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/common.sh"
 load_config
 
-if [ -z "$SESSION_ID" ]; then
-    echo "Error: SESSION_ID not set in config/.env." >&2
-    echo "Достаньте Session_id из браузера (DevTools → Application → Cookies → yandex.ru)." >&2
-    echo "См. references/ALICE_EFFICIENCY.md." >&2
-    exit 1
-fi
-
 parse_host_params "$@"
 
 ACTION_DEFAULT="summary"
@@ -54,13 +47,9 @@ case "$ACTION" in
         ;;
 esac
 
-# Cache invalidation: --no-cache forces refresh
-if [ -n "$NO_CACHE" ] && [ "$PY_CMD" != "fetch" ]; then
-    _alice_cache="$CACHE_DIR/host_$(printf '%s' "$HOST_ID" | sed 's/[^a-zA-Z0-9._-]/_/g')/alice/init.json"
-    rm -f "$_alice_cache"
-fi
+# Обновление и срок годности кеша проверяет Python; старый файл пока сохраняем.
+set -- --host-id "$HOST_ID" --cache-dir "$CACHE_DIR"
+[ -z "$NO_CACHE" ] || set -- "$@" --no-cache
 
 SESSION_ID="$SESSION_ID" exec python3 "$SCRIPT_DIR/alice_efficiency.py" \
-    --host-id "$HOST_ID" \
-    --cache-dir "$CACHE_DIR" \
-    "$PY_CMD"
+    "$@" "$PY_CMD"

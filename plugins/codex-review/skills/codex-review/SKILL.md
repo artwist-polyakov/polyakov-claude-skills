@@ -42,7 +42,7 @@ bash scripts/codex-review.sh init "Implement JWT authentication for API"
 
 ### 2. Ревью плана
 
-Передай путь к файлу плана через `--plan-file`. НЕ вставляй содержимое плана в аргумент командной строки — скрипт сам читает файл и передаёт содержимое inline в Codex.
+Передай путь к файлу плана через `--plan-file`. НЕ вставляй содержимое плана в аргумент командной строки — скрипт сам читает файл и отдаёт содержимое Codex на stdin, поэтому размер плана ничем не ограничен.
 
 #### С plan mode
 
@@ -53,7 +53,7 @@ bash scripts/codex-review.sh init "Implement JWT authentication for API"
    bash scripts/codex-review.sh plan --plan-file ~/.claude/plans/<slug>.md
    ```
 3. `CHANGES_REQUESTED` → скорректируй план в файле, отправь снова (см. «Accept or Argue»)
-4. `APPROVED` → вызови `ExitPlanMode` для одобрения пользователем
+4. `APPROVED` → обработай `## Non-blocking` и `## Pre-existing` (см. «Разделы ответа ревьюера»), затем вызови `ExitPlanMode` для одобрения пользователем
 
 Таким образом план проходит два ревью: техническое (Codex) и бизнес-приоритетное (пользователь).
 
@@ -102,6 +102,30 @@ Addressed concerns: [if resubmit — point-by-point from previous review]
 bash scripts/codex-review.sh code "What changed: JWT auth middleware + refresh endpoint. Key decisions: RS256 over HS256 for key rotation. Files: auth/jwt.py (middleware), api/auth.py (refresh endpoint). Tests: 3 new tests (expired/invalid/valid tokens), all pass."
 ```
 
+#### Описание из файла
+
+Если в описании есть обратные кавычки (обычное дело — так пишут имена функций и полей), `$` или `$(...)` — передавай текст файлом, а не аргументом: шелл выполняет такие фрагменты внутри двойных кавычек, и до Codex доходит искажённый текст либо вызов падает с `command not found`.
+
+```bash
+bash scripts/codex-review.sh code --description-file /path/to/description.md
+```
+
+Опция работает для `init`, `plan` и `code`; на `plan` она называет файл плана — то же, что `--plan-file`. Одновременно с `--plan-file` или с описанием в аргументе — ошибка. Файл читается до последнего байта: пустые строки в конце и отсутствие перевода строки в конце сохраняются.
+
+Отправленный текст сохраняется рядом с логом попытки байт в байт: `codex-<phase>-<N>.request.md` для ревью, `codex-init.request.md` для сессии.
+
+#### Название задачи для `init`
+
+`state.json` хранит одну строку — название задачи, которое видно в `STATUS.md` и в сводке архива. Название даёшь ты сам:
+
+```bash
+bash scripts/codex-review.sh init --description-file task.md --task-label "JWT auth: middleware + refresh endpoint"
+```
+
+Правила: одна строка, без двойных кавычек, обратных слешей и управляющих символов, без пробелов в начале и в конце, до 200 символов. Название сохраняется ровно таким, каким передано: скрипт ничего не переписывает и не подчищает, а отклоняет с объяснением. Пустое значение в `--task-label` — ошибка. Если описание задачи занимает больше одной строки, а `--task-label` не передан — запуск завершается ошибкой, ничего не создаётся: назови задачу сам, а не рассчитывай, что скрипт угадает. При однострочном описании название берётся из него.
+
+Полный текст задачи в `state.json` не попадает — он целиком уходит в Codex и лежит в `codex-init.request.md`.
+
 ### 5. Управление состоянием
 
 ```bash
@@ -112,7 +136,19 @@ bash scripts/codex-state.sh reset --full      # Полный сброс
 bash scripts/codex-state.sh get session_id    # Получить поле
 bash scripts/codex-state.sh set session_id <val>  # Установить вручную
 bash scripts/codex-state.sh set phase implementing  # Обновить фазу
+bash scripts/codex-state.sh set iteration 2       # Откатить счётчик кругов
 ```
+
+`get` возвращает значение поля как оно записано: пустое строковое поле — пустой
+строкой, счётчик — числом. Незнакомое имя поля — ошибка с кодом возврата 1.
+Особые имена: `session_id` (приоритет у `config.env`) и `verdict` (из
+`verdict.txt`).
+
+`set` принимает поля `session_id`, `phase`, `iteration`, `max_iterations`,
+`reviews_completed`, `last_review_status`, `last_review_timestamp`,
+`task_description`. Неизвестное имя поля, нецелое значение счётчика и значение
+с кавычкой, обратным слэшем, переводом строки или табуляцией — ошибка с кодом
+возврата 1, состояние не меняется.
 
 Для чтения файлов ревью (notes, STATUS.md и пр.) используй `codex-state.sh dir` — он вернёт абсолютный путь к каталогу текущей ветки.
 
@@ -120,11 +156,15 @@ bash scripts/codex-state.sh set phase implementing  # Обновить фазу
 
 | Exit | Status | Действие |
 |------|--------|----------|
-| 0 | APPROVED | Продолжай работу |
+| 0 | APPROVED | Обработай `## Non-blocking` и `## Pre-existing` (см. «Разделы ответа ревьюера»), затем продолжай работу |
 | 0 | CHANGES_REQUESTED | Скорректируй и отправь снова (см. «Accept or Argue») |
 | 1 | ERROR | Сообщи об ошибке, предложи проверить session_id |
 | 2 | ESCALATE | Оповести пользователя, выведи краткое резюме, предложи варианты (см. «Обработка ESCALATE») |
 | 3 | NO_SESSION | Спроси: создать сессию через `init`? |
+
+При `ERROR` круг не состоялся: итерация не израсходована, тот же запрос
+можно отправить повторно. Итерацию расходует прогон, который вернул вердикт,
+— даже если сам запуск завершился ошибкой после этого.
 
 ### Обработка ESCALATE (exit 2)
 
@@ -156,14 +196,49 @@ bash scripts/codex-state.sh set phase implementing  # Обновить фазу
 
 ## Verdict
 
-Codex пишет свой вердикт в `verdict.txt` внутри state-каталога ветки (одно слово: `APPROVED` или `CHANGES_REQUESTED`). **Для чтения вердикта используй `bash scripts/codex-state.sh get verdict`** — helper возвращает `APPROVED`, `CHANGES_REQUESTED` или пустую строку (нет/невалидно). Файл очищается перед каждым запросом ревью. Если Codex не создал файл — скрипт парсит вердикт из текста ответа (fallback). Плагинный хук `ExitPlanMode` дополнительно связывает вердикт с текущей Claude-сессией через `current_session.txt` в том же каталоге — verdict, пришедший из другой сессии, удаляется.
+Codex пишет свой вердикт в `verdict.txt` внутри state-каталога ветки (одно слово: `APPROVED` или `CHANGES_REQUESTED`). **Для чтения вердикта используй `bash scripts/codex-state.sh get verdict`** — helper возвращает `APPROVED`, `CHANGES_REQUESTED` или пустую строку (нет/невалидно). Файл очищается перед каждым запросом ревью, поэтому слово в нём написано текущим кругом. Вердикт берётся только отсюда: текст ответа на решение не влияет. Если после прогона в файле нет `APPROVED` или `CHANGES_REQUESTED` — круг не состоялся: скрипт возвращает `ERROR` (exit 1), итерация не расходуется, ответ ревьюера сохраняется рядом с логом попытки как `codex-<фаза>-<N>.reply.md`. Рядом с вердиктом лежит `verdict.phase` — одно слово, `plan` или `code`:
+фаза, которая его получила. Оба файла удаляются вместе.
+
+Плагинный хук `ExitPlanMode` связывает вердикт с текущей Claude-сессией через
+`current_session.txt` в том же каталоге — verdict, пришедший из другой сессии,
+удаляется. Хук пропускает `ExitPlanMode` только при `APPROVED` с пометкой
+`plan`. Вердикт с пометкой `code` или без пометки хук удаляет и отвечает
+отказом с указанием запустить ревью плана.
+
+## Завершённый цикл
+
+`APPROVED` на фазе `code` закрывает цикл: `STATUS.md` удаляется, а следующий
+`plan` или `code` завершается с exit 1 и ничего не меняет. Дальше — один из
+двух путей:
+
+- **Новая задача** — `codex-review.sh init "<задача>"`: прежний цикл уходит в
+  архив, открывается новая сессия Codex.
+- **Доработки той же задачи** — `codex-state.sh reset`, затем обычный круг:
+  счёт кругов с первого, название задачи и session_id сохраняются.
+
+Каждый круг печатает в stderr, к какой задаче он относится: `Task: <название>`
+в первом круге и `Continuing task: <название> (previous round <время>)`, если по
+этой ветке уже были круги. Если название не совпадает с текущей задачей — цикл
+принадлежит другой работе: выбери один из двух путей выше до отправки круга.
+
+## Разделы ответа ревьюера
+
+Ответ ревьюера разложен на три раздела. Что делать с каждым:
+
+| Раздел | Действие |
+|---|---|
+| `## Blocking` | исправь или оспорь каждый пункт — см. «Accept or Argue» |
+| `## Non-blocking` | не исправляй по своей инициативе; вынеси список пользователю через `AskUserQuestion` (взять в работу / отдельной задачей / не делать) |
+| `## Pre-existing` | вынеси каждый пункт уровня `critical` пользователю через `AskUserQuestion` (чинить сейчас / отдельной задачей / не чинить) до того, как объявишь ревью законченным; остальные пункты — вместе с `## Non-blocking` |
+
+При `APPROVED` с непустым `## Non-blocking` работа считается принятой: отправлять новый круг ревью из-за этих пунктов не нужно.
 
 ## Правила
 
 - НИКОГДА не вызывай `codex exec` напрямую — только через скрипты `codex-review.sh` и `codex-state.sh`. Скрипты сами знают модель, конфиг и session_id
 - Описывай ЧТО ты сделал и ПОЧЕМУ, какие решения принимал — используй шаблоны описания
 - НЕ передавай git diff — Codex сам посмотрит, он в той же директории
-- APPROVED → продолжай работу
+- APPROVED → обработай `## Non-blocking` и `## Pre-existing`, затем продолжай работу
 - Перед реализацией вызови `codex-state.sh set phase implementing`
 - Есть заказчик (пользователь) — уточняй у него неоднозначные вопросы
 - Опция `--max-iter N` позволяет изменить лимит итераций
@@ -171,6 +246,24 @@ Codex пишет свой вердикт в `verdict.txt` внутри state-к�
 ### Worktree & Branch Isolation
 
 Состояние ревью изолировано по ветке. Скрипты автоматически определяют основной репозиторий и текущую ветку. Параллельная работа на нескольких ветках/worktrees безопасна. `config.env` — общий (в корне `.codex-review/`). Для получения пути к state-каталогу текущей ветки используй `codex-state.sh dir`.
+
+### Один запуск на ветку
+
+`init`, `plan`, `code`, `codex-state.sh set` и `codex-state.sh reset` занимают
+ветку на всё время работы: каталог `.lock` внутри state-каталога. Второй запуск
+по той же ветке завершается с exit 1, ничего не меняя, и печатает, какая
+команда держит ветку, её pid, машину и время начала.
+
+Если в тексте ошибки сказано, что процесс работает, — дождись его конца и
+повтори команду.
+
+Если сказано, что процесс не работает или что это нельзя определить (замок с
+другой машины, от другого системного пользователя, без записи о владельце), —
+убедись, что по этой ветке ничего не выполняется, удали названный в ошибке
+каталог `.lock` и повтори команду. Замок снимает только тот запуск, который его
+взял, или человек.
+
+Чтение состояния замок не берёт: `show`, `get` и `dir` отвечают всегда.
 
 ### Auto-Workflow (AUTO_REVIEW=true)
 
@@ -187,7 +280,7 @@ When `AUTO_REVIEW=true` in `.codex-review/config.env`, the entire review cycle r
    **IMPORTANT**: Always run `init` before the first `plan` review in a conversation. Even if `codex-state.sh show` reports an existing session, it may be stale (from a previous conversation). The `init` command safely archives the old session and creates a fresh one. Only skip `init` when re-submitting after `CHANGES_REQUESTED` within the same review cycle.
 3. **Formal verdict check** — run `bash scripts/codex-state.sh get verdict`. Proceed ONLY if it outputs the exact string `APPROVED`. Do NOT interpret review text — only the helper output matters.
 4. `CHANGES_REQUESTED` → fix the plan, resubmit (follow «Accept or Argue» rules). Iterate automatically up to the iteration limit.
-5. `APPROVED` → call `ExitPlanMode` (the hook auto-approves it)
+5. `APPROVED` → handle `## Non-blocking` and `## Pre-existing` first (see «Разделы ответа ревьюера»), then call `ExitPlanMode` (the hook auto-approves it)
 
 #### Implementation phase
 
@@ -198,10 +291,12 @@ When `AUTO_REVIEW=true` in `.codex-review/config.env`, the entire review cycle r
 7. After implementation, run code review:
    ```bash
    bash scripts/codex-review.sh code "code description"
+   # or, when the description contains backticks / `$` / `$(...)`:
+   bash scripts/codex-review.sh code --description-file /path/to/description.md
    ```
 8. **Formal verdict check** — same as step 3: run `bash scripts/codex-state.sh get verdict` and check for exact string `APPROVED`.
 9. `CHANGES_REQUESTED` → fix code, resubmit automatically.
-10. `APPROVED` → work is complete, report to user.
+10. `APPROVED` → handle `## Non-blocking` and `## Pre-existing` (see «Разделы ответа ревьюера»), then report to user.
 
 #### ESCALATE handling in auto mode
 
@@ -212,9 +307,11 @@ Same as standard ESCALATE handling — present summary and ask user via `AskUser
 При получении CHANGES_REQUESTED:
 
 1. Прочитай предыдущую review note из `$(bash scripts/codex-state.sh dir)/notes/{phase}-review-{N}.md`
-2. Критически оцени каждое замечание. В описании к повторной отправке ОБЯЗАТЕЛЬНО адресуй каждое замечание поточечно:
+2. Критически оцени каждый пункт раздела `## Blocking`. В описании к повторной отправке адресуй каждый из них поточечно:
    - **Исправлено**: [что именно исправил и как]
    - **Не согласен**: [контраргумент с обоснованием — Codex видит историю и может принять или настоять]
    - **Отложено**: [причина — только с согласия пользователя через AskUserQuestion]
-3. Если одно и то же замечание повторяется 2+ раза без нового содержания (Codex настаивает, ты уже аргументировал) — эскалируй пользователю через AskUserQuestion: покажи замечание, свои аргументы, и спроси решение
-4. При исчерпании лимита итераций — следуй процедуре «Обработка ESCALATE»
+3. Запиши в то же описание решение пользователя по пунктам `## Non-blocking` и `## Pre-existing`
+4. Если один и тот же пункт `## Blocking` повторяется 2+ раза без нового содержания (Codex настаивает, ты уже аргументировал) — эскалируй пользователю через AskUserQuestion: покажи замечание, свои аргументы, и спроси решение
+5. Если два круга подряд весь `## Blocking` состоит из дефектов в коде, который породили правки прошлых кругов, — останови круги и спроси пользователя через AskUserQuestion: ещё круг правок или откат механизма к состоянию до ревью
+6. При исчерпании лимита итераций — следуй процедуре «Обработка ESCALATE»

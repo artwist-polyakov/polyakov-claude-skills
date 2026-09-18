@@ -14,20 +14,13 @@ description: |
 
 Analyze search demand and keyword statistics using Yandex Wordstat API.
 
-## Config
+## Настройка
 
-Скилл поддерживает два бэкенда:
+Скилл работает через Wordstat API в Yandex Cloud Search API v2. Для авторизации нужен ключ сервисного аккаунта: скрипты сами получают и обновляют IAM-токен.
 
-- **`cloud`** (рекомендуется) — Yandex Cloud Search API v2. Проще всего настроить через API-ключ AI Studio (`YANDEX_AI_API_KEY`) и ID каталога; также поддерживается IAM token сервисного аккаунта.
-- **`legacy`** (deprecated) — старый Wordstat OAuth API. Нужен `YANDEX_WORDSTAT_TOKEN` в `config/.env`. Яндекс больше не подключает новых пользователей, но старые токены работают.
+Единая инструкция по настройке, переходу со старого API и устранению ошибок: [config/README.md](config/README.md).
 
-**Auto-selection (cloud-first)**: cloud выигрывает на tie. Чтобы остаться на legacy явно — `YANDEX_WORDSTAT_BACKEND=legacy` в `config/.env`.
-
-Полная инструкция по настройке и troubleshooting: [config/README.md](config/README.md).
-
-**Миграция в облако**: когда Яндекс окончательно отключит legacy — удалите `YANDEX_WORDSTAT_TOKEN`, заполните `config/config.json`, а API-ключ AI Studio сохраните как `YANDEX_AI_API_KEY` в `config/.env`. Команды и аргументы скриптов не меняются.
-
-⚠️ **Cloud `dynamics` operator caveat**: при `--period weekly|monthly` cloud-бэкенд поддерживает только оператор `+`. Минус-слова, кавычки, группировки и точные формы работают только при `--period daily`. Скилл делает preflight-проверку и падает с понятной ошибкой до запроса. Подробнее — в README.
+⚠️ **Операторы в `dynamics`**: при `--period weekly|monthly` поддерживается только оператор `+`. Минус-слова, кавычки, группировки и точные формы работают только при `--period daily`. Скилл проверяет фразу и сообщает об ошибке до отправки запроса. Подробнее — в README.
 
 ## Philosophy
 
@@ -306,10 +299,9 @@ Multiple variants in one query.
 
 Run `bash scripts/regions_tree.sh` for full list.
 
-## Limits
+## Квоты и лимиты
 
-- **10 requests/second**
-- **1000 requests/day**
+Актуальные ограничения для Wordstat приведены в [документации Yandex Search API](https://aistudio.yandex.ru/ru/docs/search-api/concepts/limits).
 
 ## Example Session
 
@@ -349,3 +341,8 @@ Claude: [Запускает анализ для региона 213]
 Анализ рекламной кампании Яндекс Директ для нахождения фраз, не покрытых текущей семантикой.
 Требования: XLSX-выгрузка из Яндекс Директ (лист «Тексты»).
 Подробнее: [MISSED_DEMAND.md](references/MISSED_DEMAND.md)
+
+
+## Локальная поддержка API-ключа
+
+Помимо IAM поддерживается API-ключ AI Studio: задайте `auth.mode` = `api_key` в `config/config.json`, а `YANDEX_AI_API_KEY` — в `config/.env` (права 600). Нужен `yandex_cloud_folder_id`; файл ключа сервисного аккаунта в этом режиме не требуется. Для IAM используйте `auth.mode` = `iam` и настройки выше. API-ключ не обновляется автоматически при 401.

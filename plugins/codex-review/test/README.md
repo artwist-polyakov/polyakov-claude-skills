@@ -12,6 +12,16 @@ Run everything from the repository root.
 test/
 ├── test-auto-approve-plan.sh   # unit tests for the auto-approve hook
 ├── test-integration.sh         # path-contract tests (hook ↔ state dir)
+├── test-state-cache.sh         # cached state path and batched STATUS.md reads
+├── test-state-set.sh           # `codex-state.sh set`, one state.json writer
+├── test-failure-iteration.sh   # what a failed codex call costs
+├── test-verdict-source.sh      # the verdict file decides, the reply never does
+├── test-state-durability.sh    # what survives a write, a reset and a second archiver
+├── test-stale-cycle.sh         # a cycle that outlives the task it opened for
+├── test-branch-lock.sh         # one run at a time on a branch
+├── test-description-file.sh    # --description-file, per-attempt logs, saved request
+├── test-severity-calibration.sh # severity scale, finding headings, verdict threshold
+├── test-exec-flags.sh          # model, reasoning effort, and Fast mode on every call
 ├── test-e2e.sh                 # opt-in end-to-end with real codex / claude
 └── test-fixtures/              # plan markdown fixtures used by test-e2e.sh
     ├── approve_plan.md         # trivial plan → APPROVED
@@ -28,7 +38,8 @@ Covers:
 
 - `AUTO_REVIEW` unset / `false` / `true` / quoted / `export` / leading whitespace
 - cold-start deny (no `verdict.txt`)
-- `APPROVED` → allow + `verdict.txt` deletion
+- `APPROVED` left by a plan review → allow + deletion of `verdict.txt` and
+  `verdict.phase`
 - `CHANGES_REQUESTED` → deny with resubmit instruction
 - stale-verdict guard (second call after allow must deny)
 - verdict sanitization (quotes, backslashes, all-garbage, empty) → valid JSON
@@ -67,6 +78,404 @@ Run:
 sh plugins/codex-review/test/test-integration.sh
 ```
 
+## test-state-cache.sh
+
+Regression tests for state reads on the hot path. Covers:
+
+- `write_status` and the standalone readers reuse the `STATE_DIR` already
+  resolved by the entry script;
+- state and config helpers can reuse one explicitly resolved review root;
+- `write_status` derives the branch from that same state directory;
+- string and numeric readers can parse one in-memory snapshot after the source
+  file is no longer available;
+- archive summaries read their string fields through the same shared snapshot
+  parser;
+- missing values keep their existing empty-string / zero defaults.
+
+The test checks observable calls and output rather than a machine-dependent
+timing threshold.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-state-cache.sh
+```
+
+## test-state-set.sh
+
+Regression tests for `codex-state.sh set` and for `render_state_fields` in
+`common.sh` — the one place that describes the shape of `state.json`.
+
+Scenarios:
+
+1. The three counters (`iteration`, `max_iterations`, `reviews_completed`) are
+   actually written, a counter can be set back to zero, and `STATUS.md` follows
+   the stored numbers.
+2. An unknown field name and a counter value that is not a non-negative integer
+   exit `1` with a message naming the field, and leave `state.json` byte for
+   byte as it was.
+3. Writing one field keeps every other field, `reviews_completed` included.
+4. A value `state.json` could not give back unchanged — a double quote, a
+   backslash, a second line, a control character — is refused rather than
+   stored or repaired, and an ordinary value is stored exactly as passed.
+5. `set` against a missing `state.json` writes the whole file, with
+   `max_iterations` taken from `config.env`.
+6. The renderer refuses a field left out, a field given twice, and an argument
+   without a name; neither entry script carries its own copy of the file's
+   literal.
+
+Does **not** require the `codex` binary. JSON validity is asserted through
+`python3` or `jq`; that one assertion is skipped if neither is available.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-state-set.sh
+```
+
+## test-description-file.sh
+
+Covers the file-based description path and the artefacts a review run leaves
+behind.
+
+Scenarios:
+
+1. `--description-file` refuses a missing file, a file holding nothing but
+   blank lines, a description also passed inline, and a `--plan-file` passed
+   alongside it. Every refusal in the suite is checked for its message and for
+   exit `1` (`assert_refusal`). On `plan` the option names the plan file, the
+   same input `--plan-file` names.
+2. A read that dies part way through is reported as a read error, not as an
+   empty file, and nothing is sent: a `cat` stub on `PATH` prints half the text
+   and fails, so the case runs for root as well. A path whose name starts with
+   a dash is treated as a path, not as an option.
+3. Text read from the file reaches the Codex prompt verbatim — backticks
+   included, which is what passing the same text as an argument destroys. The
+   saved copy matches the source file byte for byte, trailing blank lines and a
+   missing final newline included (`cmp`), for a review and for the task text
+   `init` stores alike.
+4. A log left by an earlier attempt at the same iteration is kept; the retry
+   writes `codex-<phase>-<N>.2.log` beside it. A request saved by an attempt
+   that died before its log appeared holds the number just as a log does.
+5. The description sent for review is stored next to that attempt's log as
+   `codex-<phase>-<N>.request.md`.
+6. `init` refuses a description longer than one line unless `--task-label` names
+   the task, and the refusal lands before the session is opened — no log, no
+   request file, nothing recorded.
+7. With `--task-label` given, `state.json` stays valid JSON and stores the label
+   exactly as passed, `STATUS.md` points at the full text, and the description
+   itself is kept in `codex-init.request.md`.
+8. A label that would not survive being stored and read back is refused rather
+   than repaired: a double quote, a backslash, a carriage return, a tab, a space
+   at either end, more than 200 characters, two lines, or empty — an empty
+   `--task-label` is an error, not a request to fall back to the description. So
+   is `--task-label` passed to a phase other than `init`, empty value included.
+9. A single-line description still names itself — no label needed. Read from a
+   file, its trailing newline is not carried into the name.
+10. The skill's README recommends the single `.codex-review/` rule, so current
+    and future review artefacts stay local without maintaining a file-by-file
+    ignore list.
+11. Opening a new session archives the saved requests and the prompts together
+    with their logs, leaving none behind for the next attempt numbering to
+    overwrite — `codex-init.prompt.md` carries a fixed name, so a prompt left in
+    place would be overwritten rather than kept.
+12. A plan past the 128 KB the kernel allows in one argument is still sent whole:
+    the run succeeds, the prompt the stub receives holds the plan's last line,
+    and the prompt is kept beside the log as `codex-<phase>-<N>.prompt.md`.
+13. `init` sends a task of that size whole as well — it builds and sends its
+    prompt on its own path, and keeps it in `codex-init.prompt.md`.
+
+Does **not** require the `codex` binary — a stub on `PATH` records the prompt
+and writes the verdict. The prompt reaches it on stdin, which is how
+`codex-review.sh` sends it: the stub is called with `-` in place of the text.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-description-file.sh
+```
+
+## test-severity-calibration.sh
+
+Covers the severity calibration `build_review_prompt` adds to every review it
+sends.
+
+Scenarios:
+
+1. The three-word scale, the tie-break rule and the ban on any other severity
+   vocabulary reach Codex on the code phase, together with the three headings
+   `## Blocking`, `## Non-blocking` and `## Pre-existing` and the threshold that
+   ties `CHANGES_REQUESTED` to a non-empty `## Blocking`.
+2. A defect that already exists in the files the change touches keeps its own
+   severity under `## Pre-existing` instead of being flattened into the
+   nice-to-have pile, and moves to `## Blocking` when the change makes it
+   reachable in a new way. The heading is scoped to those files — the reviewer is
+   told not to roam the rest of the repository.
+3. The plan phase gets the same scale in its own wording — what the plan leaves
+   broken, an unverified behaviour change, a plan that need not enumerate every
+   failure mode — with no code-phase wording leaking in.
+4. The late-round narrowing is absent on rounds 1 and 2, appears on round 3,
+   names the round it was sent for, and caps a subject first raised that late at
+   `minor` unless it is `critical`.
+5. `CODEX_SEVERITY_CALIBRATION=false` restores the previous prompt: no scale, no
+   headings, and the two original verdict lines back in place.
+6. A codex call that fails spends neither a round nor an iteration: after a
+   failed call the next two reviews still carry no narrowing and the third one
+   does. A counter moved on its own does not become the round number — the
+   review sent under iteration 5 reports round 3.
+7. Clearing the cycle with the state helper starts the round count over — notes
+   from the previous cycle survive it and must not push the next review into a
+   narrowed round.
+8. A project's `CODEX_CODE_GUIDE` still reaches Codex alongside the calibration.
+
+Does **not** require the `codex` binary — a stub on `PATH` accepts the prompt on
+stdin and writes the verdict; the assertions read the prompt copy the run keeps
+as `codex-<phase>-<N>.prompt.md`. A `fail-next` marker file makes the stub fail
+one review call, and only a review call: `common.sh` probes `codex --version`
+before every run, and failing that probe would abort before any review ran.
+`run_review` clears every setting `load_config` reads, so an exported
+`CODEX_SEVERITY_CALIBRATION` or `CODEX_MAX_ITERATIONS` cannot decide the
+outcome of an assertion.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-severity-calibration.sh
+```
+
+## test-exec-flags.sh
+
+Covers the flags `codex-review.sh` puts on every `codex exec` call.
+
+Scenarios:
+
+1. `CODEX_MODEL`, `CODEX_REASONING_EFFORT`, and enabled `CODEX_FAST_MODE`
+   reach the call that opens the session as `--model <name>`,
+   `-c model_reasoning_effort="<effort>"`, and `-c service_tier="fast"`; the
+   review that follows carries the same settings.
+2. The two call sites open with an identical flag block — everything up to
+   `-o`, where the per-call arguments begin. A flag added to one site and not
+   the other fails here, which is what keeps a session from being created under
+   one setting and reviewed under another.
+3. With model and effort unset, Fast mode left at its disabled default, and
+   `CODEX_YOLO=false`, no shared flags are passed at all. This also checks the
+   empty-list path on macOS Bash 3.2.
+
+Does **not** require the `codex` binary — a stub on `PATH` records the argv of
+every exec call, one argument per line, as `argv-<N>.txt` beside the repo. The
+`codex --version` probe `common.sh` runs before every review is not an exec
+call and is not recorded, so `argv-1.txt` is the session call and `argv-2.txt`
+the review.
+
+`run_review` clears every setting `load_config` reads before each run, so the
+assertions answer to the repo's own `config.env` and not to a `CODEX_MODEL` or
+`CODEX_REASONING_EFFORT` / `CODEX_FAST_MODE` exported on the machine running
+the suite.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-exec-flags.sh
+```
+
+## test-failure-iteration.sh
+
+Regression tests for what a `codex exec` that fails costs the review cycle.
+
+Scenarios:
+
+1. A call that comes back with nothing exits `1`, leaves both counters where
+   they were, stores `ERROR`, writes no review note, and says the iteration was
+   not consumed.
+2. `STATUS.md` is rewritten for that failure instead of keeping the previous
+   round and its status.
+3. Six failures in a row leave the counter at zero — a run of dropped calls
+   cannot walk a cycle to its limit and escalate a review that never happened.
+4. A review that does come back spends its iteration and its round.
+5. A call that wrote its verdict and then died still counts: the round is spent,
+   the rescued verdict is the stored status, and the note says the reply was
+   never written rather than carrying the previous round's reply.
+6. A stale reply file on disk does not rescue a failed call.
+7. A rescued `APPROVED` closes the cycle the same way a normal one does, down to
+   removing `STATUS.md`.
+
+Does **not** require the `codex` binary — a stub on `PATH` is told per call
+whether to fail and whether to leave a verdict behind first.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-failure-iteration.sh
+```
+
+## test-verdict-source.sh
+
+Regression tests for where the verdict comes from. The verdict file is the whole
+answer; the reply text never decides.
+
+Scenarios:
+
+1. A reply saying "Not APPROVED; changes are required" approves nothing: the run
+   exits `1`, stores `ERROR` and spends no iteration.
+2. A reply holding the word `APPROVED` decides nothing either, and no note is
+   filed for a round that did not happen.
+3. That reply is kept beside the attempt's log as `codex-<phase>-<N>.reply.md`,
+   and the run says where it is.
+4. The verdict file decides against the reply, both ways round, and those rounds
+   are spent.
+5. A verdict file holding anything but the two words — `APPROVED with caveats`,
+   `approved`, `LGTM`, nothing at all — is no verdict.
+6. A verdict written with blank lines and spaces around it still counts.
+7. A kept reply is archived with the session it belongs to, so the next session
+   reusing that attempt number cannot overwrite it.
+
+Does **not** require the `codex` binary — a stub on `PATH` is told per call what
+to write as the reply and what to write to the verdict file the prompt names.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-verdict-source.sh
+```
+
+## test-state-durability.sh
+
+Regression tests for four ways the plugin used to lose or invent something it
+had on disk, and for the archiver reporting what it could not do.
+
+Scenarios:
+
+1. A write that dies part way through leaves the previous `state.json` intact.
+   `ulimit -f 0` lets the file be created but not filled, which is the shape of
+   a full disk; a control write without that limit proves the call under test
+   does reach the file.
+2. A temporary file left behind by such a killed write is removed by the next
+   write, while one belonging to a process that is still running is left alone.
+3. `get` answers with what the field holds: an empty string field reads as
+   empty rather than as `0`, a counter reads as a number, and an unknown field
+   exits `1` naming what can be read.
+4. Notes of an earlier cycle survive `codex-state.sh reset` — the next cycle's
+   first round takes the next free name instead of overwriting them.
+5. Two archive runs that claim their directory at the same moment get one
+   each. Both are pinned to the same second by a `date` stub on `PATH` and
+   released together by a gate file, and they archive two state directories
+   under one review root, so they compete for the name and nothing else.
+6. An archive directory that cannot be created ends the run with an error and
+   leaves the artefacts where they are. This covers the case a loop watching
+   only `mkdir` would mistake for a name collision, and the archive root that
+   cannot be made at all.
+7. An artifact that cannot be moved into the archive stops the archiver and is
+   named in the error.
+
+Scenarios 6 and 7 get their failures from `mkdir` and `mv` stubs that refuse the
+target named in an environment variable, so the outcome does not depend on who
+runs the suite — a file permission means nothing to a superuser, which is who
+runs a container by default.
+
+Does **not** require the `codex` binary — a stub on `PATH` plays the reviewer.
+`common.sh` is a bash script, so the calls into it run under `bash` even though
+the suite itself is POSIX `sh`. Runs that would otherwise never end are bounded
+by `timeout`, or by `gtimeout` where GNU coreutils arrives under that name; the
+suite stops with an explanation when neither is on `PATH`.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-state-durability.sh
+```
+
+## test-stale-cycle.sh
+
+Regression tests for a cycle that outlives the task it was opened for. The
+review state of a branch is outside git, so a task abandoned or finished
+mid-branch leaves its cycle behind and the next task walks into it.
+
+Scenarios:
+
+1. A finished round writes `verdict.phase` beside `verdict.txt`, naming the
+   phase that produced the verdict.
+2. The `ExitPlanMode` gate takes an approval only from a plan review. One left
+   by a code review, or one with no marker at all, is deleted and refused; the
+   marker is cleared together with the verdict it was used for.
+3. A round sent into a cycle already closed by an approval is refused, exits
+   `1`, changes nothing and names both ways forward.
+4. Both ways out work: `codex-state.sh reset` reopens the cycle at round 1 with
+   the task name kept, and `init` opens a new one and archives the marker.
+5. Every round names its task: the first says `Task: <name>`, and a later one
+   says what it continues and when the previous round ran.
+6. A round that changes the phase still names the task it inherited and the
+   round that ran before the change, although the phase change zeroes the
+   counters and stamps the timestamp with the current time. This is the shape
+   an abandoned cycle takes: an old task reviewed a plan, a new one sends code
+   without opening a session of its own.
+
+Does **not** require the `codex` binary — a stub on `PATH` plays the reviewer
+and writes whatever `verdict-next` holds, a request for changes by default, so
+a cycle stays open unless a scenario closes it on purpose.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-stale-cycle.sh
+```
+
+## test-branch-lock.sh
+
+Regression tests for the lock a review command holds over its branch. Reading
+the iteration counter, sending the round and writing the result back is one
+sequence, and two runs of the same branch used to interleave freely.
+
+Scenarios:
+
+1. A branch already in use turns away a state write, a review and a reset; each
+   names the holding command, its pid, its host and when it started, says
+   nothing was changed, and leaves the lock where it is.
+2. `show`, `get` and `dir` answer while the branch is in use.
+3. A lock left by a process of this user that is gone from this host is refused
+   with a line saying the holder is no longer running and naming the directory
+   to remove; the lock stays where it is, and the command runs once it is
+   removed by hand.
+4. A lock claimed on another machine, one belonging to another user, and one
+   carrying no owner record are all refused with a refusal that does not claim
+   to know whether the holder is running: `kill -0` refuses a live process of
+   another user exactly as it refuses a pid that does not exist.
+5. The lock is released when the command ends: after a write, after a review,
+   and after a command that failed on a value the state file cannot hold.
+6. A command started while a review genuinely holds the branch is turned away,
+   the refusal names the running holder, and the branch is usable again once
+   that review ends with a clean exit. The reviewer stub reports itself ready
+   and then waits to be let go, so no assertion rides on a delay.
+7. `init` is refused by a lock like any other command; once the lock is gone it
+   runs, and no lock reaches the archive.
+8. A claim that cannot record its owner gives the lock back and fails, leaving
+   the state untouched.
+9. A shell told to stop while its reviewer is still writing keeps the branch:
+   the signal is checked to have been delivered, the lock is still there, a
+   command started meanwhile is still refused, the branch comes back only once
+   the reviewer is done, and the run ends on the code of the signal it was
+   sent. Bash runs a trap for a signal received during a foreground command
+   only after that command finishes.
+10. A claim that can neither record its owner nor take back the directory it
+    made says the lock is still there and names it, rather than reporting that
+    nothing was changed.
+11. A lock removed by hand under a running command and claimed again is left
+    alone by that command when it ends, whether the replacement already names
+    its holder or does not name anyone yet. Removing either would let a third
+    command in beside the new holder.
+
+Does **not** require the `codex` binary — a stub on `PATH` plays the reviewer.
+The `mv` and `rm` a claim uses are failed on demand by stubs keyed on the target
+they refuse, so the failure paths do not depend on file permissions or on who
+runs the suite. Locks are planted by hand with the records a real claim
+writes, so the holder can be a live process, a dead one, one of another user,
+or one on another machine.
+
+Run:
+
+```sh
+sh plugins/codex-review/test/test-branch-lock.sh
+```
+
 ## test-e2e.sh
 
 Opt-in end-to-end tests that exercise real `codex` / `claude` CLIs.
@@ -83,11 +492,19 @@ Scenarios (selectable by name):
 
 | name      | cost                              | what it tests |
 |-----------|-----------------------------------|---------------|
-| `approve` | ~2 codex calls                    | init + approve cycle, hook allow, `verdict.txt` cleanup, stale guard on second call |
-| `reject`  | ~3 codex calls                    | init + reject, hook deny w/ resubmit message, resubmit in same session → APPROVED |
-| `stale`   | 1 real `claude` run + ~2 codex    | stale `.codex-review/<branch>/` artifacts from a prior task must be archived by `init` — must NOT silently auto-approve the new task |
+| `approve`  | ~2 codex calls                   | init + approve cycle, hook allow, `verdict.txt` cleanup, stale guard on second call |
+| `reject`   | ~3 codex calls                   | init + reject, hook deny w/ resubmit message, resubmit in same session → APPROVED |
+| `filedesc` | ~3 codex calls                   | `--description-file` and `--task-label`: refusals cost no session, the label is stored as given, `state.json` stays valid, backticks and `$` reach codex verbatim, saved requests are archived with their logs |
+| `stale`    | 1 real `claude` run + ~2 codex   | stale `.codex-review/<branch>/` artifacts from a prior task must be archived by `init` — must NOT silently auto-approve the new task |
 
-Total for all scenarios: ~5 codex calls + 1 claude run, roughly 3–5 minutes.
+Total for all scenarios: ~8 codex calls + 1 claude run, roughly 5–7 minutes.
+
+`filedesc` is the only scenario that asserts something on the **codex side**
+rather than in the plugin's own files: the description it sends carries
+`` `beforeSend` ``, `$HOME` and a `$(…)` shape, and the check looks for that
+text in the codex run log or in the reply codex wrote. Passed as a
+command-line argument the shell would have executed all three first, so this
+is what tells the file-based path apart from the old one.
 
 The `stale` scenario invokes `claude -p --plugin-dir ...` with a
 5-minute hard timeout. It intentionally does not assert the new plan
@@ -124,7 +541,18 @@ CODEX_E2E=1 sh plugins/codex-review/test/test-e2e.sh stale
   because the earlier `reject_plan.md` instruction "sticks" in the
   session and keeps producing `CHANGES_REQUESTED`.
 
+Two further fixtures are fed to `--description-file` by the `filedesc`
+scenario — as an `init` task and as a code description, not as plans:
+
+- **`task_description.md`** — a task text of several lines carrying a quoted
+  phrase, a `C:\tmp\out` path and backticked identifiers: none of them can live
+  in a `state.json` value, which is why that scenario has to pass
+  `--task-label`.
+- **`code_description.md`** — a code description carrying `` `beforeSend` ``,
+  `$HOME` and a `$(…)` shape, asking for `APPROVED`. The metacharacters are the
+  point: they are what a shell would have eaten on the argv path.
+
 ## Exit codes
 
-All three scripts exit `0` on success and `1` if any assertion failed.
+All thirteen scripts exit `0` on success and `1` if any assertion failed.
 `test-e2e.sh` additionally exits `0` (skip) when `CODEX_E2E` is not set.

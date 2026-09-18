@@ -1,7 +1,7 @@
 {
   "name": "yandex-search-api",
-  "version": "1.0.0",
-  "description": "Parse Yandex SERP via Yandex Cloud Search API v2 (sync + async)",
+  "version": "1.1.0",
+  "description": "Yandex Search API v2: content-rich page extracts (smart snippets) plus classic SERP parsing (sync + async)",
   "author": {
     "name": "Polyakov"
   }
