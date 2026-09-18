@@ -3,6 +3,9 @@
 
 set -eu
 
+# Credentials must come only from the temporary test configuration.
+unset YANDEX_AI_API_KEY
+
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_SCRIPTS_DIR="$(cd "$TESTS_DIR/.." && pwd)"
 td="${TMPDIR:-/tmp}/ysa_api_key_test_$$"
