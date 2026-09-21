@@ -1,0 +1,184 @@
+#!/bin/sh
+# Verify API-key auth at the real auth_request boundary without network access.
+
+set -eu
+
+# Credentials must come only from the temporary test configuration.
+unset YANDEX_AI_API_KEY
+
+TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
+SOURCE_SCRIPTS_DIR="$(cd "$TESTS_DIR/.." && pwd)"
+td="${TMPDIR:-/tmp}/ysa_api_key_test_$$"
+trap 'rm -rf "$td"' EXIT INT TERM
+
+mkdir -p "$td/skill/scripts" "$td/skill/config" "$td/skill/cache" "$td/bin"
+cp "$SOURCE_SCRIPTS_DIR/common.sh" "$td/skill/scripts/common.sh"
+
+cat > "$td/skill/config/config.json" <<'EOF'
+{
+  "yandex_cloud_folder_id": "b1g-test-folder",
+  "auth": {"mode": "api_key"}
+}
+EOF
+
+cat > "$td/skill/config/.env" <<'EOF'
+YANDEX_AI_API_KEY=test-api-secret
+EOF
+
+cat > "$td/skill/scripts/iam_token_get.sh" <<'EOF'
+#!/bin/sh
+echo called > "${IAM_MARKER:?}"
+exit 97
+EOF
+chmod +x "$td/skill/scripts/iam_token_get.sh"
+
+cat > "$td/bin/curl" <<'EOF'
+#!/bin/sh
+response_file=""
+headers_file=""
+
+{
+    echo '--- request ---'
+    printf '%s\n' "$@"
+} >> "${CURL_CAPTURE:?}"
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -o)
+            response_file="$2"
+            shift 2
+            ;;
+        -D)
+            headers_file="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+if [ -n "${FAKE_UNAUTHORIZED_ONCE:-}" ] && [ ! -e "$FAKE_UNAUTHORIZED_ONCE" ]; then
+    : > "$FAKE_UNAUTHORIZED_ONCE"
+    printf '{"code":16,"message":"Token expired"}' > "$response_file"
+    : > "$headers_file"
+    printf 401
+    exit 0
+fi
+printf '%s' "${FAKE_BODY:-{}}" > "$response_file"
+: > "$headers_file"
+printf '%s' "${FAKE_STATUS:-200}"
+EOF
+chmod +x "$td/bin/curl"
+
+cat > "$td/skill/scripts/harness.sh" <<'EOF'
+#!/bin/sh
+set -eu
+. "$(dirname "$0")/common.sh"
+load_config
+auth_request POST 'https://searchapi.api.cloud.yandex.net/v2/web/search' '{}'
+EOF
+chmod +x "$td/skill/scripts/harness.sh"
+
+CURL_CAPTURE="$td/curl-args"
+IAM_MARKER="$td/iam-called"
+PATH="$td/bin:$PATH"
+export CURL_CAPTURE IAM_MARKER PATH
+
+sh "$td/skill/scripts/harness.sh" >/dev/null
+
+grep -Fxq 'Authorization: Api-Key test-api-secret' "$CURL_CAPTURE" || {
+    echo 'FAIL: API-key header was not sent'
+    exit 1
+}
+if grep -Fq 'Authorization: Bearer' "$CURL_CAPTURE"; then
+    echo 'FAIL: Bearer header leaked into API-key mode'
+    exit 1
+fi
+[ ! -e "$IAM_MARKER" ] || {
+    echo 'FAIL: API-key mode invoked IAM token generation'
+    exit 1
+}
+[ ! -e "$td/skill/cache/iam_token.json" ] || {
+    echo 'FAIL: API-key mode created an IAM token cache'
+    exit 1
+}
+
+if FAKE_STATUS=401 FAKE_BODY='{"code":16,"message":"Unknown api key"}' sh "$td/skill/scripts/harness.sh" >"$td/rejected.out" 2>"$td/rejected.err"; then
+    echo 'FAIL: rejected key succeeded'; exit 1
+fi
+grep -Fq 'Unknown api key' "$td/rejected.err" || { echo 'FAIL: API error lost'; exit 1; }
+[ ! -s "$td/rejected.out" ] || { echo 'FAIL: error on stdout'; exit 1; }
+[ ! -e "$IAM_MARKER" ] || { echo 'FAIL: rejected key refreshed IAM'; exit 1; }
+
+rm "$td/skill/config/.env" "$CURL_CAPTURE"
+if sh "$td/skill/scripts/harness.sh" >"$td/missing-key.out" 2>&1; then
+    echo 'FAIL: explicit API-key mode succeeded without a key'
+    exit 1
+fi
+grep -Fq 'auth.mode=api_key requires YANDEX_AI_API_KEY' "$td/missing-key.out" || {
+    echo 'FAIL: missing API-key diagnostic is not actionable'
+    exit 1
+}
+[ ! -e "$CURL_CAPTURE" ] || {
+    echo 'FAIL: missing API key reached HTTP transport'
+    exit 1
+}
+[ ! -e "$IAM_MARKER" ] || {
+    echo 'FAIL: missing API key fell back to IAM'
+    exit 1
+}
+
+cat > "$td/skill/config/config.json" <<'EOF'
+{
+  "yandex_cloud_folder_id": "b1g-test-folder",
+  "auth": {
+    "service_account_key_file": "config/service-account.json"
+  }
+}
+EOF
+cat > "$td/skill/cache/iam_token.json" <<'EOF'
+{"iam_token":"test-iam-secret","expires_at":4102444800}
+EOF
+printf 'YANDEX_AI_API_KEY=test-api-secret\n' > "$td/skill/config/.env"
+rm -f "$IAM_MARKER" "$CURL_CAPTURE"
+
+sh "$td/skill/scripts/harness.sh" >/dev/null
+
+grep -Fxq 'Authorization: Bearer test-iam-secret' "$CURL_CAPTURE" || {
+    echo 'FAIL: IAM mode no longer sends the cached Bearer token'
+    exit 1
+}
+if grep -Fq 'Authorization: Api-Key' "$CURL_CAPTURE"; then
+    echo 'FAIL: API-key header leaked into IAM mode'
+    exit 1
+fi
+[ ! -e "$IAM_MARKER" ] || {
+    echo 'FAIL: valid cached IAM token triggered regeneration'
+    exit 1
+}
+
+# A cold IAM cache must lazily generate a token exactly once.
+cat > "$td/skill/scripts/iam_token_get.sh" <<'EOF'
+#!/bin/sh
+set -eu
+printf 'called\n' >> "${IAM_MARKER:?}"
+mkdir -p "$(dirname "$0")/../cache"
+printf '{"iam_token":"generated-iam-secret","expires_at":4102444800}' > "$(dirname "$0")/../cache/iam_token.json"
+EOF
+rm "$td/skill/cache/iam_token.json" "$CURL_CAPTURE"
+sh "$td/skill/scripts/harness.sh" >"$td/cold.out"
+[ "$(wc -l < "$IAM_MARKER" | tr -d ' ')" = 1 ] || { echo 'FAIL: cold cache generated token more than once'; exit 1; }
+grep -Fxq 'Authorization: Bearer generated-iam-secret' "$CURL_CAPTURE" || { echo 'FAIL: generated token not sent'; exit 1; }
+
+# A rejected cached IAM token gets one refresh and one retry with the new token.
+printf '{"iam_token":"old-iam-secret","expires_at":4102444800}' > "$td/skill/cache/iam_token.json"
+rm "$IAM_MARKER" "$CURL_CAPTURE"
+FAKE_UNAUTHORIZED_ONCE="$td/unauthorized-once" sh "$td/skill/scripts/harness.sh" >"$td/refreshed.out"
+[ "$(wc -l < "$IAM_MARKER" | tr -d ' ')" = 1 ] || { echo 'FAIL: expected one refresh'; exit 1; }
+[ "$(grep -c '^--- request ---$' "$CURL_CAPTURE")" = 2 ] || { echo 'FAIL: expected one retry'; exit 1; }
+grep '^Authorization:' "$CURL_CAPTURE" > "$td/actual-headers"
+printf '%s\n' 'Authorization: Bearer old-iam-secret' 'Authorization: Bearer generated-iam-secret' > "$td/expected-headers"
+cmp "$td/expected-headers" "$td/actual-headers" || { echo 'FAIL: wrong retry authorization'; exit 1; }
+
+echo PASS

@@ -1,6 +1,11 @@
 # Настройка Yandex Search API
 
-Для работы скилла нужен сервисный аккаунт в Яндекс.Облаке.
+Для работы скилла нужен сервисный аккаунт в Яндекс.Облаке. Доступны два способа входа:
+
+- **IAM через авторизованный JSON-ключ:** шаги 1–6 ниже. Скрипты сами получают и обновляют IAM-токен.
+- **API-ключ сервисного аккаунта:** раздел [API-ключ](#альтернатива-api-ключ-сервисного-аккаунта). JSON-ключ и OpenSSL для этого режима не требуются; API-ключ автоматически не обновляется.
+
+## Настройка через IAM
 
 ## Шаг 1: Создайте каталог в Яндекс.Облаке
 
@@ -70,7 +75,7 @@ bash scripts/iam_token_get.sh
 
 Если всё правильно — увидите "IAM token cached" и можно искать.
 
-## Для пользователей macOS
+## Для пользователей macOS в режиме IAM
 
 На macOS вместо OpenSSL стоит LibreSSL, который не поддерживает нужный алгоритм подписи. Если при проверке видите ошибку про LibreSSL:
 
@@ -96,8 +101,12 @@ bash scripts/iam_token_get.sh
 
 ## Частые проблемы
 
+### "401 Unauthorized" / "Unknown api key"
+- **IAM:** проверьте путь к авторизованному JSON-ключу, его действительность и доступность. IAM-токен обновляется автоматически; отозванный авторизованный ключ нужно заменить.
+- **API-ключ:** проверьте `YANDEX_AI_API_KEY`, срок действия, отсутствие отзыва и область `yc.search-api.execute`. При истечении или отзыве создайте новый API-ключ. JSON-ключ и обновление IAM здесь не нужны.
+
 ### "Error: LibreSSL detected"
-macOS по умолчанию использует LibreSSL вместо OpenSSL. См. раздел выше "Для пользователей macOS".
+macOS по умолчанию использует LibreSSL вместо OpenSSL. Это относится только к IAM; см. раздел выше для macOS.
 
 ### "Error: 403 Forbidden"
 - Не назначена роль `search-api.webSearch.user` → назначьте (Шаг 3)
@@ -107,7 +116,7 @@ macOS по умолчанию использует LibreSSL вместо OpenSSL
 Не создан файл конфигурации → выполните Шаг 5.
 
 ### "Error: openssl not found"
-OpenSSL не установлен или не в PATH → установите через `brew install openssl` и укажите путь в конфиге.
+В режиме IAM OpenSSL не установлен или не в PATH → установите через `brew install openssl` и укажите путь в конфиге.
 
 ## Лимиты и цены
 
@@ -136,7 +145,7 @@ OpenSSL не установлен или не в PATH → установите �
 Выключаются флагом `--no-snippets` или `"enabled": false` в конфиге.
 Подробности: [../references/SMART_SNIPPETS.md](../references/SMART_SNIPPETS.md).
 
-## Альтернатива: настройка через CLI
+## Настройка IAM через CLI
 
 Если у вас установлен `yc` (Yandex Cloud CLI), можно сделать всё через командную строку:
 
@@ -153,3 +162,24 @@ yc resource-manager folder add-access-binding <FOLDER_ID> \
 yc iam key create --service-account-name search-api-sa \
   --output config/service_account_key.json
 ```
+
+## Альтернатива: API-ключ сервисного аккаунта
+
+Сервисный аккаунт и роль `search-api.webSearch.user` нужны и в этом режиме.
+JSON с авторизованным ключом, подпись JWT и получение IAM-токена не требуются.
+
+1. Откройте [консоль Yandex Cloud](https://console.yandex.cloud/), выберите каталог → Identity and Access Management → Сервисные аккаунты → нужный аккаунт → API-ключи.
+2. Создайте API-ключ с областью действия `yc.search-api.execute`. Укажите её явно, не полагайтесь на значения по умолчанию. Эквивалент через CLI:
+
+   ```bash
+   yc iam api-key create --service-account-name <имя> --scopes yc.search-api.execute
+   ```
+
+3. Скопируйте `config/.env.example` в `config/.env` и впишите ключ в `YANDEX_AI_API_KEY`. Задайте права `chmod 600 config/.env`. Этот файл секретный; не добавляйте его в Git.
+4. В `config/config.json` сохраните `yandex_cloud_folder_id`, а `auth` задайте как `{"mode": "api_key"}`.
+5. Запустите `sh scripts/web_search_sync.sh --query "пример" --results 1` для проверки доступа (запрос тарифицируется).
+
+`auth.mode` может быть `iam` или `api_key`. Поле можно не задавать: при наличии
+`auth.service_account_key_file` используется IAM, даже если задан `YANDEX_AI_API_KEY`.
+Без пути к авторизованному ключу, но с `YANDEX_AI_API_KEY`, выбирается API-ключ.
+Существующую IAM-конфигурацию менять не нужно.
