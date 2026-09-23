@@ -435,8 +435,8 @@ def head_lines(login: str, args, reference, params: dict, chosen_period: dict,
         f"Период {reports_lib.period_said(chosen_period)}"
         + (f" ({actual})" if actual else "") + " · "
         f"{vat_said(params, vat_rate, listed_at, several)} · "
-        f"атрибуция {', '.join(models) or 'LC'} · "
-        f"валюта {currency} · режим {mode}"
+        + (f"атрибуция {', '.join(models) or 'LC'} · " if goals else "")
+        + f"валюта {currency} · режим {mode}"
         + (f" · цели {', '.join(goals)}" if goals else ""))
     pages = f", страниц {report.pages}" if report.pages > 1 else ""
     lines.append(
@@ -660,7 +660,7 @@ def make_parser(reference) -> Parser:
     parser.add_argument("--goals", metavar="СПИСОК",
                         help="идентификаторы целей Метрики через запятую")
     parser.add_argument("--attribution", metavar="СПИСОК",
-                        help="модели атрибуции через запятую; по умолчанию AUTO")
+                        help="модели атрибуции через запятую для --goals; по умолчанию AUTO")
     parser.add_argument("--vat", choices=("YES", "NO"), type=str.upper,
                         help="учитывать НДС; по умолчанию из справочника")
     parser.add_argument("--order-by", metavar="ПОЛЕ:ПОРЯДОК",
