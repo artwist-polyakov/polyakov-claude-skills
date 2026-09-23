@@ -387,11 +387,11 @@ def request_params(
         "DateRangeType": chosen_period["kind"],
         "Format": reference.default("format", "TSV"),
         "IncludeVAT": include_vat or reference.default("include_vat", "YES"),
-        "AttributionModels": list(
-            attribution or reference.default("attribution_models", ["AUTO"])),
     }
     if goals:
         params["Goals"] = [str(item) for item in goals]
+        params["AttributionModels"] = list(
+            attribution or reference.default("attribution_models", ["AUTO"]))
     if order_by:
         params["OrderBy"] = list(order_by)
     params["Page"] = {
