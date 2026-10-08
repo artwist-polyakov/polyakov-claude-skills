@@ -21,7 +21,8 @@ SKILL_DIR="$(cd "$SCRIPTS_DIR/.." && pwd)"
 SANDBOX=$(mktemp -d "${TMPDIR:-/tmp}/wsiamtest_XXXXXX")
 trap 'rm -rf "$SANDBOX"' EXIT INT TERM
 
-TMPDIR="$SANDBOX/tmp"
+# A literal backslash followed by n must not become a Python newline escape.
+TMPDIR="$SANDBOX/tmp with spaces\\name"
 mkdir -p "$TMPDIR"
 export TMPDIR
 
@@ -47,7 +48,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 [ -n "$_key" ] && ls -l "$_key" | cut -d' ' -f1 > "$WS_TEST_KEYMODE_FILE"
-printf 'fake-signature-bytes' > "$_out"
+printf '\000\001\177\200\377\nfake-signature-bytes' > "$_out"
 exit 0
 STUB
 chmod +x "$BIN/openssl"
@@ -55,7 +56,22 @@ chmod +x "$BIN/openssl"
 # --- stub curl --------------------------------------------------------------
 cat > "$BIN/curl" <<'STUB'
 #!/bin/sh
+set -e
 # _iam_token_issue posts the JWT and expects {"iamToken":..,"expiresAt":..}
+payload=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -d) payload="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+JWT_BODY="$payload" python3 - <<'PY'
+import base64, json, os
+
+signature = json.loads(os.environ["JWT_BODY"])["jwt"].split(".")[2]
+decoded = base64.urlsafe_b64decode(signature + "=" * (-len(signature) % 4))
+assert decoded == b"\x00\x01\x7f\x80\xff\nfake-signature-bytes", "JWT signature lost bytes"
+PY
 echo '{"iamToken":"test-iam-token-xyz","expiresAt":"2099-01-01T00:00:00Z"}'
 exit 0
 STUB

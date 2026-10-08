@@ -44,7 +44,7 @@ if [ -z "$PHRASE" ]; then
     echo "  --phrase, -p   Search phrase (required)"
     echo "  --regions, -r  Region IDs, comma-separated (optional)"
     echo "  --devices, -d  Device filter: all, desktop, phone, tablet (default: all)"
-    echo "  --limit, -l    Number of results: 1-2000 (API default: 50)"
+    echo "  --limit, -l    Number of results: 1-2000 (default: 50)"
     echo "  --csv, -c      Export to CSV file (UTF-8 with BOM, semicolon-separated)"
     echo "  --sep          CSV separator (default: ;)"
     echo ""
