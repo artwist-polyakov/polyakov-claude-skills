@@ -146,7 +146,7 @@ bash scripts/top_requests.sh \
 | `--phrase` | yes | - | text with operators |
 | `--regions` | no | all | comma-separated IDs |
 | `--devices` | no | all | all, desktop, phone, tablet |
-| `--limit` | no | API default (50) | 1-2000 (maps to API numPhrases) |
+| `--limit` | no | 50 (set by the skill) | 1-2000 (maps to API numPhrases) |
 | `--csv` | no | - | path to output CSV file |
 | `--sep` | no | ; | CSV separator (; for RU Excel) |
 

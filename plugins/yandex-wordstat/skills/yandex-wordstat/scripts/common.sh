@@ -250,7 +250,7 @@ _make_secure_tmpdir() {
     umask 077
     _mstd_td=$(mktemp -d "${TMPDIR:-/tmp}/wordstat_XXXXXX")
     umask "$_mstd_old_umask"
-    echo "$_mstd_td"
+    printf '%s\n' "$_mstd_td"
 }
 
 _check_openssl() {
@@ -374,11 +374,11 @@ PYEOF
         "$_iti_tmp/signing_input.txt" 2>/dev/null \
         || die_with_help "openssl PS256 signing failed"
 
+    # Let the shell open the file: native Windows Python cannot resolve MSYS paths.
     _sig=$(python3 -c "
 import base64, sys
-with open('$_iti_tmp/signature.bin', 'rb') as f:
-    print(base64.urlsafe_b64encode(f.read()).rstrip(b'=').decode())
-")
+print(base64.urlsafe_b64encode(sys.stdin.buffer.read()).rstrip(b'=').decode())
+" < "$_iti_tmp/signature.bin")
     _hp=$(cat "$_iti_tmp/header_payload.txt")
     _jwt="${_hp}.${_sig}"
 
@@ -515,8 +515,7 @@ def to_rfc3339(d):
 
 if method == "topRequests":
     body = {"phrase": params["phrase"]}
-    if "numPhrases" in params:
-        body["numPhrases"] = str(params["numPhrases"])
+    body["numPhrases"] = str(params.get("numPhrases", 50))
     if "regions" in params:
         body["regions"] = map_regions(params["regions"])
     if "devices" in params:
@@ -569,7 +568,8 @@ else:
     print(f"UNKNOWN_METHOD:{method}", file=sys.stderr)
     sys.exit(2)
 
-print(json.dumps(body, ensure_ascii=False))
+# ASCII escapes preserve Unicode through Windows Python stdout and curl arguments.
+print(json.dumps(body, ensure_ascii=True))
 PYEOF
 }
 

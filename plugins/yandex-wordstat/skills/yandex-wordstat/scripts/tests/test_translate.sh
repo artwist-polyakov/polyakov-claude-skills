@@ -50,4 +50,31 @@ run_translate_test topRequests
 run_translate_test dynamics
 run_translate_test regions
 
+# Defaults apply to every caller, while explicit limits remain unchanged.
+for limit in default 1 500 2000; do
+    params='{"phrase":"тест"}'
+    expected_limit=50
+    if [ "$limit" != default ]; then
+        params="{\"phrase\":\"тест\",\"numPhrases\":$limit}"
+        expected_limit="$limit"
+    fi
+    actual=$(_xlate_request topRequests "$params")
+    json_eq "$actual" "{\"phrase\":\"тест\",\"numPhrases\":\"$expected_limit\",\"folderId\":\"b1g-test-folder\"}"
+    echo "  ok: topRequests limit $limit"
+done
+
+# A Windows output encoding must preserve Unicode and JSON escaping.
+for method in topRequests dynamics regions; do
+    actual=$(PYTHONIOENCODING=cp1251 _xlate_request "$method" \
+        '{"phrase":"Ёж \"кафе\" \\ / ☕","period":"daily","fromDate":"2025-01-01"}')
+    ACTUAL="$actual" python3 - <<'PY'
+import json, os
+
+body = os.environ["ACTUAL"]
+assert body.isascii(), "request body must survive Windows argument encoding"
+assert json.loads(body.encode("cp1251").decode("cp1251"))["phrase"] == 'Ёж "кафе" \\ / ☕'
+PY
+    echo "  ok: $method preserves Unicode through cp1251"
+done
+
 echo "test_translate: all passed"
