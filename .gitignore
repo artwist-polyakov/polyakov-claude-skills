@@ -1,4 +1,5 @@
 token.txt
+.env
 .DS_Store
 .claude/
 .claude/settings*
