@@ -98,30 +98,29 @@ load_config() {
 # Usage: cfg_get "yandex_cloud_folder_id"
 # Usage: cfg_get "auth.service_account_key_file"
 # Usage: cfg_get "search.region_id" "225"  (with default)
+# Values go to python through the environment, never into its code: a quote
+# would break the code, and native Windows Python cannot open an MSYS path
+# pasted there (Git Bash converts paths only in arguments and the environment).
 cfg_get() {
-    _key="$1"
-    _default="${2:-}"
-    _val=$(python3 -c "
-import json, sys
-with open('$CONFIG_FILE') as f:
+    _val=$(_YSA_CFG_FILE="$CONFIG_FILE" _YSA_KEY="$1" _YSA_DEFAULT="${2:-}" python3 -c '
+import json, os
+with open(os.environ["_YSA_CFG_FILE"]) as f:
     cfg = json.load(f)
-keys = '$_key'.split('.')
 v = cfg
-for k in keys:
+for k in os.environ["_YSA_KEY"].split("."):
     if isinstance(v, dict) and k in v:
         v = v[k]
     else:
         v = None
         break
 if v is None:
-    d = '$_default'
-    print(d if d else '')
+    print(os.environ["_YSA_DEFAULT"])
 elif isinstance(v, bool):
     # JSON true/false, а не питоновские True/False: значение сравнивается в shell.
-    print('true' if v else 'false')
+    print("true" if v else "false")
 else:
     print(v)
-" 2>/dev/null)
+' 2>/dev/null)
     echo "$_val"
 }
 
@@ -201,41 +200,23 @@ make_secure_tmpdir() {
 # Extract field from JSON file
 # Usage: json_file_get "file.json" "field.nested"
 json_file_get() {
-    _file="$1"
-    _key="$2"
-    python3 -c "
-import json, sys
-with open('$_file') as f:
-    d = json.load(f)
-keys = '$_key'.split('.')
-v = d
-for k in keys:
-    if isinstance(v, dict) and k in v:
-        v = v[k]
-    else:
-        print('')
-        sys.exit(0)
-print(v if v is not None else '')
-" 2>/dev/null
+    json_stdin_get "$2" 2>/dev/null < "$1"
 }
 
 # Extract field from JSON string on stdin
 # Usage: echo '{"a":1}' | json_stdin_get "a"
 json_stdin_get() {
-    _key="$1"
-    python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-keys = '$_key'.split('.')
-v = d
-for k in keys:
+    _YSA_KEY="$1" python3 -c '
+import json, os, sys
+v = json.load(sys.stdin)
+for k in os.environ["_YSA_KEY"].split("."):
     if isinstance(v, dict) and k in v:
         v = v[k]
     else:
-        print('')
+        print("")
         sys.exit(0)
-print(v if v is not None else '')
-"
+print(v if v is not None else "")
+'
 }
 
 # --- Base64 helpers (python3 stdlib, cross-platform) ---
@@ -403,17 +384,17 @@ get_cached_iam_token() {
     fi
 
     # Check expiry with 5-minute safety window
-    _is_valid=$(python3 -c "
-import json, time
-with open('$_cache_file') as f:
+    _is_valid=$(_YSA_CACHE_FILE="$_cache_file" python3 -c '
+import json, os, time
+with open(os.environ["_YSA_CACHE_FILE"]) as f:
     d = json.load(f)
-exp = d.get('expires_at', 0)
+exp = d.get("expires_at", 0)
 now = time.time()
 if exp - now > 300:
-    print(d['iam_token'])
+    print(d["iam_token"])
 else:
-    print('')
-" 2>/dev/null)
+    print("")
+' 2>/dev/null)
 
     if [ -n "$_is_valid" ]; then
         echo "$_is_valid"
@@ -432,13 +413,13 @@ save_iam_token() {
     _old_umask=$(umask)
     umask 077
     _tmp_file="$CACHE_DIR/.iam_token_tmp_$$.json"
-    # Pass token via environment to avoid shell injection
-    _SAVE_TOKEN="$_token" python3 -c "
+    # Pass values via environment to avoid shell injection (see cfg_get)
+    _SAVE_TOKEN="$_token" _SAVE_EXPIRES_AT="$_expires_at" _SAVE_FILE="$_tmp_file" python3 -c '
 import json, os
-d = {'iam_token': os.environ['_SAVE_TOKEN'], 'expires_at': $_expires_at}
-with open('$_tmp_file', 'w') as f:
+d = {"iam_token": os.environ["_SAVE_TOKEN"], "expires_at": int(os.environ["_SAVE_EXPIRES_AT"])}
+with open(os.environ["_SAVE_FILE"], "w") as f:
     json.dump(d, f)
-"
+'
     mv "$_tmp_file" "$_cache_file"
     umask "$_old_umask"
 }
