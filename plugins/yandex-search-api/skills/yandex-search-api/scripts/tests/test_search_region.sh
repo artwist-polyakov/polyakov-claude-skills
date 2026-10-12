@@ -12,6 +12,14 @@ sh "$SEARCH_REGION" --name "москва" | grep -Fq '| 213 | Москва |' ||
     exit 1
 }
 
+# Native Windows Python writes pipes in the ANSI code page; the ru_RU.CP1251
+# locale emulates it on macOS.
+(export LC_ALL=ru_RU.CP1251; sh "$SEARCH_REGION" --name "москва") \
+    | grep -Fq '| 213 | Москва |' || {
+    echo 'FAIL: region names garbled under a Windows code page'
+    exit 1
+}
+
 out=$(sh "$SEARCH_REGION" --name "O'Brien")
 printf '%s\n' "$out" | grep -Fq "No regions found matching \"O'Brien\"" || {
     echo 'FAIL: a quote in the name broke the search'

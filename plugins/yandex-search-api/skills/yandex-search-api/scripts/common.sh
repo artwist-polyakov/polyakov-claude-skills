@@ -9,6 +9,10 @@ SKILL_DIR="${YSA_SKILL_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 # Overridable so the offline tests can point at a throwaway config and cache.
 CONFIG_FILE="${YSA_CONFIG_FILE:-$SKILL_DIR/config/config.json}"
 CACHE_DIR="${YSA_CACHE_DIR:-$SKILL_DIR/cache}"
+
+# Native Windows Python reads and writes pipes and files in the ANSI code page,
+# while the scripts and the API exchange UTF-8: Cyrillic would come out garbled.
+export PYTHONUTF8=1
 SEARCH_API_URL="https://searchapi.api.cloud.yandex.net"
 IAM_API_URL="https://iam.api.cloud.yandex.net/iam/v1/tokens"
 OPERATION_API_URL="https://operation.api.cloud.yandex.net/operations"

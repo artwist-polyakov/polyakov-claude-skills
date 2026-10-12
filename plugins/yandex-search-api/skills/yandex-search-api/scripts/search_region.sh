@@ -63,8 +63,9 @@ REGIONS="
 "
 
 # Search (case-insensitive via python3 for portability). Values go through the
-# environment: a quote in the name must not break the code.
-_YSA_SEARCH="$SEARCH" _YSA_REGIONS="$REGIONS" python3 -c '
+# environment: a quote in the name must not break the code. UTF-8 mode keeps
+# Cyrillic names intact under native Windows Python, as in common.sh.
+_YSA_SEARCH="$SEARCH" _YSA_REGIONS="$REGIONS" PYTHONUTF8=1 python3 -c '
 import os
 search = os.environ["_YSA_SEARCH"]
 regions = os.environ["_YSA_REGIONS"].strip().split("\n")
