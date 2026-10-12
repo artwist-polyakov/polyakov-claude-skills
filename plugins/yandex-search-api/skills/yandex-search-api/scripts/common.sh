@@ -192,7 +192,8 @@ make_secure_tmpdir() {
     umask 077
     _mstd_td=$(mktemp -d "${TMPDIR:-/tmp}/ysa_XXXXXX")
     umask "$_mstd_old_umask"
-    echo "$_mstd_td"
+    # printf, not echo: dash and macOS sh turn a "\n" inside the path into a newline.
+    printf '%s\n' "$_mstd_td"
 }
 
 # --- JSON helpers (via python3) ---

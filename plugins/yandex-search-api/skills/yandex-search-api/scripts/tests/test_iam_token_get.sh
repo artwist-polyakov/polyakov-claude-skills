@@ -1,8 +1,8 @@
 #!/bin/sh
 # Issue and cache an IAM token with the real iam_token_get.sh, openssl and curl
-# stubbed. The skill path contains a quote and a backslash: values pasted into
-# Python code break on them, and native Windows Python cannot open MSYS paths
-# pasted there anyway.
+# stubbed. Every path contains a quote and a backslash: values pasted into
+# Python code break on them, native Windows Python cannot open MSYS paths
+# pasted there anyway, and echo in dash or macOS sh mangles the backslash.
 
 set -eu
 
@@ -12,7 +12,7 @@ root=$(mktemp -d "${TMPDIR:-/tmp}/ysa_iam_test.XXXXXX")
 trap 'rm -rf "$root"' EXIT INT TERM
 td="$root/it's\\new"
 
-mkdir -p "$td/skill/scripts" "$td/skill/config" "$td/skill/cache" "$td/bin" "$root/tmp"
+mkdir -p "$td/skill/scripts" "$td/skill/config" "$td/skill/cache" "$td/bin" "$td/tmp"
 cp "$SOURCE_SCRIPTS_DIR/common.sh" "$SOURCE_SCRIPTS_DIR/iam_token_get.sh" "$td/skill/scripts/"
 
 cat > "$td/skill/config/config.json" <<'EOF'
@@ -49,7 +49,7 @@ EOF
 chmod +x "$td/bin/openssl" "$td/bin/curl"
 
 PATH="$td/bin:$PATH"
-TMPDIR="$root/tmp"
+TMPDIR="$td/tmp"
 export PATH TMPDIR
 
 sh "$td/skill/scripts/iam_token_get.sh" > "$td/issue.out" 2>&1 || {
