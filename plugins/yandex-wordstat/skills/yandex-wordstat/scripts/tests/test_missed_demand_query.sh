@@ -105,4 +105,22 @@ require(
 )
 PYEOF
 
+# Native Windows Python reads and writes pipes in the ANSI code page; the
+# ru_RU.CP1251 locale emulates it on macOS. Cyrillic must survive both ways.
+WINDOWS_RESULT=$(export LC_ALL=ru_RU.CP1251
+    python3 "$MISSED_DEMAND_SCRIPT" build-query "$SLOTS_JSON")
+[ "$WINDOWS_RESULT" = "$BASE_RESULT" ] || {
+    echo "FAIL: build-query output is not UTF-8 under a Windows code page"
+    exit 1
+}
+
+MERGE_INPUT='{"phrases":["купить телефон"],"batches":[{"phrase_indexes":[0],"slots":{"objects":["телефон"],"actions":["купить"]}}]}'
+MERGE_RESULT=$(printf '%s' "$MERGE_INPUT" | python3 "$MISSED_DEMAND_SCRIPT" merge-slots)
+WINDOWS_MERGE=$(export LC_ALL=ru_RU.CP1251
+    printf '%s' "$MERGE_INPUT" | python3 "$MISSED_DEMAND_SCRIPT" merge-slots)
+[ "$WINDOWS_MERGE" = "$MERGE_RESULT" ] || {
+    echo "FAIL: merge-slots garbles Cyrillic stdin under a Windows code page"
+    exit 1
+}
+
 echo "test_missed_demand_query: all passed"

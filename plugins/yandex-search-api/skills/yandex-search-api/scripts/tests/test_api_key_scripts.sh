@@ -5,8 +5,11 @@ set -eu
 
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_SKILL_DIR="$(cd "$TESTS_DIR/../.." && pwd)"
-td="${TMPDIR:-/tmp}/ysa_api_key_scripts_test_$$"
-trap 'rm -rf "$td"' EXIT INT TERM
+root="${TMPDIR:-/tmp}/ysa_api_key_scripts_test_$$"
+# A quote and a backslash catch values pasted into Python code: they break it,
+# and native Windows Python cannot open MSYS paths pasted there anyway.
+td="$root/it's\\new"
+trap 'rm -rf "$root"' EXIT INT TERM
 
 mkdir -p "$td/skill/scripts" "$td/skill/config" "$td/bin"
 for script in common.sh web_search_sync.sh web_search_async.sh; do
@@ -47,6 +50,7 @@ cat > "$td/bin/curl" <<'EOF'
 #!/bin/sh
 response_file=""
 headers_file=""
+body_file=""
 url=""
 
 {
@@ -64,6 +68,10 @@ while [ "$#" -gt 0 ]; do
             headers_file="$2"
             shift 2
             ;;
+        --data-binary)
+            body_file="${2#@}"
+            shift 2
+            ;;
         http*)
             url="$1"
             shift
@@ -76,10 +84,17 @@ done
 
 case "$url" in
     */v2/web/searchAsync)
-        printf '{"id":"op-test"}' > "$response_file"
+        if grep -q 'failing query' "$body_file"; then
+            printf '{"id":"op-fail"}' > "$response_file"
+        else
+            printf '{"id":"op-test"}' > "$response_file"
+        fi
         ;;
     */operations/op-test)
         printf '{"done":true,"response":{"rawData":"%s"}}' "$FAKE_RAW_B64" > "$response_file"
+        ;;
+    */operations/op-fail)
+        printf '%s' "$FAKE_OP_ERROR" > "$response_file"
         ;;
     */v2/web/search)
         printf '{"rawData":"%s"}' "$FAKE_RAW_B64" > "$response_file"
@@ -97,17 +112,26 @@ printf '200'
 EOF
 chmod +x "$td/bin/curl"
 
+# The quote must reach the operation record intact instead of breaking it.
+FAKE_OP_ERROR='{"done":true,"error":{"message":"Can'\''t parse \"query\""}}'
 CURL_CAPTURE="$td/curl-args"
 IAM_MARKER="$td/iam-called"
 PATH="$td/bin:$PATH"
-export CURL_CAPTURE IAM_MARKER FAKE_RAW_B64 PATH
+export CURL_CAPTURE IAM_MARKER FAKE_RAW_B64 FAKE_OP_ERROR PATH
 
 sh "$td/skill/scripts/web_search_sync.sh" \
     --query 'example smoke query' --results 1 >/dev/null
 
-printf '%s\n' 'example smoke query' > "$td/queries.txt"
+printf '%s\n' 'example smoke query' 'failing query' > "$td/queries.txt"
 sh "$td/skill/scripts/web_search_async.sh" \
     --file "$td/queries.txt" --results 1 --poll-interval 0 --max-wait 1 >/dev/null
+
+# shellcheck disable=SC1091
+. "$TESTS_DIR/helpers.sh"
+export _YSA_T_ERROR="Can't parse \"query\""
+check "$td/skill/cache/ops/op-fail.json" \
+    'data["status"] == "error" and data["error"] == os.environ["_YSA_T_ERROR"]' \
+    'FAIL: the failed operation was not recorded with its error message'
 
 [ ! -e "$IAM_MARKER" ] || {
     echo 'FAIL: an API-key script invoked IAM token generation'
@@ -118,8 +142,8 @@ if grep -Fq 'Authorization: Bearer' "$CURL_CAPTURE"; then
     exit 1
 fi
 api_key_count=$(grep -Fc 'Authorization: Api-Key test-api-secret' "$CURL_CAPTURE")
-[ "$api_key_count" -eq 3 ] || {
-    echo "FAIL: expected 3 API-key requests, got $api_key_count"
+[ "$api_key_count" -eq 5 ] || {
+    echo "FAIL: expected 5 API-key requests, got $api_key_count"
     exit 1
 }
 

@@ -122,6 +122,18 @@ grep -q 'ещё 10 результатов' "$TMP_DIR/many.txt" \
 YSA_PRINT_LIMIT=1 render_results_table "$TMP_DIR/results.json" "" "full" "q" > "$TMP_DIR/limit.txt"
 grep -q 'ещё 2 результат' "$TMP_DIR/limit.txt" || fail "print limit not applied or not reported"
 
+# --- кодировка Windows: разбор и индекс остаются в UTF-8 ---
+# Нативный Python под Windows пишет в пайп и файлы в кодировке ANSI, а индекс
+# читает разбор как UTF-8. Локали эмулируют это на macOS.
+for locale in ru_RU.CP1251 en_US.ISO8859-1; do
+    (
+        export LC_ALL="$locale"
+        parse_search_response "$TESTS_DIR/fixtures/search_response.xml" > "$TMP_DIR/ansi.json"
+        render_results_table "$TMP_DIR/ansi.json" "" "full" "q"
+    ) > "$TMP_DIR/ansi.txt"
+    grep -q 'Пример дымоход купить' "$TMP_DIR/ansi.txt" || fail "title garbled under $locale"
+done
+
 # --- ошибка разбора показывается, а не проглатывается ---
 printf '{"error": "XML parse error: boom", "raw_saved": true}' > "$TMP_DIR/err.json"
 render_results_table "$TMP_DIR/err.json" "" "full" "q" > "$TMP_DIR/err.txt"

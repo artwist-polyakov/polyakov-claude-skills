@@ -636,6 +636,11 @@ def cmd_query_total(args):
 
 
 def main():
+    # Native Windows Python reads and writes pipes in the ANSI code page, while
+    # the shell and the agent exchange UTF-8: Cyrillic phrases would be garbled.
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser(description="Missed demand analysis tools")
     sub = parser.add_subparsers(dest="command", required=True)
 

@@ -103,25 +103,49 @@ submit_query() {
         return 1
     fi
 
-    # Save operation state (query via env to avoid injection)
+    # Save operation state (values via env to avoid injection, see cfg_get)
     _now=$(python3 -c "import time; print(int(time.time()))")
-    _YSA_QUERY="$_aq_query" python3 -c "
+    _YSA_OP_FILE="$CACHE_DIR/ops/${_op_id}.json" \
+    _YSA_OP_ID="$_op_id" \
+    _YSA_QUERY="$_aq_query" \
+    _YSA_REGION="$REGION_ID" \
+    _YSA_NOW="$_now" \
+    _YSA_HASH="$_aq_hash" \
+    python3 -c '
 import json, os
+env = os.environ
 op = {
-    'operation_id': '$_op_id',
-    'query': os.environ['_YSA_QUERY'],
-    'region_id': '$REGION_ID',
-    'created_at': $_now,
-    'last_checked_at': $_now,
-    'status': 'pending',
-    'error': None,
-    'result_hash': '$_aq_hash'
+    "operation_id": env["_YSA_OP_ID"],
+    "query": env["_YSA_QUERY"],
+    "region_id": env["_YSA_REGION"],
+    "created_at": int(env["_YSA_NOW"]),
+    "last_checked_at": int(env["_YSA_NOW"]),
+    "status": "pending",
+    "error": None,
+    "result_hash": env["_YSA_HASH"],
 }
-with open('$CACHE_DIR/ops/${_op_id}.json', 'w') as f:
+with open(env["_YSA_OP_FILE"], "w") as f:
     json.dump(op, f, indent=2, ensure_ascii=False)
-"
+'
 
     echo "  Submitted: $_aq_query -> op=$_op_id" >&2
+}
+
+# --- Helper: record the polled status of an operation ---
+# Usage: update_op "op.json" "running|done|error" "now" ["error message"]
+update_op() {
+    _YSA_OP_FILE="$1" _YSA_STATUS="$2" _YSA_NOW="$3" _YSA_ERROR="${4:-}" python3 -c '
+import json, os
+env = os.environ
+with open(env["_YSA_OP_FILE"]) as f:
+    op = json.load(f)
+op["status"] = env["_YSA_STATUS"]
+op["last_checked_at"] = int(env["_YSA_NOW"])
+if op["status"] == "error":
+    op["error"] = env["_YSA_ERROR"]
+with open(env["_YSA_OP_FILE"], "w") as f:
+    json.dump(op, f, indent=2, ensure_ascii=False)
+'
 }
 
 # --- Helper: check and process a single operation ---
@@ -156,16 +180,7 @@ print(resp.get('rawData', ''))
             # синхронного поиска той же фразы лежит под тем же хэшем.
             drop_stale_pack "$_result_hash"
 
-            # Update operation status
-            python3 -c "
-import json
-with open('$_co_file') as f:
-    op = json.load(f)
-op['status'] = 'done'
-op['last_checked_at'] = $_now
-with open('$_co_file', 'w') as f:
-    json.dump(op, f, indent=2, ensure_ascii=False)
-"
+            update_op "$_co_file" done "$_now"
             echo "  Done: $_query -> results/${_result_hash}.json" >&2
         else
             # Check for error in operation
@@ -176,29 +191,12 @@ err = d.get('error', {})
 print(err.get('message', 'Unknown error'))
 " 2>/dev/null || echo "Unknown error")
 
-            python3 -c "
-import json
-with open('$_co_file') as f:
-    op = json.load(f)
-op['status'] = 'error'
-op['last_checked_at'] = $_now
-op['error'] = '$_error'
-with open('$_co_file', 'w') as f:
-    json.dump(op, f, indent=2, ensure_ascii=False)
-"
+            update_op "$_co_file" error "$_now" "$_error"
             echo "  Error: $_query -> $_error" >&2
         fi
     else
         # Still running, update last_checked_at
-        python3 -c "
-import json
-with open('$_co_file') as f:
-    op = json.load(f)
-op['status'] = 'running'
-op['last_checked_at'] = $_now
-with open('$_co_file', 'w') as f:
-    json.dump(op, f, indent=2, ensure_ascii=False)
-"
+        update_op "$_co_file" running "$_now"
     fi
 }
 

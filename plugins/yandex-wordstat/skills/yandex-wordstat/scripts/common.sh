@@ -27,6 +27,10 @@ fi
 WORDSTAT_CONFIG_DIR="${WORDSTAT_CONFIG_DIR:-$WORDSTAT_SKILL_DIR/config}"
 WORDSTAT_CACHE_DIR="${WORDSTAT_CACHE_DIR:-$WORDSTAT_SKILL_DIR/cache}"
 
+# Native Windows Python reads and writes pipes and files in the ANSI code page,
+# while the scripts parse UTF-8: Cyrillic phrases would come back garbled.
+export PYTHONUTF8=1
+
 WORDSTAT_CLOUD_API="https://searchapi.api.cloud.yandex.net/v2/wordstat"
 WORDSTAT_IAM_API="https://iam.api.cloud.yandex.net/iam/v1/tokens"
 WORDSTAT_README_URL="https://github.com/artwist-polyakov/polyakov-claude-skills/blob/main/plugins/yandex-wordstat/skills/yandex-wordstat/config/README.md"

@@ -62,30 +62,32 @@ REGIONS="
 67|Барнаул
 "
 
-# Search (case-insensitive via python3 for portability)
-python3 -c "
-import sys
-search = '$SEARCH'.lower()
-regions = '''$REGIONS'''.strip().split('\n')
+# Search (case-insensitive via python3 for portability). Values go through the
+# environment: a quote in the name must not break the code. UTF-8 mode keeps
+# Cyrillic names intact under native Windows Python, as in common.sh.
+_YSA_SEARCH="$SEARCH" _YSA_REGIONS="$REGIONS" PYTHONUTF8=1 python3 -c '
+import os
+search = os.environ["_YSA_SEARCH"]
+regions = os.environ["_YSA_REGIONS"].strip().split("\n")
 found = []
 for line in regions:
     line = line.strip()
     if not line:
         continue
-    if search in line.lower():
-        parts = line.split('|', 1)
+    if search.lower() in line.lower():
+        parts = line.split("|", 1)
         if len(parts) == 2:
             found.append((parts[0].strip(), parts[1].strip()))
 
 if not found:
-    print('No regions found matching \"$SEARCH\"')
-    print('')
-    print('Try running regions_tree.sh to see all common regions')
+    print("No regions found matching \"%s\"" % search)
+    print("")
+    print("Try running regions_tree.sh to see all common regions")
 else:
-    print('Found:')
-    print('')
-    print('| ID | Name |')
-    print('|----|------|')
+    print("Found:")
+    print("")
+    print("| ID | Name |")
+    print("|----|------|")
     for rid, name in found:
-        print(f'| {rid} | {name} |')
-"
+        print(f"| {rid} | {name} |")
+'

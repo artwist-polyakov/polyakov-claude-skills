@@ -63,6 +63,16 @@ check "$TMP_DIR/tricky.json" 'body["query"]["queryText"] == os.environ["_YSA_T_Q
     "quotes or newlines corrupted the query"
 check "$TMP_DIR/tricky.json" '"injected" not in body' "query text escaped into the request body"
 
+# --- кодировка Windows: тело уходит в API в UTF-8 ---
+# Нативный Python под Windows пишет в пайп в кодировке ANSI: cp1251 портит
+# кириллицу, cp1252 не может её записать вовсе. Локали эмулируют это на macOS.
+for locale in ru_RU.CP1251 en_US.ISO8859-1; do
+    (export LC_ALL="$locale"; build_search_body "купить дымоход" "213" "10" "0" "0") \
+        > "$TMP_DIR/ansi.json"
+    check "$TMP_DIR/ansi.json" 'body["query"]["queryText"] == "купить дымоход"' \
+        "queryText garbled under $locale"
+done
+
 # --- folderId читается из конфига один раз на прогон ---
 # Тело собирается как _body=$(build_search_body ...), то есть функция целиком
 # уходит в подоболочку: кеш, наполненный внутри неё, умирает вместе с ней.

@@ -52,12 +52,13 @@ trap 'rm -rf "$SECURE_TMP"' EXIT INT TERM
 OLD_UMASK=$(umask)
 umask 077
 
-# Extract SA credentials and create JWT via python3
-python3 << PYEOF
+# Extract SA credentials and create JWT via python3. Paths go through the
+# environment, not the code: see cfg_get in common.sh.
+_YSA_SA_KEY_FILE="$SA_KEY_FILE" _YSA_TMP_DIR="$SECURE_TMP" python3 << 'PYEOF'
 import json, base64, time, os
 
-sa_key_file = "$SA_KEY_FILE"
-tmp_dir = "$SECURE_TMP"
+sa_key_file = os.environ["_YSA_SA_KEY_FILE"]
+tmp_dir = os.environ["_YSA_TMP_DIR"]
 
 with open(sa_key_file) as f:
     sa = json.load(f)

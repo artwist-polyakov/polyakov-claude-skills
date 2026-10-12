@@ -130,12 +130,23 @@ after=$(count_leftovers)
 [ "$after" = "0" ] || fail "_iam_token_issue leaked $after wordstat_* dir(s) holding key.pem"
 echo "  ok: _iam_token_issue leaves no wordstat_* dir"
 
+# Git Bash and Cygwin on NTFS ignore umask and only emulate the modes `ls -l`
+# prints, so a mode mismatch there says nothing about the code under test.
+MODES_ENFORCED=1
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        MODES_ENFORCED=0
+        echo "  skip: 0600 checks (NTFS ignores umask)"
+        ;;
+esac
+
 # --- 2. the key.pem it wrote was 0600, not 0644 ----------------------------
 mode=$(cat "$WS_TEST_KEYMODE_FILE" 2>/dev/null || echo "")
 case "$mode" in
     -rw-------*) echo "  ok: key.pem was 0600 while on disk" ;;
     "")          fail "openssl stub never saw key.pem" ;;
-    *)           fail "key.pem was '$mode', expected -rw------- (umask 077 must stay in effect)" ;;
+    *)           [ "$MODES_ENFORCED" = 0 ] \
+                     || fail "key.pem was '$mode', expected -rw------- (umask 077 must stay in effect)" ;;
 esac
 
 # --- 3. the cached token file is 0600 --------------------------------------
@@ -144,7 +155,8 @@ esac
 cache_mode=$(ls -l "$WORDSTAT_CACHE_DIR/iam_token.json" | cut -d' ' -f1)
 case "$cache_mode" in
     -rw-------*) echo "  ok: cached iam_token.json is 0600" ;;
-    *)           fail "cached iam_token.json was '$cache_mode', expected -rw-------" ;;
+    *)           [ "$MODES_ENFORCED" = 0 ] \
+                     || fail "cached iam_token.json was '$cache_mode', expected -rw-------" ;;
 esac
 
 # --- 4. production path: _iam_token_get inside a command substitution -------
