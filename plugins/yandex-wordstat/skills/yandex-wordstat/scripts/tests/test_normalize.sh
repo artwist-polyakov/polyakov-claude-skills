@@ -46,18 +46,22 @@ sys.exit(1)
 "
 }
 
+# Args: $1 = method, $2 = optional locale for the python3 that normalizes
 run_normalize_test() {
     _method="$1"
+    _locale="${2:-}"
     _cloud_file="$FIXTURES/cloud-${_method}-response.json"
     _expected_file="$FIXTURES/legacy-${_method}-expected.json"
+    _label="normalize $_method${_locale:+ under $_locale}"
 
-    actual=$(_normalize_response "$_method" < "$_cloud_file")
+    actual=$([ -z "$_locale" ] || export LC_ALL="$_locale"
+        _normalize_response "$_method" < "$_cloud_file")
     expected=$(cat "$_expected_file")
 
     if json_eq "$actual" "$expected"; then
-        echo "  ok: normalize $_method"
+        echo "  ok: $_label"
     else
-        echo "  FAIL: normalize $_method"
+        echo "  FAIL: $_label"
         echo "    actual:   $actual"
         echo "    expected: $expected"
         return 1
@@ -67,5 +71,11 @@ run_normalize_test() {
 run_normalize_test topRequests
 run_normalize_test dynamics
 run_normalize_test regions
+
+# Native Windows Python writes pipes in the ANSI code page: cp1251 garbles
+# Cyrillic phrases, cp1252 cannot encode them at all. These locales emulate it
+# on macOS; where one is missing, Python falls back to UTF-8.
+run_normalize_test topRequests ru_RU.CP1251
+run_normalize_test topRequests en_US.ISO8859-1
 
 echo "test_normalize: all passed"
