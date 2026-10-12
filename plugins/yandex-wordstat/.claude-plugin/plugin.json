@@ -1,6 +1,6 @@
 {
   "name": "yandex-wordstat",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Analyze search demand via Yandex Wordstat API",
   "author": {
     "name": "Polyakov"
