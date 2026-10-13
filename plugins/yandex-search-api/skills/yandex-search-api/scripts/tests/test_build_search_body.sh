@@ -65,13 +65,17 @@ check "$TMP_DIR/tricky.json" '"injected" not in body' "query text escaped into t
 
 # --- кодировка Windows: тело уходит в API в UTF-8 ---
 # Нативный Python под Windows пишет в пайп в кодировке ANSI: cp1251 портит
-# кириллицу, cp1252 не может её записать вовсе. Локали эмулируют это на macOS.
-for locale in ru_RU.CP1251 en_US.ISO8859-1; do
-    (export LC_ALL="$locale"; build_search_body "купить дымоход" "213" "10" "0" "0") \
-        > "$TMP_DIR/ansi.json"
-    check "$TMP_DIR/ansi.json" 'body["query"]["queryText"] == "купить дымоход"' \
-        "queryText garbled under $locale"
-done
+# кириллицу, cp1252 не может её записать вовсе. Локали эмулируют это на macOS
+# и Linux. Под Git Bash эмуляция не нужна: проверки выше и так идут в настоящей
+# кодировке, а LC_ALL там портит запрос ещё по пути в Python.
+if ! windows_shell; then
+    for locale in ru_RU.CP1251 en_US.ISO8859-1; do
+        (export LC_ALL="$locale"; build_search_body "купить дымоход" "213" "10" "0" "0") \
+            > "$TMP_DIR/ansi.json"
+        check "$TMP_DIR/ansi.json" 'body["query"]["queryText"] == "купить дымоход"' \
+            "queryText garbled under $locale"
+    done
+fi
 
 # --- folderId читается из конфига один раз на прогон ---
 # Тело собирается как _body=$(build_search_body ...), то есть функция целиком

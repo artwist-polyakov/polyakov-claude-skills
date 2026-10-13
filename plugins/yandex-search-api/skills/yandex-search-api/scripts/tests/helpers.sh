@@ -8,6 +8,16 @@ fail() {
     exit 1
 }
 
+# windows_shell — истина под Git Bash, MSYS2 и Cygwin: их uname сообщает
+# <ENV>_NT-<версия>. Там LC_ALL меняет, как argv и окружение доходят до
+# нативных программ Windows, поэтому эмулировать кодировку локалью нельзя.
+windows_shell() {
+    case "$(uname -s)" in
+        *_NT-*) return 0 ;;
+    esac
+    return 1
+}
+
 # check <json-file> <python-expr> <message-on-failure>
 # Выражение видит разобранный JSON под двумя именами — `body` и `data` — и
 # окружение как `os.environ`.
