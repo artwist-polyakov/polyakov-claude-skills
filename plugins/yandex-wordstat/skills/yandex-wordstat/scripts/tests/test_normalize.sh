@@ -15,6 +15,8 @@ WORDSTAT_SKILL_DIR="$SKILL_DIR"
 export WORDSTAT_SCRIPT_DIR WORDSTAT_SKILL_DIR
 # shellcheck disable=SC1091
 . "$SCRIPTS_DIR/common.sh"
+# shellcheck disable=SC1091
+. "$TESTS_DIR/helpers.sh"
 
 assert_eq() {
     _name="$1"; _actual="$2"; _expected="$3"
@@ -74,8 +76,12 @@ run_normalize_test regions
 
 # Native Windows Python writes pipes in the ANSI code page: cp1251 garbles
 # Cyrillic phrases, cp1252 cannot encode them at all. These locales emulate it
-# on macOS; where one is missing, Python falls back to UTF-8.
-run_normalize_test topRequests ru_RU.CP1251
-run_normalize_test topRequests en_US.ISO8859-1
+# on macOS and Linux; where one is missing, Python falls back to UTF-8. Git Bash
+# needs no emulation: the checks above already run under the real code page,
+# and LC_ALL there garbles what reaches Python.
+if ! windows_shell; then
+    run_normalize_test topRequests ru_RU.CP1251
+    run_normalize_test topRequests en_US.ISO8859-1
+fi
 
 echo "test_normalize: all passed"

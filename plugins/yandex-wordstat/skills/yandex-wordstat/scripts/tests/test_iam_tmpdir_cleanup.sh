@@ -15,6 +15,8 @@ set -e
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPTS_DIR="$(cd "$TESTS_DIR/.." && pwd)"
 SKILL_DIR="$(cd "$SCRIPTS_DIR/.." && pwd)"
+# shellcheck disable=SC1091
+. "$TESTS_DIR/helpers.sh"
 
 # Sandbox: our own TMPDIR so we count only dirs this test creates, and the
 # user's real $TMPDIR is never touched.
@@ -133,12 +135,10 @@ echo "  ok: _iam_token_issue leaves no wordstat_* dir"
 # Git Bash and Cygwin on NTFS ignore umask and only emulate the modes `ls -l`
 # prints, so a mode mismatch there says nothing about the code under test.
 MODES_ENFORCED=1
-case "$(uname -s)" in
-    MINGW*|MSYS*|CYGWIN*)
-        MODES_ENFORCED=0
-        echo "  skip: 0600 checks (NTFS ignores umask)"
-        ;;
-esac
+if windows_shell; then
+    MODES_ENFORCED=0
+    echo "  skip: 0600 checks (NTFS ignores umask)"
+fi
 
 # --- 2. the key.pem it wrote was 0600, not 0644 ----------------------------
 mode=$(cat "$WS_TEST_KEYMODE_FILE" 2>/dev/null || echo "")
