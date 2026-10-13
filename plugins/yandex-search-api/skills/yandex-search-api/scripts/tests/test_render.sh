@@ -124,15 +124,18 @@ grep -q 'ещё 2 результат' "$TMP_DIR/limit.txt" || fail "print limit 
 
 # --- кодировка Windows: разбор и индекс остаются в UTF-8 ---
 # Нативный Python под Windows пишет в пайп и файлы в кодировке ANSI, а индекс
-# читает разбор как UTF-8. Локали эмулируют это на macOS.
-for locale in ru_RU.CP1251 en_US.ISO8859-1; do
-    (
-        export LC_ALL="$locale"
-        parse_search_response "$TESTS_DIR/fixtures/search_response.xml" > "$TMP_DIR/ansi.json"
-        render_results_table "$TMP_DIR/ansi.json" "" "full" "q"
-    ) > "$TMP_DIR/ansi.txt"
-    grep -q 'Пример дымоход купить' "$TMP_DIR/ansi.txt" || fail "title garbled under $locale"
-done
+# читает разбор как UTF-8. Локали эмулируют это на macOS и Linux; под Git Bash
+# проверки выше и так идут в настоящей кодировке (см. windows_shell).
+if ! windows_shell; then
+    for locale in ru_RU.CP1251 en_US.ISO8859-1; do
+        (
+            export LC_ALL="$locale"
+            parse_search_response "$TESTS_DIR/fixtures/search_response.xml" > "$TMP_DIR/ansi.json"
+            render_results_table "$TMP_DIR/ansi.json" "" "full" "q"
+        ) > "$TMP_DIR/ansi.txt"
+        grep -q 'Пример дымоход купить' "$TMP_DIR/ansi.txt" || fail "title garbled under $locale"
+    done
+fi
 
 # --- ошибка разбора показывается, а не проглатывается ---
 printf '{"error": "XML parse error: boom", "raw_saved": true}' > "$TMP_DIR/err.json"
