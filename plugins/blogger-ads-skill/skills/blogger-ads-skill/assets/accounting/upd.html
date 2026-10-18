@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>УПД № $number</title>
+<style>
+@page{size:A4 landscape;margin:10mm} *{box-sizing:border-box} body{font:8.5pt Arial,sans-serif;color:#111;margin:0 auto;max-width:277mm;padding:8mm 0} h1{font-size:16pt;margin:0 0 8px} p{margin:3px 0;line-height:1.2} .head{display:flex;gap:16px}.status{border:1px solid #222;padding:8px;width:135px;flex-shrink:0;align-self:flex-start} .details{flex:1}.parties{display:grid;grid-template-columns:1fr 1fr;gap:16px} table{width:100%;border-collapse:collapse;margin:8px 0;table-layout:fixed} th,td{border:1px solid #333;padding:4px;vertical-align:top;overflow-wrap:anywhere} th{font-size:7pt;font-weight:normal} td{font-size:8pt}td:nth-child(9){font-size:7pt} .num{text-align:right}.signs{display:grid;grid-template-columns:1fr 1fr;gap:30px}.signs p{margin:5px 0}.muted{font-size:8pt;color:#444}.full-signature{margin-top:8px} @media print{body{padding:0;max-width:none}tr,.signs{break-inside:avoid}thead{display:table-header-group}}
+</style></head><body>
+$demo_notice
+<div class="head"><div class="status"><strong>Универсальный<br>передаточный<br>документ</strong><p>Статус: $status</p><p class="muted">$status_text</p></div><div class="details">
+<h1>$document_title № $number от $date</h1>
+<p>Исправление: — (1а)</p>
+<div class="parties"><p>Продавец: $seller_name (2)<br>Адрес: $seller_address (2а)<br>ИНН/КПП: $seller_inn / $seller_kpp (2б)</p>
+<p>Покупатель: $buyer_name (6)<br>Адрес: $buyer_address (6а)<br>ИНН/КПП: $buyer_inn / $buyer_kpp (6б)</p></div>
+<p>Грузоотправитель и его адрес: — (3). Грузополучатель и его адрес: — (4)</p>
+<p>К платёжно-расчётным документам: $payment_documents (5)</p>
+<p>Документ об оказании услуг: УПД № $number от $date (5а)</p>
+<p>К счетам-фактурам на аванс: $advance_documents (5б)</p>
+<p>Валюта: Российский рубль, 643 (7). Идентификатор государственного контракта: — (8)</p>
+</div></div>
+<table><colgroup><col style="width:2%"><col style="width:22%"><col style="width:3%"><col style="width:3%"><col style="width:3%"><col style="width:4%"><col style="width:7%"><col style="width:7%"><col style="width:4%"><col style="width:4%"><col style="width:7%"><col style="width:7%"><col style="width:3%"><col style="width:4%"><col style="width:4%"><col style="width:3%"><col style="width:4%"><col style="width:3%"><col style="width:6%"></colgroup>
+<thead><tr><th>№<br>1</th><th>Наименование услуги<br>1а</th><th>Вид тов.<br>1б</th><th>Код ед.<br>2</th><th>Ед.<br>2а</th><th>Кол-во<br>3</th><th>Цена без НДС<br>4</th><th>Стоимость без НДС<br>5</th><th>Акциз<br>6</th><th>Ставка<br>7</th><th>НДС<br>8</th><th>Стоимость с НДС<br>9</th><th>Код страны<br>10</th><th>Страна<br>10а</th><th>Декл. / партия<br>11</th><th>Код ед. просл.<br>12</th><th>Ед. просл.<br>12а</th><th>Кол-во просл.<br>13</th><th>Стоимость просл. без НДС<br>14</th></tr></thead>
+<tbody>$upd_rows</tbody><tfoot><tr><td colspan="7"><strong>Всего к оплате</strong></td><td class="num">$net</td><td colspan="2">×</td><td class="num">$tax_print</td><td class="num">$gross</td><td colspan="7">—</td></tr></tfoot></table>
+<p>$vat_basis</p>
+<p class="full-signature">Руководитель / индивидуальный предприниматель: __________________ / $signer_name /<br>Главный бухгалтер / уполномоченное лицо: __________________ / __________________ /</p>
+<p>$ip_registration</p>
+<p>Основание передачи: договор № $contract_number от $contract_date. [8]</p>
+<p>Содержание операции: услуги по размещению рекламы оказаны. Дата оказания услуг: $service_date.</p>
+<div class="signs"><div><p>Услуги сдал [10]:<br>$signer_position __________________ / $signer_name /</p><p>Дата сдачи [11]: $service_date</p><p>Ответственный за оформление [13]:<br>$signer_position __________________ / $signer_name /</p><p>Экономический субъект [14]: $seller_name, ИНН $seller_inn</p></div>
+<div><p>Услуги принял [15]:<br>__________________ __________________ / __________________ /<br><span class="muted">должность, подпись, Ф. И. О.</span></p><p>Дата приёмки [16]: __________________</p><p>Ответственный за оформление [18]:<br>__________________ __________________ / __________________ /</p><p>Экономический субъект [19]: $buyer_name, ИНН $buyer_inn</p></div></div>
+<p>Замечания и дополнительные сведения [12, 17]: ________________________________________________________</p>
+</body></html>

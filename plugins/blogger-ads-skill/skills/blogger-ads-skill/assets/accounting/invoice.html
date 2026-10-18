@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>Счёт № $number</title>
+<style>
+@page {size:A4 portrait;margin:18mm} * {box-sizing:border-box} body{font:11pt Arial,sans-serif;color:#111;margin:0 auto;max-width:180mm;padding:12mm 0} h1{font-size:18pt;margin:24px 0 18px} p{margin:10px 0;line-height:1.45} table{border-collapse:collapse;width:100%;margin:14px 0} th,td{border:1px solid #333;padding:7px;vertical-align:top} th{font-weight:600;text-align:left} .num{text-align:right;white-space:nowrap} .total{font-size:14pt;text-align:right} .muted{font-size:9pt;color:#555} .signature{margin-top:30px} @media print{body{padding:0;max-width:none} tr{break-inside:avoid} h1{break-after:avoid}}
+</style></head><body>
+$demo_notice
+<table aria-label="Банковские реквизиты"><tr><td colspan="2">$bank_name<br><span class="muted">Банк получателя</span></td><td>БИК $bank_bik<br>К/с $bank_correspondent</td></tr><tr><td>ИНН $seller_inn</td><td>КПП $seller_kpp</td><td rowspan="2">Р/с $bank_account</td></tr><tr><td colspan="2">$seller_name<br><span class="muted">Получатель</span></td></tr></table>
+<h1>$invoice_title № $number от $date</h1>
+<p><strong>Исполнитель:</strong> $seller_details</p>
+<p><strong>Заказчик:</strong> $buyer_details</p>
+<p><strong>Основание:</strong> договор № $contract_number от $contract_date.</p>
+<table><thead><tr><th>№</th><th>Услуга</th><th>Кол-во</th><th>Ед.</th><th>Цена, руб.<br>$price_label</th><th>Сумма, руб.<br>$price_label</th></tr></thead><tbody>$invoice_rows</tbody></table>
+<p class="num">Стоимость без НДС: $net руб.</p><p class="num">$vat_label: $tax руб.</p>
+<p class="total"><strong>$total_label: $gross руб.</strong></p>
+<p>$vat_basis</p><p><strong>$payment_purpose_label:</strong> оплата услуг по договору № $contract_number от $contract_date, счёт № $number от $date. $payment_vat</p>
+<p>$payment_terms</p>
+<p class="muted">Ответственный: $signer_position, $signer_name. Счёт сформирован без подписи и печати.</p>
+</body></html>

@@ -8,6 +8,12 @@
   },
   "plugins": [
     {
+      "name": "blogger-ads-skill",
+      "description": "Рекламные размещения: договор и приложения, счета, УПД, маркировка и напоминания",
+      "source": "./plugins/blogger-ads-skill",
+      "category": "productivity"
+    },
+    {
       "name": "docx-contracts",
       "description": "Заполнение Word шаблонов (договоры, формы) по данным из контекста",
       "source": "./plugins/docx-contracts",

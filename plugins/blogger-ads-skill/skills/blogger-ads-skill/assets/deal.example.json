@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "deal_id": "new-deal",
+  "user_role": "blogger",
+  "stage": "inquiry",
+  "policy": {
+    "require_prepayment": true,
+    "require_erir_visibility": false,
+    "documents_human_only": false,
+    "preserve_user_edits": true
+  },
+  "schedule": {
+    "publication_at": null,
+    "timezone": "Europe/Moscow",
+    "duration_hours": 48,
+    "top_hours": 12,
+    "text_before_business_days": 2,
+    "readiness_before_hours": 24,
+    "payment_due_at": null,
+    "erid_due_at": null,
+    "deadline_terms": {
+      "payment": {
+        "precision": "unspecified",
+        "condition": null,
+        "source": null
+      },
+      "erid": {
+        "precision": "unspecified",
+        "condition": null,
+        "source": null
+      }
+    },
+    "claims_after_end_hours": null,
+    "closing_after_end_hours": null,
+    "revision": 1,
+    "holidays": [],
+    "working_days": [],
+    "work_calendar_verified": false,
+    "reporting_deadlines": [],
+    "ord_reporting": {
+      "applicability": "unknown",
+      "responsible": null,
+      "source": null,
+      "distribution_end_at": null,
+      "distribution_end_source": null,
+      "reminder_time": "09:00"
+    },
+    "fee_obligation": {
+      "applicability": "unknown",
+      "payer": null,
+      "source": null,
+      "quarters": [],
+      "reminder_time": "09:00"
+    },
+    "link_after_publication_hours": null
+  },
+  "responsibilities": {
+    "contract_author": null,
+    "creative_author": null,
+    "ord_registration": null,
+    "ord_reporting": null,
+    "fee_legal_payer": null,
+    "fee_economic_bearer": null,
+    "edo_sender": null
+  },
+  "creative": {
+    "text": "",
+    "links": [],
+    "media_sha256": [],
+    "provenance": null
+  },
+  "checks": {
+    "legality": {
+      "status": "pending"
+    },
+    "contract": {
+      "status": "pending"
+    },
+    "creative_approval": {
+      "status": "pending"
+    },
+    "marking": {
+      "status": "pending"
+    },
+    "payment": {
+      "status": "pending"
+    },
+    "erid": {
+      "status": "pending",
+      "source": null,
+      "checked_at": null,
+      "token": null,
+      "creative_sha256": null
+    },
+    "ord_creative": {
+      "status": "pending",
+      "source": null,
+      "checked_at": null,
+      "token": null,
+      "creative_sha256": null,
+      "verified": {
+        "text": false,
+        "links": false,
+        "media": false
+      }
+    },
+    "scheduled_message": {
+      "status": "pending"
+    }
+  },
+  "completed_events": {},
+  "publication": {
+    "scheduled_message_id": null,
+    "actual_at": null,
+    "url": null,
+    "evidence": []
+  },
+  "documents": [],
+  "integrations": [],
+  "reporting": {
+    "ord_status": "pending",
+    "fee_status": "pending"
+  },
+  "user_instructions": [],
+  "history": []
+}
