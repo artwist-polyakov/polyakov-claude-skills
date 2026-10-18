@@ -244,6 +244,19 @@ def fio_text(fio):
     return " ".join(fio[k] for k in ("surname", "name", "patronymic") if fio.get(k))
 
 
+def upd_unit_price(row):
+    """Цена без НДС должна воспроизводить округлённую сумму строки УПД."""
+    with localcontext() as context:
+        context.prec = 50
+        quantity = Decimal(row["quantity"])
+        price = row["unit_net"]
+        if (price * quantity).quantize(CENT, rounding=ROUND_HALF_UP) != row["net"]:
+            price = (row["net"] / quantity).quantize(Decimal("0.00000000001"), rounding=ROUND_HALF_UP)
+        if (price * quantity).quantize(CENT, rounding=ROUND_HALF_UP) != row["net"]:
+            raise ValueError("Цена без НДС не сходится с суммой строки при точности до 11 знаков; оформите УПД в учётной системе")
+        return price
+
+
 def party_details(party):
     kpp = f", КПП {party['kpp']}" if party.get("kpp") else ""
     return f"{party['name']}, ИНН {party['inn']}{kpp}, {party['address']}"
@@ -291,7 +304,7 @@ def render_html(data, command):
             values["bank_" + key] = value
         table = []
         for i, row in enumerate(rows, 1):
-            cells = [str(i), row["description"], row["quantity"], row["unit"], money(Decimal(row["unit_price"])), money(row["amount"])]
+            cells = [str(i), row["description"], row["quantity"], row["unit"], row["unit_price"], money(row["amount"])]
             table.append("<tr>" + "".join(f"<td>{escape(cell)}</td>" for cell in cells) + "</tr>")
         raw = {"invoice_rows": "".join(table)}
         template = "invoice.html"
@@ -306,7 +319,7 @@ def render_html(data, command):
         table = []
         for i, row in enumerate(rows, 1):
             cells = [str(i), row["description"], "—", row["unit_code"], row["unit"], row["quantity"],
-                     format(row["unit_net"].normalize(), "f"), money(row["net"]), "без акциза",
+                     format(upd_unit_price(row).normalize(), "f"), money(row["net"]), "без акциза",
                      data["vat"]["rate"] + "%" if taxed else "без НДС", money(row["tax"]) if taxed else "без НДС", money(row["gross"])] + ["—"] * 7
             table.append("<tr>" + "".join(f"<td>{escape(cell)}</td>" for cell in cells) + "</tr>")
         raw = {"upd_rows": "".join(table)}
@@ -393,7 +406,7 @@ def render_xml(data, *, training=False):
     table = doc.find("ТаблСчФакт")
     for i, row in enumerate(rows, 1):
         node = sub(table, "СведТов", НомСтр=i, НаимТов=row["description"], КолТов=row["quantity"],
-                   ЦенаТов=format(row["unit_net"], "f"), СтТовБезНДС=money(row["net"]), СтТовУчНал=money(row["gross"]),
+                   ЦенаТов=format(upd_unit_price(row), "f"), СтТовБезНДС=money(row["net"]), СтТовУчНал=money(row["gross"]),
                    НалСт=data["vat"]["rate"] + "%" if taxed else "без НДС", ОКЕИ_Тов=row["unit_code"], НаимЕдИзм=row["unit"])
         sub(node, "ДопСведТов", ПрТовРаб="3")
         sub(sub(node, "Акциз"), "БезАкциз").text = "без акциза"

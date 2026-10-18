@@ -1,7 +1,7 @@
 """uv run --with lxml python -m unittest discover -s tests -p 'test_accounting.py' -v"""
 
 import copy
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import importlib.util
 import json
 from hashlib import sha256
@@ -96,6 +96,31 @@ class AccountingTests(unittest.TestCase):
         self.assertEqual(totals, {"net": Decimal("0.41"), "tax": Decimal("0.09"), "gross": Decimal("0.50")})
         self.assertEqual(rows[0]["tax"], Decimal("0.05"))
 
+    def test_invoice_unit_price_preserves_precision_and_reconciles_line_amount(self):
+        from lxml import etree
+        cases = (
+            ("3", "0.333", "1.00"),
+            ("2.5", "12.34567", "30.86"),
+            ("1000000000", "0.00000000001", "0.01"),
+            ("1", "50000.00", "50000.00"),
+            ("1", "0.335", "0.34"),
+        )
+        for rate in ("none", "5", "7", "22"):
+            for mode in ("inclusive", "exclusive"):
+                for quantity, price, amount in cases:
+                    with self.subTest(rate=rate, mode=mode, quantity=quantity, price=price):
+                        data = fixture()
+                        data["vat"].update(rate=rate, price_mode=mode)
+                        data["items"][0].update(quantity=quantity, unit_price=price)
+                        root = etree.HTML(accounting.render_html(data, "invoice"))
+                        cells = root.findall(".//tbody/tr/td")
+                        self.assertEqual(cells[2].text, quantity)
+                        self.assertEqual(cells[4].text, price)
+                        self.assertEqual(cells[5].text, amount)
+                        shown_amount = (Decimal(cells[2].text) * Decimal(cells[4].text)).quantize(
+                            Decimal("0.01"), rounding=ROUND_HALF_UP)
+                        self.assertEqual(shown_amount, Decimal(cells[5].text))
+
     def test_html_xml_escape_user_data(self):
         data = fixture()
         data["items"][0]["description"] = 'Креатив & "кавычки" > ссылка'
@@ -103,6 +128,43 @@ class AccountingTests(unittest.TestCase):
         self.assertIn("Креатив &amp; &quot;кавычки&quot; &gt; ссылка", html)
         filename, xml = accounting.render_xml(data)
         self.assertEqual(ET.fromstring(xml).find(".//СведТов").get("НаимТов"), data["items"][0]["description"])
+
+    def test_upd_unit_price_reconciles_rounded_net_in_print_and_xml(self):
+        from lxml import etree
+        for rate, expected_net in (("5", "0.03"), ("7", "0.03"), ("22", "0.02")):
+            with self.subTest(rate=rate):
+                data = fixture()
+                data["vat"].update(rate=rate, price_mode="inclusive")
+                data["items"][0].update(quantity="2", unit_price="0.013")
+                html = etree.HTML(accounting.render_html(data, "upd-print"))
+                cells = html.findall(".//tbody/tr/td")
+                filename, xml = accounting.render_xml(data)
+                accounting.validate_xml(xml, filename)
+                item = ET.fromstring(xml).find(".//СведТов")
+                self.assertEqual(cells[7].text, expected_net)
+                self.assertEqual(item.get("СтТовБезНДС"), expected_net)
+                self.assertEqual(cells[11].text, "0.03")
+                self.assertEqual(item.get("СтТовУчНал"), "0.03")
+                self.assertEqual(Decimal(cells[6].text), Decimal(item.get("ЦенаТов")))
+                shown_amount = (Decimal(cells[5].text) * Decimal(cells[6].text)).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP)
+                self.assertEqual(shown_amount, Decimal(expected_net))
+
+    def test_upd_rejects_unrepresentable_unit_price_without_blocking_invoice(self):
+        from lxml import etree
+        data = fixture()
+        data["vat"].update(rate="22", price_mode="inclusive")
+        data["items"][0].update(quantity="999999999999", unit_price="0.01")
+        for command in ("upd-print", "upd-xml"):
+            with self.subTest(command=command), self.assertRaisesRegex(ValueError, "11 знаков"):
+                if command == "upd-xml":
+                    accounting.render_xml(data)
+                else:
+                    accounting.render_html(data, command)
+        html = etree.HTML(accounting.render_html(data, "invoice"))
+        cells = html.findall(".//tbody/tr/td")
+        self.assertEqual(cells[4].text, "0.01")
+        self.assertEqual(cells[5].text, "9999999999.99")
 
     def test_missing_data_never_produces_plausible_xml(self):
         cases = [
