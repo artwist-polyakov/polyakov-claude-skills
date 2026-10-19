@@ -320,7 +320,7 @@ class ContractTests(unittest.TestCase):
 
     def test_pending_erid_does_not_turn_responsible_party_into_registration_evidence(self):
         self.fields.update(
-            ERID="Ожидается от Заказчика; выдача не подтверждена",
+            ERID="____",
             MARKING_PARTY="Заказчик",
         )
         self.render("creative")
@@ -330,6 +330,22 @@ class ContractTests(unittest.TestCase):
         self.assertIn(self.fields["ERID"], text)
         self.assertIn("Ответственный за регистрацию и предоставление подтверждения выдачи: Заказчик", text)
         self.assertNotRegex(text, r"Регистрацию выполнил|подтверждение выдачи предоставил|регистрация (?:выполнена|подтверждена)")
+
+    def test_separate_erid_is_only_in_marking_block_and_does_not_change_material(self):
+        post = Path(self.temp.name) / "approved-material.txt"
+        text = "✅ Согласованный текст\nПодробности: https://example.org/?utm_source=TG\n"
+        post.write_bytes(text.encode("utf-8"))
+        fields = dict(self.fields, POST_TEXT=text, ERID="exampleToken123")
+        module.render(ROOT / "assets/templates/creative.docx", fields, self.output, post_file=post)
+        paragraphs = [p["text"] for p in module.inspect_document(self.output)["paragraphs"]]
+        marking = paragraphs.index("3. Маркировка")
+        self.assertIn(text, paragraphs[:marking])
+        self.assertNotIn(fields["ERID"], "\n".join(paragraphs[:marking]))
+        self.assertEqual("\n".join(paragraphs[marking:]).count(fields["ERID"]), 1)
+        self.assertEqual(post.read_bytes(), text.encode("utf-8"))
+        saved = json.loads(self.output.with_suffix(".docx.fields.json").read_text())
+        self.assertEqual(saved["fields"]["POST_TEXT"], text)
+        self.assertEqual(saved["fields"]["ERID"], fields["ERID"])
 
     def test_post_file_preserves_erid_spaces_and_newlines(self):
         post = Path(self.temp.name) / "approved.txt"

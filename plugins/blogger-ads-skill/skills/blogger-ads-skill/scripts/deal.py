@@ -1014,6 +1014,7 @@ def readiness_policy(state):
 def readiness_issues(state, now):
     """Общие причины незавершённости проверок; расписание не является доказательством."""
     checks = state.get("checks", {})
+    token = checks.get("erid", {}).get("token", "")
     issues = {}
 
     def missing(key, message):
@@ -1048,6 +1049,8 @@ def readiness_issues(state, now):
                 or queue["scheduled_message_id"] != message_id):
             missing("scheduled_message", "Заново проверьте очередь для текущего размещения: сохраните в подтверждении "
                     "publication_at и scheduled_message_id, включая явный null при отсутствии ID")
+        if message_id is not None and (not queue.get("token") or queue["token"] != token):
+            missing("scheduled_message", "Заново проверьте ERID в отложенной записи: сохраните текущий token в подтверждении очереди")
     creative = state.get("creative", {})
     if not isinstance(creative.get("text"), str) or not creative["text"].strip():
         missing("creative_approval", "Окончательный текст рекламы")
@@ -1055,7 +1058,6 @@ def readiness_issues(state, now):
     for key in ("creative_approval", "erid", "marking"):
         if checks.get(key, {}).get("creative_sha256") != current_digest:
             missing(key, f"{key}: подтверждение относится к другой версии текста, ссылок или медиа")
-    token = checks.get("erid", {}).get("token", "")
     if not valid_token(token):
         missing("erid", "Отдельное поле token из ОРД; внутренний ID креатива его не заменяет")
     for issue in ord_creative_issues(checks.get("ord_creative", {}), token, current_digest):

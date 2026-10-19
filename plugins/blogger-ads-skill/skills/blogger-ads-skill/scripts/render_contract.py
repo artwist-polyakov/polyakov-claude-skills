@@ -294,7 +294,7 @@ def render(template, fields, output, force=False, post_file=None, review_dir=Non
         raw = post_file.read_bytes()
         text = raw.decode("utf-8")
         if "POST_TEXT" in fields and fields["POST_TEXT"] != text:
-            raise ValueError("POST_TEXT не совпадает с --post-file. Сохраните исходный текст дословно, включая ERID и пробелы; изменения требуют отдельной версии и нового согласования")
+            raise ValueError("POST_TEXT не совпадает с --post-file. Сохраните выбранный источник материала дословно, включая пробелы; для согласованного отделения ERID используйте отдельный подготовленный источник, не меняя входящий оригинал")
         fields = fields | {"POST_TEXT": text}
         post_source = {"path": str(post_file.resolve()), "sha256": hashlib.sha256(raw).hexdigest()}
     links_source = None

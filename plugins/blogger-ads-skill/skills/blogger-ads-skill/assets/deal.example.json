@@ -109,7 +109,8 @@
       "source": null,
       "checked_at": null,
       "publication_at": null,
-      "scheduled_message_id": null
+      "scheduled_message_id": null,
+      "token": null
     }
   },
   "completed_events": {},

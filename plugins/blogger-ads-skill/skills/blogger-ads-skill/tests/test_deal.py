@@ -55,7 +55,8 @@ class DealTests(unittest.TestCase):
             "status": "confirmed", "source": "evidence/current-scheduled-queue.png: отложенных записей нет",
             "checked_at": "2026-11-01T11:50:00+03:00",
             "publication_at": self.state["schedule"]["publication_at"],
-            "scheduled_message_id": self.state["publication"]["scheduled_message_id"]}
+            "scheduled_message_id": self.state["publication"]["scheduled_message_id"],
+            "token": self.state["checks"]["erid"]["token"]}
 
     def review_current_actions(self):
         # Эти сценарии проверяют доказательства и завершение; общие учебные формулировки сохраняют смысл.
@@ -1946,6 +1947,55 @@ class DealTests(unittest.TestCase):
             self.assertTrue(deal.check(self.state, now)["ready"])
         self.assertEqual(self.state, before)
 
+    def test_existing_queue_requires_current_token(self):
+        self.state["publication"]["scheduled_message_id"] = "message-1"
+        self.confirm_readiness()
+        current = self.state["checks"]["erid"]["token"]
+        original = copy.deepcopy(self.state)
+        for token in (current, "old-token", None, ""):
+            with self.subTest(token=token):
+                self.state = copy.deepcopy(original)
+                self.state["checks"]["scheduled_message"]["token"] = token
+                blockers = deal.readiness_issues(self.state, self.now)
+                self.assertEqual(set(blockers), set() if token == current else {"scheduled_message"})
+        self.state = copy.deepcopy(original)
+        del self.state["checks"]["scheduled_message"]["token"]
+        self.assertEqual(set(deal.readiness_issues(self.state, self.now)), {"scheduled_message"})
+
+    def test_token_change_preserves_approval_but_requires_existing_queue_recheck(self):
+        self.state["publication"]["scheduled_message_id"] = "message-1"
+        self.confirm_readiness()
+        version = deal.digest(self.state["creative"])
+        approval = copy.deepcopy(self.state["checks"]["creative_approval"])
+        queue = copy.deepcopy(self.state["checks"]["scheduled_message"])
+        for key in ("erid", "ord_creative", "marking"):
+            self.state["checks"][key]["token"] = "new-token"
+        before = copy.deepcopy(self.state)
+        result = deal.check(self.state, self.now)
+        self.assertEqual(set(result["blockers"]), {"scheduled_message"})
+        self.assertIn("scheduled_message", deal.unfinished_checks(self.state, self.now))
+        self.assertEqual(deal.digest(self.state["creative"]), version)
+        self.assertEqual(self.state["checks"]["creative_approval"], approval)
+        self.assertEqual(self.state["checks"]["scheduled_message"], queue)
+        self.assertEqual(self.state, before)
+        self.state["checks"]["scheduled_message"].update(
+            token="new-token", source="Повторный просмотр ERID в отложенной записи", checked_at=self.now.isoformat())
+        self.assertTrue(deal.check(self.state, self.now)["ready"])
+
+    def test_confirmed_empty_queue_does_not_depend_on_token(self):
+        self.confirm_readiness()
+        self.assertIsNone(self.state["publication"]["scheduled_message_id"])
+        for key in ("erid", "ord_creative", "marking"):
+            self.state["checks"][key]["token"] = "new-token"
+        original = copy.deepcopy(self.state)
+        for token in ("old-token", None, ""):
+            with self.subTest(token=token):
+                self.state = copy.deepcopy(original)
+                self.state["checks"]["scheduled_message"]["token"] = token
+                self.assertTrue(deal.check(self.state, self.now)["ready"])
+        del self.state["checks"]["scheduled_message"]["token"]
+        self.assertTrue(deal.check(self.state, self.now)["ready"])
+
     def test_queue_confirmation_without_complete_snapshot_requires_recheck(self):
         self.confirm_readiness()
         original = self.state["checks"]["scheduled_message"]
@@ -2332,7 +2382,8 @@ class CreativeImportTests(unittest.TestCase):
             "status": "confirmed", "source": "evidence/current-scheduled-queue.png: отложенных записей нет",
             "checked_at": self.now.isoformat(),
             "publication_at": self.state["schedule"]["publication_at"],
-            "scheduled_message_id": self.state["publication"]["scheduled_message_id"]}
+            "scheduled_message_id": self.state["publication"]["scheduled_message_id"],
+            "token": self.state["checks"]["erid"]["token"]}
         self.save_state()
 
     def approval_message(self):
@@ -2543,6 +2594,38 @@ class CreativeImportTests(unittest.TestCase):
         self.assertEqual(result["creative_sha256"], deal.fingerprint(self.state, self.state_path))
         self.assertTrue(all(self.state["checks"][key]["status"] == "pending"
                             for key in ("creative_approval", "erid", "ord_creative", "marking")))
+
+    def test_separate_erid_keeps_material_approval_but_requires_current_marking_and_ord(self):
+        incoming = self.text_path
+        self.text_path = self.folder / "approved-material.txt"
+        material = "  🧩 Согласованный пост\r\n\r\n".encode("utf-8")
+        self.text_path.write_bytes(material)
+        self.import_source()
+        self.confirm()
+        version = deal.fingerprint(self.state, self.state_path)
+        approval = copy.deepcopy(self.state["checks"]["creative_approval"])
+        self.assertTrue(deal.check(self.state, self.now, self.state_path)["ready"])
+
+        self.state["checks"]["erid"]["token"] = "new-test-token"
+        self.assertEqual(deal.fingerprint(self.state, self.state_path), version)
+        self.assertEqual(self.state["checks"]["creative_approval"], approval)
+        issues = deal.readiness_issues(self.state, self.now)
+        self.assertNotIn("creative_approval", issues)
+        self.assertNotIn("erid", issues)
+        self.assertIn("marking", issues)
+        self.assertIn("ord_creative", issues)
+        self.assertFalse(deal.check(self.state, self.now, self.state_path)["ready"])
+
+        self.state["checks"]["marking"]["token"] = "new-test-token"
+        issues = deal.readiness_issues(self.state, self.now)
+        self.assertNotIn("marking", issues)
+        self.assertIn("ord_creative", issues)
+        self.assertFalse(deal.check(self.state, self.now, self.state_path)["ready"])
+        self.state["checks"]["ord_creative"]["token"] = "new-test-token"
+        self.assertTrue(deal.check(self.state, self.now, self.state_path)["ready"])
+        self.assertEqual(self.state["creative"]["text"].encode("utf-8"), material)
+        self.assertEqual(incoming.read_bytes(), self.raw_text)
+        self.assertEqual(self.text_path.read_bytes(), material)
 
     def test_import_command_resolves_sources_relative_to_state(self):
         result = subprocess.run(
