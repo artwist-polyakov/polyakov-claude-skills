@@ -58,9 +58,9 @@ class ExchangeTests(unittest.TestCase):
         closing, exchange = self.clauses()
         for clause in (closing, exchange):
             self.assertIn('обеими Сторонами через Telegram', clause)
-            self.assertIn('[УТОЧНИТЬ АККАУНТ TELEGRAM ИСПОЛНИТЕЛЯ]', clause)
+            self.assertIn('[АККАУНТ TELEGRAM ИСПОЛНИТЕЛЯ]', clause)
             self.assertIn('Заказчик: @example_customer', clause)
-            self.assertIn('согласие контрагента пока не подтверждено', clause)
+            self.assertNotIn('согласие контрагента пока не подтверждено', clause)
             self.assertIn('после восстановления ЭДО', clause)
             self.assertNotIn('office@example.org', clause)
             self.assertNotIn('бумаж', clause)
@@ -79,13 +79,16 @@ class ExchangeTests(unittest.TestCase):
         self.render(data=data)
         closing, exchange = self.clauses()
         for clause in (closing, exchange):
-            self.assertIn('[УТОЧНИТЬ ОБЩИЙ КАНАЛ ОБМЕНА]', clause)
-            self.assertIn('Статус согласования порядка обмена: [УТОЧНИТЬ]', clause)
-            self.assertIn('[СОГЛАСОВАТЬ НЕОБХОДИМОСТЬ, СПОСОБ И СРОК]', clause)
+            self.assertIn('[КАНАЛ ОБМЕНА]', clause)
+            self.assertNotIn('Статус согласования', clause)
+            self.assertIn('Последующий обмен: [ПОРЯДОК И СРОК]', clause)
             self.assertNotIn('Telegram', clause)
             self.assertNotIn('48', clause)
             self.assertNotIn('Стороны обмениваются бумажными оригиналами', clause)
-        self.assertIn('[СОГЛАСОВАТЬ ДЛИТЕЛЬНОСТЬ СРОКА И НАЧАЛО ОТСЧЁТА]', closing)
+        self.assertIn('[СРОК И НАЧАЛО ОТСЧЁТА]', closing)
+        self.assertIn('[СТОРОНА] направляет другой Стороне [ЗАКРЫВАЮЩИЙ ДОКУМЕНТ]', closing)
+        self.assertNotIn('УТОЧНИТЬ', closing + exchange)
+        self.assertNotIn('СОГЛАСОВАТЬ', closing + exchange)
 
     def test_confirmed_email_and_no_followup_method_are_supported(self):
         data = self.data | {'channel': 'email', 'contractor_contact': 'seller@example.org',
@@ -95,7 +98,7 @@ class ExchangeTests(unittest.TestCase):
         for clause in self.clauses():
             self.assertIn('обеими Сторонами через электронную почту', clause)
             self.assertIn('Исполнитель: seller@example.org; Заказчик: buyer@example.org', clause)
-            self.assertIn('Порядок обмена согласован Сторонами', clause)
+            self.assertNotIn('Порядок обмена согласован Сторонами', clause)
             self.assertIn('Последующий обмен через ЭДО или бумажными оригиналами не предусмотрен', clause)
             self.assertNotIn('согласие контрагента пока', clause)
 
@@ -104,9 +107,9 @@ class ExchangeTests(unittest.TestCase):
         self.render(data=data)
         for clause in self.clauses():
             self.assertIn('обеими Сторонами через Telegram', clause)
-            self.assertIn('согласие контрагента пока не подтверждено', clause)
+            self.assertNotIn('согласие контрагента пока не подтверждено', clause)
             self.assertIn('Стороны обмениваются бумажными оригиналами тех же документов', clause)
-            self.assertIn('Срок обмена оригиналами: [СОГЛАСОВАТЬ СРОК]', clause)
+            self.assertIn('Срок обмена оригиналами: [СРОК]', clause)
             self.assertNotIn('оформляют те же документы через ЭДО', clause)
         source = self.directory / 'exchange-v2.json'
         self.save(source, data | {'followup_deadline': 'в течение 7 рабочих дней после обмена сканами',
@@ -115,8 +118,30 @@ class ExchangeTests(unittest.TestCase):
         module.revise_document(self.output, {}, output, exchange_file=source)
         for clause in self.clauses(output):
             self.assertIn('в течение 7 рабочих дней после обмена сканами', clause)
-            self.assertIn('Порядок обмена согласован Сторонами', clause)
-            self.assertNotIn('Срок обмена оригиналами: [СОГЛАСОВАТЬ СРОК]', clause)
+            self.assertNotIn('Порядок обмена согласован Сторонами', clause)
+            self.assertNotIn('Срок обмена оригиналами: [СРОК]', clause)
+
+    def test_agreement_status_stays_in_source_and_does_not_change_contract_clauses(self):
+        expected = None
+        for agreement in ('proposed', 'agreed', 'unknown'):
+            with self.subTest(agreement=agreement):
+                data = self.data | {'agreement': agreement}
+                source = self.directory / f'exchange-{agreement}.json'
+                output = self.directory / f'contract-{agreement}.docx'
+                self.save(source, data)
+                before = source.read_bytes()
+                module.render(module.TEMPLATES / 'contract.docx', self.fields, output,
+                              exchange_file=source)
+                clauses = self.clauses(output)
+                if expected is None:
+                    expected = clauses
+                self.assertEqual(clauses, expected)
+                saved = json.loads(output.with_suffix('.docx.fields.json').read_text())
+                self.assertEqual(saved['exchange_source'], {
+                    'path': str(source.resolve()), 'sha256': hashlib.sha256(before).hexdigest()})
+                self.assertEqual(source.read_bytes(), before)
+                self.assertEqual(json.loads(Path(saved['exchange_source']['path']).read_text())['agreement'],
+                                 agreement)
 
     def test_invalid_contacts_and_inconsistent_unknown_inputs_are_rejected_before_write(self):
         variants = [
@@ -209,8 +234,8 @@ class ExchangeTests(unittest.TestCase):
         module.revise_document(self.output, {}, output, exchange_file=new_source)
         for clause in self.clauses(output):
             self.assertIn('Исполнитель: @example_seller', clause)
-            self.assertIn('Порядок обмена согласован Сторонами', clause)
-            self.assertNotIn('[УТОЧНИТЬ АККАУНТ', clause)
+            self.assertNotIn('Порядок обмена согласован Сторонами', clause)
+            self.assertNotIn('[АККАУНТ', clause)
         for path, content in before.items():
             self.assertEqual(path.read_bytes(), content)
         self.assertEqual(json.loads(output.with_suffix('.docx.fields.json').read_text())['exchange_source']['path'], str(new_source.resolve()))

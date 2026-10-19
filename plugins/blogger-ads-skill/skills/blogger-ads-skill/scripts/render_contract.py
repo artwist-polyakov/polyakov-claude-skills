@@ -217,27 +217,24 @@ def scan_exchange_fields(data):
     if data["followup_method"] not in {"edo", "paper"} and data["followup_deadline"] is not None:
         raise ValueError("--exchange-file: срок последующего обмена задаётся только при followup_method=edo или paper")
     channel_text = {"telegram": "Telegram", "email": "электронную почту",
-                    "other": data["channel_name"], "unknown": "[УТОЧНИТЬ ОБЩИЙ КАНАЛ ОБМЕНА]"}[channel]
+                    "other": data["channel_name"], "unknown": "[КАНАЛ ОБМЕНА]"}[channel]
     contact_kind = {"telegram": "АККАУНТ TELEGRAM", "email": "EMAIL", "other": "КОНТАКТ В ВЫБРАННОМ КАНАЛЕ",
-                    "unknown": "КОНТАКТ ПОСЛЕ ВЫБОРА КАНАЛА"}[channel]
-    contractor = data["contractor_contact"] or f"[УТОЧНИТЬ {contact_kind} ИСПОЛНИТЕЛЯ]"
-    customer = data["customer_contact"] or f"[УТОЧНИТЬ {contact_kind} ЗАКАЗЧИКА]"
-    agreement = {"proposed": "Порядок предложен; согласие контрагента пока не подтверждено.",
-                 "agreed": "Порядок обмена согласован Сторонами.",
-                 "unknown": "Статус согласования порядка обмена: [УТОЧНИТЬ]."}[data["agreement"]]
-    followup_deadline = data["followup_deadline"] or "[СОГЛАСОВАТЬ СРОК]"
+                    "unknown": "КОНТАКТ"}[channel]
+    contractor = data["contractor_contact"] or f"[{contact_kind} ИСПОЛНИТЕЛЯ]"
+    customer = data["customer_contact"] or f"[{contact_kind} ЗАКАЗЧИКА]"
+    followup_deadline = data["followup_deadline"] or "[СРОК]"
     followup = {"edo": "После обмена сканами Стороны оформляют те же документы через ЭДО. Срок последующего ЭДО: "
                        + followup_deadline + ".",
                 "paper": "После обмена сканами Стороны обмениваются бумажными оригиналами тех же документов. Срок обмена оригиналами: "
                          + followup_deadline + ".",
                 "none": "Последующий обмен через ЭДО или бумажными оригиналами не предусмотрен.",
-                "unknown": "Последующий обмен через ЭДО или бумажными оригиналами: [СОГЛАСОВАТЬ НЕОБХОДИМОСТЬ, СПОСОБ И СРОК]."}[data["followup_method"]]
+                "unknown": "Последующий обмен: [ПОРЯДОК И СРОК]."}[data["followup_method"]]
     common = (f"Подписанные сканы передаются обеими Сторонами через {channel_text} "
-              f"(Исполнитель: {contractor}; Заказчик: {customer}). {agreement} {followup}")
+              f"(Исполнитель: {contractor}; Заказчик: {customer}). {followup}")
     sender = {"contractor": "Исполнитель направляет Заказчику", "customer": "Заказчик направляет Исполнителю",
-              "unknown": "[УТОЧНИТЬ ОТВЕТСТВЕННУЮ СТОРОНУ] направляет другой Стороне"}[data["closing_sender"]]
-    document = data["closing_document"] or "[СОГЛАСОВАТЬ ВИД ЗАКРЫВАЮЩЕГО ДОКУМЕНТА]"
-    deadline = data["closing_deadline"] or "[СОГЛАСОВАТЬ ДЛИТЕЛЬНОСТЬ СРОКА И НАЧАЛО ОТСЧЁТА]"
+              "unknown": "[СТОРОНА] направляет другой Стороне"}[data["closing_sender"]]
+    document = data["closing_document"] or "[ЗАКРЫВАЮЩИЙ ДОКУМЕНТ]"
+    deadline = data["closing_deadline"] or "[СРОК И НАЧАЛО ОТСЧЁТА]"
     return {"EXCHANGE_CLAUSE": "Этот порядок применяется к Договору, приложениям и закрывающим документам. " + common,
             "CLOSING_DOCUMENTS_CLAUSE": f"{sender} {document}. Срок направления: {deadline}. {common}"}
 
