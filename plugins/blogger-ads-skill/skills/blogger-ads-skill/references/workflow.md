@@ -324,7 +324,7 @@ uv run scripts/deal.py review-action --state "$WORK/deal-state.json" --id contra
 Полный набор автоматических проверок запускается из каталога навыка:
 
 ```sh
-uv run --with lxml --with 'pypdf>=5,<7' --with 'pymupdf>=1.26,<2' python -m unittest discover -s tests -v
+uv run --with lxml --with 'pypdf>=5,<7' --with 'pymupdf>=1.26,<2' --with 'markdown-it-py>=3,<5' python -m unittest discover -s tests -v
 ```
 
 Поведенческие [сценарии](../tests/scenarios.md) проверяются отдельно; технические тесты не подтверждают факты конкретной сделки.

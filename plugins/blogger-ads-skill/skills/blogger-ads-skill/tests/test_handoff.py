@@ -1113,6 +1113,50 @@ class HandoffTests(unittest.TestCase):
         response.write_text('[Счёт](invoice.pdf)')
         self.assertFalse(handoff.audit(self.state, response)['valid'])
 
+    def test_reference_links_enforce_registration_version_and_document_integrity(self):
+        initial_state = self.state.read_bytes()
+        for syntax, link, label in (
+                ('full', '[Счёт][документ]', 'документ'),
+                ('collapsed', '[Счёт][]', 'Счёт'),
+                ('shortcut', '[Счёт]', 'Счёт'),
+                ('image', '![Счёт][документ]', 'документ')):
+            with self.subTest(syntax=syntax):
+                self.state.write_bytes(initial_state)
+                old = self.file(f'{syntax}-invoice-v1.pdf', 'Счёт v1')
+                new = self.file(f'{syntax}-invoice-v2.pdf', 'Счёт v2')
+                response = self.file('reply.txt', f'{link}\n\n[{label}]: <{old}>')
+                result = handoff.audit(self.state, response)
+                self.assertFalse(result['valid'], result['issues'])
+                self.assertTrue(any('не зарегистрирован' in issue and str(old) in issue
+                                    for issue in result['issues']), result['issues'])
+                response.write_text(f'{link}\n\n[{label}]: <{self.root / "missing.pdf"}>')
+                result = handoff.audit(self.state, response)
+                self.assertFalse(result['valid'], result['issues'])
+                self.assertTrue(any('отсутствующий файл' in issue for issue in result['issues']))
+                response.write_text(f'{link}\n\n[{label}]: <{old}>')
+
+                handoff.register(self.state, [old], 'unsigned', 'v1', self.at, document_kind='payment')
+                result = handoff.audit(self.state, response)
+                self.assertTrue(result['valid'], result['issues'])
+                handoff.register(self.state, [new], 'unsigned', 'v2', self.at, [old], document_kind='payment')
+                result = handoff.audit(self.state, response)
+                self.assertFalse(result['valid'], result['issues'])
+                self.assertTrue(any('заменённую версию' in issue and str(old) in issue
+                                    for issue in result['issues']), result['issues'])
+                result = handoff.audit(self.state, response, historical=[old])
+                self.assertTrue(result['valid'], result['issues'])
+
+                response.write_text(f'{link}\n\n[{label}]: <{new}>')
+                result = handoff.audit(self.state, response)
+                self.assertTrue(result['valid'], result['issues'])
+                new.write_text('Изменённый после регистрации счёт')
+                before = self.state.read_bytes()
+                result = handoff.audit(self.state, response)
+                self.assertFalse(result['valid'], result['issues'])
+                self.assertTrue(any('изменён' in issue and str(new) in issue
+                                    for issue in result['issues']), result['issues'])
+                self.assertEqual(before, self.state.read_bytes())
+
     def test_native_file_citation_requires_the_same_source_registration(self):
         source = self.file('полученная квитанция.pdf', 'Подтверждение перевода')
         response = self.file('reply.txt', f':codex-file-citation{{path="{source}" purpose="source"}}')
@@ -1581,6 +1625,63 @@ class HandoffLinkCheckTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertFalse(data['valid'])
         self.assertTrue(any(wrong in issue for issue in data['issues']))
+
+    def test_reference_links_preserve_paths_titles_and_missing_file_checks(self):
+        for use in ('[Счёт][документ]', '[документ][]', '[документ]'):
+            with self.subTest(use=use):
+                self.response.write_text(f'{use}\n\n[документ]: <{self.artifact}> "Счёт за размещение"\n')
+                result, data = self.run_check()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(data['local_links'], [str(self.artifact.resolve())])
+                missing = self.artifact.with_name('нет такого счёта.pdf')
+                self.response.write_text(f'{use}\n\n[документ]: <{missing}>\n  "Счёт за размещение"\n')
+                result, data = self.run_check()
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertTrue(any('отсутствующий файл' in issue for issue in data['issues']))
+
+    def test_references_handle_labels_uri_errors_line_suffix_and_images(self):
+        encoded = str(self.artifact).replace(' ', '%20')
+        for text in (
+            f'[Счёт][ДОКУМЕНТ]\n\n[документ]: <{encoded}:12> \'Заголовок\'',
+            f'[документ]\n\n[документ]: <{self.artifact}:12> (Заголовок)',
+            f'![Превью][doc]\n\n[doc]: <{self.artifact}> "Превью"',
+            f'![Превью](<{self.artifact}>)'):
+            with self.subTest(text=text):
+                self.response.write_text(text)
+                result, data = self.run_check()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(data['local_links'], [str(self.artifact.resolve())])
+        for target, diagnostic in (('relative.pdf', 'абсолютный путь'),
+                                   ('file:///tmp/contract.pdf', 'без file://')):
+            self.response.write_text(f'[Документ][doc]\n\n[doc]: {target}')
+            result, data = self.run_check()
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertTrue(any(diagnostic in issue for issue in data['issues']))
+
+    def test_only_used_links_and_citations_outside_code_are_checked(self):
+        missing = self.root / 'missing.pdf'
+        self.response.write_text(
+            f'`[пример]({missing})`\n\n'
+            f'`:codex-file-citation{{path="{missing}"}}`\n\n'
+            f'```markdown\n[пример][doc]\n\n[doc]: {missing}\n'
+            f':codex-file-citation{{path="{missing}"}}\n```\n\n'
+            f'    [пример]({missing})\n\n'
+            f'[unused]: {missing}\n\n'
+            '[Справка][web]\n\n[web]: https://example.org/help "Справка"\n\n'
+            f':codex-file-citation{{path="{self.artifact}" purpose="source"}}')
+        result, data = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(data['local_links'], [str(self.artifact.resolve())])
+
+    def test_literal_percent_filename_is_not_confused_with_space_filename(self):
+        literal = self.root / 'file%20name.pdf'
+        spaced = self.root / 'file name.pdf'
+        literal.write_text('Символы процента в имени')
+        spaced.write_text('Пробел в имени')
+        self.response.write_text(f'[С пробелом][doc]\n\n[doc]: <{spaced}>')
+        result, data = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(data['local_links'], [str(spaced.resolve())])
 
     def test_directory_links_are_rejected_in_all_supported_forms(self):
         folder = self.artifact.parent

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pypdf>=5,<7", "pymupdf>=1.26,<2"]
+# dependencies = ["pypdf>=5,<7", "pymupdf>=1.26,<2", "markdown-it-py>=3,<5"]
 # ///
 """Учёт выдачи, дословные поручения и проверка файлов перед ответом. Без сети."""
 import argparse
@@ -150,9 +150,23 @@ def restore(state_path, filename, save_current=None):
 
 def local_response_links(text):
     """Разобрать локальные ссылки ответа одинаково для выдачи и её истории."""
+    from markdown_it import MarkdownIt
+
     paths, issues = [], []
-    hrefs = re.findall(r'\]\((<[^>]+>|[^)\n]+)\)', text)
-    hrefs += re.findall(r':codex-file-citation\{[^}\n]*\bpath="([^"]+)"[^}\n]*\}', text)
+    parser = MarkdownIt('commonmark')
+    validate_link = parser.validateLink
+    # Только читаем адреса: file:// должен дойти до нашей явной диагностики.
+    parser.validateLink = lambda url: url.lower().startswith('file:') or validate_link(url)
+    parser.normalizeLink = lambda url: url  # Не смешивать пробел с буквальным %20 в имени файла.
+    hrefs = []
+    for block in parser.parse(text):
+        for token in block.children or ():
+            if token.type in {'link_open', 'image'}:
+                hrefs.append(token.attrGet('href' if token.type == 'link_open' else 'src'))
+            elif token.type == 'text':
+                hrefs += re.findall(r':codex-file-citation\{[^}\n]*\bpath="([^"]+)"[^}\n]*\}', token.content)
+                # Прежняя диагностика ошибочных inline-ссылок с пробелами без <…>.
+                hrefs += re.findall(r'\]\((/[^)\n]*\s[^)\n]*)\)', token.content)
     for href in hrefs:
         target = href.strip().removeprefix('<').removesuffix('>')
         if target.lower().startswith('file:'):
