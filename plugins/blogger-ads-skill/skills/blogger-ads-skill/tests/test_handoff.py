@@ -106,7 +106,9 @@ class HandoffTests(unittest.TestCase):
         return note
 
     def link_issues(self):
-        return handoff.link_report_issues(self.registered(), self.data()['creative']['links'])
+        creative = self.data()['creative']
+        return handoff.link_report_issues(self.registered(), creative['links'],
+                                         expected_link_map=creative.get('link_map'))
 
     def received_links(self, expected, actual):
         from pypdf.annotations import Link
@@ -152,9 +154,10 @@ class HandoffTests(unittest.TestCase):
         handoff.register(self.state, [received_report], 'checked', 'v1', self.at, group='received-evidence')
         self.assertEqual(self.link_issues(), [])
 
-    def test_received_link_report_with_matching_nonempty_map_passes_readonly(self):
+    def test_received_link_report_with_matching_urls_and_resolved_anchors_passes_readonly(self):
         urls = ['https://example.test/?b=2&a=1', 'https://example.test/?a=1&b=2'] * 2
         source, report = self.received_links(urls, urls)
+        self.resolved_links(report)
         self.register_link_report(report)
         before = {path: path.read_bytes() for path in (self.state, source, report)}
         self.assertEqual(self.link_issues(), [])
@@ -183,7 +186,7 @@ class HandoffTests(unittest.TestCase):
     def test_outgoing_docx_and_pdf_each_require_current_compared_link_report(self):
         from pypdf.annotations import Link
         url = 'https://example.test/product'
-        self.import_post('Продукт', [url])
+        self.import_post('Продукт', [{'anchor': 'Продукт', 'url': url}])
         docx, pdf = self.root / 'outgoing.docx', self.root / 'outgoing.pdf'
         with ZipFile(docx, 'w') as archive:
             archive.writestr('word/document.xml',
@@ -220,6 +223,7 @@ class HandoffTests(unittest.TestCase):
         pdf_report = self.link_report(pdf, 'pdf-links.json', [url])
         self.creative_review(pdf_report, [{'page': 1, 'quote': 'Продукт',
                                           'verification': {'method': 'visual', 'basis': 'Учебная страница без текстового слоя.'}}])
+        self.resolved_links(pdf_report)
         handoff.register(self.state, [docx_report, pdf_report], 'checked', 'v1', self.at, group='link-evidence')
         before = {path: path.read_bytes() for path in (self.state, docx, pdf, docx_report, pdf_report)}
         result = handoff.audit(self.state, response)
@@ -2117,6 +2121,144 @@ class CreativeDocumentBindingTests(unittest.TestCase):
         self.creative_review(report, [{'paragraph': 1, 'quote': 'Первый абзац'},
                                       {'paragraph': 2, 'quote': ''}, {'paragraph': 3, 'quote': 'Второй абзац'}])
         self.register_link_report(report)
+        self.assert_audit_readonly(True)
+
+
+class AnchorPairAuditTests(unittest.TestCase):
+    setUp = HandoffTests.setUp
+    file = HandoffTests.file
+    data = HandoffTests.data
+    layout = HandoffTests.layout
+    import_post = HandoffTests.import_post
+    link_report = HandoffTests.link_report
+    creative_review = HandoffTests.creative_review
+    register_link_report = HandoffTests.register_link_report
+    assert_audit_readonly = CreativeDocumentBindingTests.assert_audit_readonly
+
+    def docx_package(self, expected, actual, legacy=False):
+        from xml.sax.saxutils import escape, quoteattr
+        text = 'The agreed post.'
+        self.import_post(text, [row['url'] for row in expected] if legacy else expected)
+        if legacy:
+            data = self.data()
+            data['creative'].pop('link_map')
+            handoff.save(self.state, data)
+        path = self.root / 'creative.docx'
+        paragraphs = [f'<w:p><w:r><w:t>{text}</w:t></w:r></w:p>']
+        relationships = []
+        for index, row in enumerate(actual, 1):
+            paragraphs.append(f'<w:p><w:hyperlink r:id="r{index}"><w:r><w:t xml:space="preserve">'
+                              f'{escape(row["anchor"])}</w:t></w:r></w:hyperlink></w:p>')
+            relationships.append(f'<Relationship Id="r{index}" '
+                'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+                f'Target={quoteattr(row["url"])} TargetMode="External"/>')
+        with ZipFile(path, 'w') as archive:
+            archive.writestr('word/document.xml',
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>'
+                + ''.join(paragraphs) + '</w:body></w:document>')
+            archive.writestr('word/_rels/document.xml.rels',
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                + ''.join(relationships) + '</Relationships>')
+        handoff.register(self.state, [path], 'draft', 'v1', self.at, group='creative', document_kind='creative')
+        self.layout(path)
+        report = self.link_report(path, expected=[row['url'] for row in expected])
+        self.creative_review(report, [{'paragraph': 1, 'quote': text}])
+        self.register_link_report(report)
+        return report
+
+    def pdf_package(self, visible_anchor):
+        import pymupdf
+        text, url, anchor = 'The agreed post.', 'https://example.test/product', 'Product'
+        self.import_post(text, [{'anchor': anchor, 'url': url}])
+        path = self.root / 'creative.pdf'
+        with pymupdf.open() as document:
+            page = document.new_page(width=300, height=300)
+            page.insert_text((20, 30), text)
+            if visible_anchor:
+                page.insert_text((20, 80), anchor)
+            rectangle = pymupdf.Rect(19, 65, 100, 85)
+            page.insert_link({'kind': pymupdf.LINK_URI, 'from': rectangle, 'uri': url})
+            document.save(path)
+        handoff.register(self.state, [path], 'draft', 'v1', self.at, group='creative', document_kind='creative')
+        report = self.link_report(path, expected=[url])
+        self.creative_review(report, [{'page': 1, 'quote': text}])
+        self.register_link_report(report)
+        return report
+
+    def accept_resolution(self, report):
+        note = self.file('anchor-resolution.md', 'Подписи и адреса проверены по исходной карте и самому приложению; различие принято.')
+        handoff.register(self.state, [note], 'reviewed', 'v1', self.at, group='analysis')
+        value = json.loads(report.read_text())
+        value['resolution'] = {'result': 'accepted', 'notes': 'Сопоставлены все пары подпись — адрес в порядке приложения.',
+                               'source': note.name}
+        resolved = report.with_stem(report.stem + '-resolved')
+        resolved.write_text(json.dumps(value))
+        handoff.register(self.state, [resolved], 'checked', 'v2', self.at, group='link-evidence')
+
+    def assert_anchor_resolution_needed(self):
+        result = self.assert_audit_readonly(False)
+        self.assertTrue(any('resolution.result=accepted' in issue for issue in result['issues']), result['issues'])
+
+    def test_exact_ordered_docx_pairs_pass_including_unicode_and_repeated_url(self):
+        pairs = [{'anchor': 'Тариф «Плюс» — 1\u00a0000 ₽', 'url': 'https://example.test/?b=2&a=1'},
+                 {'anchor': 'Условия Café', 'url': 'https://example.test/?b=2&a=1'}]
+        report = self.docx_package(pairs, pairs)
+        self.assertNotIn('resolution', json.loads(report.read_text()))
+        self.assert_audit_readonly(True)
+
+    def test_changed_real_docx_anchor_with_unchanged_url_requires_resolution(self):
+        expected = [{'anchor': 'Условия подписки', 'url': 'https://example.test/product'}]
+        actual = [{'anchor': 'Бесплатный доступ', 'url': expected[0]['url']}]
+        report = self.docx_package(expected, actual)
+        value = json.loads(report.read_text())
+        self.assertTrue(value['comparison']['ordered_lists_equal'])
+        self.assertEqual(value['links'][0]['anchor'], actual[0]['anchor'])
+        self.assert_anchor_resolution_needed()
+        self.accept_resolution(report)
+        self.assert_audit_readonly(True)
+
+    def test_reordered_anchors_on_same_url_are_not_treated_as_equal(self):
+        pairs = [{'anchor': 'Тарифы', 'url': 'https://example.test/product'},
+                 {'anchor': 'Отмена подписки', 'url': 'https://example.test/product'}]
+        self.docx_package(pairs, pairs[::-1])
+        self.assert_anchor_resolution_needed()
+
+    def test_unicode_composition_is_not_silently_normalized(self):
+        expected = [{'anchor': 'Café', 'url': 'https://example.test/product'}]
+        actual = [{'anchor': 'Cafe\u0301', 'url': expected[0]['url']}]
+        self.docx_package(expected, actual)
+        self.assert_anchor_resolution_needed()
+
+    def test_empty_docx_anchor_needs_explicit_resolution(self):
+        expected = [{'anchor': 'Тарифы', 'url': 'https://example.test/product'}]
+        report = self.docx_package(expected, [{'anchor': '', 'url': expected[0]['url']}])
+        self.assertEqual(json.loads(report.read_text())['links'][0]['anchor'], '')
+        self.assert_anchor_resolution_needed()
+        self.accept_resolution(report)
+        self.assert_audit_readonly(True)
+
+    def test_legacy_urls_without_link_map_need_resolution_even_for_visible_url(self):
+        url = 'https://example.test/product'
+        pairs = [{'anchor': url, 'url': url}]
+        report = self.docx_package(pairs, pairs, legacy=True)
+        self.assertNotIn('link_map', self.data()['creative'])
+        self.assert_anchor_resolution_needed()
+        self.accept_resolution(report)
+        self.assert_audit_readonly(True)
+
+    def test_pdf_exact_anchor_hint_still_requires_explicit_resolution(self):
+        report = self.pdf_package(visible_anchor=True)
+        self.assertEqual(json.loads(report.read_text())['links'][0]['anchor_hint'], 'Product')
+        self.assert_anchor_resolution_needed()
+        self.accept_resolution(report)
+        self.assert_audit_readonly(True)
+
+    def test_pdf_missing_anchor_hint_needs_explicit_resolution(self):
+        report = self.pdf_package(visible_anchor=False)
+        self.assertIsNone(json.loads(report.read_text())['links'][0]['anchor_hint'])
+        self.assert_anchor_resolution_needed()
+        self.accept_resolution(report)
         self.assert_audit_readonly(True)
 
 

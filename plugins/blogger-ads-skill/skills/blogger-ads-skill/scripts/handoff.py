@@ -341,8 +341,8 @@ def archive_link_reports(state, base):
             item.update(current=False, archive_reason='Проверенный документ заменён; отчёт относится к его исторической версии')
 
 
-def check_link_comparison(path, documents, expected_urls):
-    """Отчёт закрывает проверку только после сверки адресов и разбора различий."""
+def check_link_comparison(path, documents, expected_urls, expected_link_map=None):
+    """Сверить адреса и якоря; неизвестная карта или якорь требуют явного разбора."""
     from inspect_links import compare_urls, inspect_links
     from pypdf.errors import PdfReadError
     from xml.etree.ElementTree import ParseError
@@ -378,12 +378,22 @@ def check_link_comparison(path, documents, expected_urls):
         if key not in comparison or json.dumps(comparison[key], sort_keys=True) != json.dumps(expected, sort_keys=True):
             raise ValueError(f'{path}: comparison.{key} не совпадает с текущей картой сделки и links[].target; '
                              'пересоздайте отчёт с правильным --expected')
-    if not computed['ordered_lists_equal'] or warnings or any(row['target'] is None for row in rows):
+    expected_pairs = None if expected_link_map is None else deal.creative_links.parse_links(expected_link_map)
+    if expected_pairs is not None and [row['url'] for row in expected_pairs] != expected_urls:
+        raise ValueError(f'{path}: creative.link_map и creative.links расходятся; заново импортируйте исходную карту')
+    # anchor_hint PDF приблизителен даже при буквальном совпадении: нужен просмотр.
+    # У старого состояния без link_map видимые якоря также неизвестны.
+    anchors_need_review = bool(rows or expected_urls) and (
+        extracted['format'] != 'docx' or expected_pairs is None
+        or [{'anchor': row.get('anchor'), 'url': row['target']} for row in rows] != expected_pairs)
+    if (not computed['ordered_lists_equal'] or warnings or any(row['target'] is None for row in rows)
+            or anchors_need_review):
         resolution = value.get('resolution')
         if (not isinstance(resolution, dict) or resolution.get('result') != 'accepted'
                 or any(not isinstance(resolution.get(key), str) or not resolution[key].strip()
                        for key in ('notes', 'source'))):
-            raise ValueError(f'{path}: различия или предупреждения не разобраны; нужны resolution.result=accepted, '
+            raise ValueError(f'{path}: различия или предупреждения не разобраны либо якоря не сверены; '
+                             'нужны resolution.result=accepted, '
                              'notes с объяснением якорей и source с путём зарегистрированной сверки')
         source = resolve(path.parent, resolution['source'])
         record = documents.get(source, {})
@@ -465,7 +475,7 @@ def check_creative_document(path, report_path, documents, state, state_path):
         raise ValueError(f'{path}: полный текст из creative_review не совпадает с текущим импортированным постом')
 
 
-def link_report_issues(documents, expected_urls, state=None, state_path=None):
+def link_report_issues(documents, expected_urls, state=None, state_path=None, *, expected_link_map=None):
     issues, covered = [], set()
     for path, item in documents.items():
         if not item.get('current'):
@@ -478,7 +488,7 @@ def link_report_issues(documents, expected_urls, state=None, state_path=None):
                 if not record.get('current') or record.get('sha256') != digest:
                     raise ValueError(f'{path}: отчёт ссылок относится к незарегистрированной или исторической версии; '
                                      'зарегистрируйте исходник либо сохраните этот отчёт как исторический')
-                check_link_comparison(path, documents, expected_urls)
+                check_link_comparison(path, documents, expected_urls, expected_link_map)
                 if state is not None and record.get('document_kind') == 'creative':
                     check_creative_document(original, path, documents, state, state_path)
                 covered.add((original, digest))
@@ -1015,7 +1025,8 @@ def audit(state_path, response=None, historical=(), record_issue=False):
     for group, versions in current_groups.items():
         if len(versions) > 1:
             issues.append(f'documents: группа {group} содержит несколько актуальных версий; прежние версии должны быть историческими')
-    issues.extend(link_report_issues(documents, state.get('creative', {}).get('links', []), state, state_path))
+    issues.extend(link_report_issues(documents, state.get('creative', {}).get('links', []), state, state_path,
+                                    expected_link_map=state.get('creative', {}).get('link_map')))
     issues.extend(layout_issues(documents))
     contract_history, contract_documents = [], {}
     unchecked_contract_dates = [
