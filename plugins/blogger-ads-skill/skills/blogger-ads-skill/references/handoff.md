@@ -22,6 +22,8 @@ uv run scripts/handoff.py instruction --state "$WORK/deal-state.json" \
 
 До ответа зарегистрируй **каждый** выдаваемый файл: DOCX и PDF-превью, таблицу сверки и лист правок, план и ICS. SHA вычисляет скрипт. Регистрация не означает подписание или принятие условий.
 
+В ответе давай ссылки на конкретные файлы. Ссылки на каталоги отклоняются: по ним нельзя определить состав выдачи и проверить актуальность каждого документа.
+
 ```sh
 uv run scripts/handoff.py register --state "$WORK/deal-state.json" \
   --files "$WORK/documents/contract-v1.docx" "$WORK/documents/contract-v1.pdf" \

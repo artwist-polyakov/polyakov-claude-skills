@@ -170,6 +170,8 @@ def local_response_links(text):
             path = Path(unquote(target)).resolve()
         if not path.exists():
             issues.append(f'Ссылка ведёт на отсутствующий файл: {target}')
+        elif not path.is_file():
+            issues.append(f'Ссылка должна вести на конкретный файл: {target}')
         else:
             paths.append(path)
     return paths, issues

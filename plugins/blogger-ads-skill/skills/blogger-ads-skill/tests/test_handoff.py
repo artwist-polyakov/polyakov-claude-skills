@@ -983,6 +983,24 @@ class HandoffTests(unittest.TestCase):
         response.write_text('[Счёт](file:///definitely-missing-invoice.pdf)')
         self.assertFalse(handoff.audit(self.state, response)['valid'])
 
+    def test_directory_link_cannot_deliver_unregistered_or_superseded_files(self):
+        folder = self.root / 'documents'
+        folder.mkdir()
+        old = folder / 'invoice-v1.pdf'
+        old.write_text('Счёт v1')
+        response = self.file('reply.txt', f'[Документы]({folder})')
+        result = handoff.audit(self.state, response)
+        self.assertFalse(result['valid'], result['issues'])
+        self.assertTrue(any('конкретный файл' in issue for issue in result['issues']))
+        handoff.register(self.state, [old], 'unsigned', 'v1', self.at)
+        new = folder / 'invoice-v2.pdf'
+        new.write_text('Счёт v2')
+        handoff.register(self.state, [new], 'unsigned', 'v2', self.at, [old])
+        self.assertFalse(handoff.audit(self.state, response)['valid'])
+        response.write_text(f'[Счёт]({new})')
+        result = handoff.audit(self.state, response)
+        self.assertTrue(result['valid'], result['issues'])
+
     def test_missing_input_does_not_partially_register_other_files(self):
         doc = self.file('first.docx')
         before = self.state.read_bytes()
@@ -1394,6 +1412,24 @@ class HandoffLinkCheckTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertFalse(data['valid'])
         self.assertTrue(any(wrong in issue for issue in data['issues']))
+
+    def test_directory_links_are_rejected_in_all_supported_forms(self):
+        folder = self.artifact.parent
+        alias = self.root / 'alias'
+        alias.symlink_to(folder, target_is_directory=True)
+        for link in (
+                f'[Документы]({folder})',
+                f'[Документы](<{folder}>)',
+                f'[Документы](<{str(folder).replace(" ", "%20")}>)',
+                f':codex-file-citation{{path="{folder}" purpose="source"}}',
+                f'[Документы]({alias})'):
+            with self.subTest(link=link):
+                self.response.write_text(link)
+                result, data = self.run_check()
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertFalse(data['valid'])
+                self.assertEqual(data['local_links'], [])
+                self.assertTrue(any('конкретный файл' in issue for issue in data['issues']))
 
 
 if __name__ == '__main__':
