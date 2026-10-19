@@ -89,6 +89,81 @@ class DealTests(unittest.TestCase):
             deal.validate(self.state)
         self.assertEqual(self.state, before)
 
+    def test_inactive_stages_remove_future_publication_and_restore_same_events(self):
+        self.state["schedule"]["claims_after_end_hours"] = 24
+        self.state["schedule"]["erid_due_at"] = "2026-11-08T09:00:00+03:00"
+        self.state["schedule"]["deadline_terms"]["erid"] = {
+            "precision": "datetime", "condition": "Передать ERID 8 ноября к 09:00",
+            "source": "Согласованный срок"}
+        active_state = copy.deepcopy(self.state)
+        issued = deal.plan(self.state, self.now)
+        removed_ids = {"creative", "erid", "readiness", "publication", "link", "top_end",
+                       "placement_end", "claims", "closing", "ord-2026-11"}
+        removed = [event for event in issued["events"] if event["id"] in removed_ids]
+        self.assertEqual({event["id"] for event in removed}, removed_ids)
+        removed_uids = sorted(event["uid"] for event in removed)
+        for stage in ("paused", "cancelled", "closed"):
+            with self.subTest(stage=stage):
+                self.state = copy.deepcopy(active_state)
+                self.state["stage"] = stage
+                self.state["schedule"]["revision"] = 2
+                stopped = deal.plan(self.state, self.now, previous=issued)
+                self.assertFalse(removed_ids & {event["id"] for event in stopped["events"]})
+                self.assertEqual(stopped["completed"], [])
+                self.assertEqual(deal.changes(issued, stopped),
+                                 {"create": [], "update": [], "cancel": removed_uids})
+                calendar, markdown = deal.ics(stopped, self.now), deal.markdown(stopped)
+                for event in removed:
+                    self.assertNotIn("UID:" + event["uid"], calendar)
+                    self.assertNotIn(f"- {event['at']}: {event['title']}", markdown)
+                self.assertFalse(any("Предварительный контроль сохранён" in note for note in stopped["warnings"]))
+                self.state["stage"] = active_state["stage"]
+                self.state["schedule"]["revision"] = 3
+                resumed = deal.plan(self.state, self.now, previous=stopped)
+                self.assertEqual(deal.changes(stopped, resumed),
+                                 {"create": removed_uids, "update": [], "cancel": []})
+                self.assertEqual({event["uid"] for event in resumed["events"]},
+                                 {event["uid"] for event in issued["events"]})
+
+    def test_inactive_stages_keep_obligations_and_completed_history(self):
+        schedule = self.state["schedule"]
+        schedule["claims_after_end_hours"] = 24
+        schedule["payment_due_at"] = "2026-11-08T09:00:00+03:00"
+        schedule["deadline_terms"]["payment"] = {
+            "precision": "datetime", "condition": "Проверить расчёты 8 ноября к 09:00",
+            "source": "Согласованный срок расчётов"}
+        schedule["fee_obligation"] = self.fee_settings()
+        self.state["checks"]["edo_exchange"] = {
+            "status": "pending", "recovery_expected_on": "2026-11-06",
+            "recovery_source": "Сообщение оператора", "recovery_check_time": "09:00"}
+        proof = {"status": "confirmed", "source": "Проверка проведена до отмены",
+                 "checked_at": "2026-11-01T11:00:00+03:00"}
+        self.state["completed_events"]["readiness"] = proof
+        saved = copy.deepcopy(self.state)
+        following = {"link", "top_end", "placement_end", "claims", "closing", "ord-2026-11"}
+        retained = {"payment", "edo-recovery", "fee-2026-Q4-assessment", "fee-2026-Q4-review", "fee-2026-Q4-payment"}
+        retained.update("report-" + item["id"] for item in schedule["reporting_deadlines"])
+        for stage in ("paused", "cancelled", "closed"):
+            for actual in (None, "2026-11-09T09:15:00+03:00"):
+                with self.subTest(stage=stage, actual=actual):
+                    self.state = copy.deepcopy(saved)
+                    self.state["stage"] = stage
+                    if actual:
+                        self.state["publication"].update(actual_at=actual, url="https://t.me/example/123",
+                                                         evidence=["Скриншот фактического размещения"])
+                    now = deal.stamp("2026-11-10T12:00:00+03:00")
+                    result = deal.plan(self.state, now)
+                    active = {event["id"]: event for event in result["events"]}
+                    self.assertTrue(retained <= active.keys())
+                    self.assertEqual(following & active.keys(), following if actual else set())
+                    self.assertFalse({"creative", "erid", "readiness", "publication"} & active.keys())
+                    self.assertEqual([event["id"] for event in result["completed"]], ["readiness"])
+                    self.assertEqual(result["completed"][0]["completion_source"], proof["source"])
+                    if actual:
+                        self.assertEqual(active["placement_end"]["at"], "2026-11-11T09:15:00+03:00")
+                        self.assertIn("UID:" + active["ord-2026-11"]["uid"], deal.ics(result, now))
+                        self.assertIn(active["closing"]["title"], deal.markdown(result))
+
     def test_check_cli_rejects_stage_typo_in_otherwise_ready_deal_without_writing(self):
         self.confirm_readiness()
         self.assertTrue(deal.check(self.state, self.now)["ready"])

@@ -253,6 +253,67 @@ class LinkInspectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "resolution.result=accepted"):
             handoff.check_link_comparison(report, {}, expected)
 
+    def test_docx_vml_href_requires_resolution_in_every_word_part(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import handoff
+
+        url = "https://example.test/product"
+        for tag, attribute in (("shape", "href"), ("image", "o:href"), ("imagedata", "href")):
+            for part in ("word/document.xml", "word/header1.xml", "word/drawings/vmlDrawing1.vml"):
+                for with_links in (False, True):
+                    with self.subTest(tag=tag, attribute=attribute, part=part, with_links=with_links):
+                        path = self.base / "vml.docx"
+                        ordinary = ('<w:p><w:hyperlink r:id="r1"><w:r><w:t>Продукт</w:t></w:r>'
+                                    '</w:hyperlink></w:p>') if with_links else ''
+                        vml = (f'<w:p><w:r><w:pict><v:{tag} {attribute}="https://hidden.example.test/"/>'
+                               '</w:pict></w:r></w:p>')
+                        start = ('<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+                                 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+                                 'xmlns:v="urn:schemas-microsoft-com:vml" '
+                                 'xmlns:o="urn:schemas-microsoft-com:office:office"><w:body>')
+                        end = '</w:body></w:document>'
+                        with ZipFile(path, 'w') as archive:
+                            archive.writestr('word/document.xml', start + ordinary
+                                             + (vml if part == 'word/document.xml' else '') + end)
+                            if part != 'word/document.xml':
+                                archive.writestr(part, start + vml + end)
+                            archive.writestr('word/_rels/document.xml.rels',
+                                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                                '<Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+                                f'Target="{url}" TargetMode="External"/></Relationships>')
+                        expected = [url] if with_links else []
+                        link_map = [{'anchor': 'Продукт', 'url': url}] if with_links else []
+                        before = path.read_bytes()
+                        result = links.inspect_links(path, expected)
+                        self.assertTrue(result['comparison']['ordered_lists_equal'])
+                        self.assertEqual([row['target'] for row in result['links']], expected)
+                        self.assertEqual(len(result['warnings']), 1)
+                        self.assertIn(part, result['warnings'][0])
+                        self.assertIn('VML (href)', result['warnings'][0])
+                        report = self.base / 'vml-links.json'
+                        report.write_text(json.dumps(result))
+                        with self.assertRaisesRegex(ValueError, 'resolution.result=accepted'):
+                            handoff.check_link_comparison(report, {}, expected, link_map)
+                        review = self.base / 'vml-review.md'
+                        review.write_text('Ссылка на фигуре отдельно просмотрена, её адрес и назначение согласованы.')
+                        result['resolution'] = {'result': 'accepted', 'notes': 'VML-ссылка проверена на фигуре.',
+                                                'source': str(review)}
+                        report.write_text(json.dumps(result))
+                        handoff.check_link_comparison(report, {
+                            review.resolve(): {'group': 'review', 'current': True, 'sha256': handoff.sha(review)}},
+                            expected, link_map)
+                        self.assertEqual(path.read_bytes(), before)
+
+    def test_docx_vml_without_href_does_not_warn(self):
+        path = self.docx('<w:p><w:r><w:pict xmlns:v="urn:schemas-microsoft-com:vml">'
+                         '<v:shape><v:imagedata src="image.png"/></v:shape>'
+                         '</w:pict></w:r></w:p>')
+        before = path.read_bytes()
+        result = links.inspect_links(path)
+        self.assertEqual(len(result['links']), 3)
+        self.assertEqual(result['warnings'], [])
+        self.assertEqual(path.read_bytes(), before)
+
     def test_docx_textbox_links_count_once_in_xml_order_with_nearest_paragraph(self):
         path = self.base / "textbox.docx"
         with ZipFile(path, "w") as archive:
@@ -516,6 +577,116 @@ class LinkInspectionTests(unittest.TestCase):
         report.write_text(json.dumps(result), encoding="utf-8")
         handoff.check_link_comparison(report, {}, [])
         self.assertEqual(path.read_bytes(), before)
+
+
+class PdfCatalogWarningTests(unittest.TestCase):
+    setUp = LinkInspectionTests.setUp
+    pdf = LinkInspectionTests.pdf
+
+    def catalog_pdf(self, kind, with_links):
+        from pypdf.generic import NumberObject
+        writer = PdfWriter()
+        if with_links:
+            path = self.pdf()
+            writer.clone_document_from_reader(PdfReader(path))
+            expected = ["https://example.test/?a=1&b=2"] * 2 + ["https://example.test/?b=2&a=1"]
+        else:
+            path = self.base / "empty.pdf"
+            writer.add_blank_page(300, 300)
+            expected = []
+        if kind == "/Outlines":
+            outline = DictionaryObject({NameObject("/Type"): NameObject("/Outlines")})
+            outline_ref = writer._add_object(outline)
+            item = DictionaryObject({NameObject("/Title"): TextStringObject("External bookmark"),
+                NameObject("/Parent"): outline_ref,
+                NameObject("/A"): DictionaryObject({NameObject("/S"): NameObject("/URI"),
+                    NameObject("/URI"): TextStringObject("https://hidden.example.test/bookmark")})})
+            item_ref = writer._add_object(item)
+            outline.update({NameObject("/First"): item_ref, NameObject("/Last"): item_ref,
+                            NameObject("/Count"): NumberObject(1)})
+            writer.root_object[NameObject("/Outlines")] = outline_ref
+        elif kind == "/AcroForm":
+            action = DictionaryObject({NameObject("/S"): NameObject("/JavaScript"),
+                NameObject("/JS"): TextStringObject("app.launchURL('https://hidden.example.test/form')")})
+            field = DictionaryObject({NameObject("/FT"): NameObject("/Tx"),
+                NameObject("/T"): TextStringObject("Parent field"),
+                NameObject("/AA"): DictionaryObject({NameObject("/K"): writer._add_object(action)})})
+            field_ref = writer._add_object(field)
+            widget = DictionaryObject({NameObject("/Type"): NameObject("/Annot"),
+                NameObject("/Subtype"): NameObject("/Widget"), NameObject("/Parent"): field_ref,
+                NameObject("/Rect"): ArrayObject([FloatObject(n) for n in (50, 50, 100, 70)])})
+            widget_ref = writer._add_object(widget)
+            field[NameObject("/Kids")] = ArrayObject([widget_ref])
+            writer.pages[0].setdefault(NameObject("/Annots"), ArrayObject()).append(widget_ref)
+            form = DictionaryObject({NameObject("/Fields"): ArrayObject([field_ref])})
+            writer.root_object[NameObject("/AcroForm")] = writer._add_object(form)
+        with path.open("wb") as output:
+            writer.write(output)
+        return path, expected
+
+    def assert_catalog_review_required(self, kind):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import handoff
+        for with_links in (False, True):
+            with self.subTest(with_links=with_links):
+                path, expected = self.catalog_pdf(kind, with_links)
+                original = path.read_bytes()
+                catalog = PdfReader(path).trailer["/Root"]
+                if kind == "/Outlines":
+                    self.assertEqual(catalog[kind]["/First"]["/A"]["/URI"], "https://hidden.example.test/bookmark")
+                else:
+                    field = catalog[kind]["/Fields"][0].get_object()
+                    widget = field["/Kids"][0].get_object()
+                    self.assertNotIn("/AA", widget)
+                    self.assertEqual(widget["/Parent"]["/AA"]["/K"]["/S"], "/JavaScript")
+                result = links.inspect_links(path, expected)
+                self.assertEqual([row["target"] for row in result["links"]], expected)
+                self.assertTrue(result["comparison"]["ordered_lists_equal"])
+                self.assertEqual(len(result["warnings"]), 1)
+                self.assertIn(kind, result["warnings"][0])
+                self.assertIn("resolution", result["warnings"][0])
+                report = self.base / "catalog-links.json"
+                report.write_text(json.dumps(result), encoding="utf-8")
+                expected_map = [{"anchor": url, "url": url} for url in expected]
+                with self.assertRaisesRegex(ValueError, "resolution.result=accepted"):
+                    handoff.check_link_comparison(report, {}, expected, expected_map)
+                self.assertEqual(path.read_bytes(), original)
+                review = self.base / "catalog-review.md"
+                review.write_text("Дополнительные переходы проверены по закладкам и действиям полей формы.", encoding="utf-8")
+                result["resolution"] = {"result": "accepted", "notes": "Переходы и подписи проверены отдельно.",
+                                        "source": str(review)}
+                report.write_text(json.dumps(result), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "resolution.source"):
+                    handoff.check_link_comparison(report, {}, expected, expected_map)
+                documents = {review.resolve(): {"group": "analysis", "current": True,
+                                                "sha256": handoff.sha(review)}}
+                before = {item: item.read_bytes() for item in (path, report, review)}
+                handoff.check_link_comparison(report, documents, expected, expected_map)
+                self.assertEqual(before, {item: item.read_bytes() for item in before})
+                self.assertEqual(path.read_bytes(), original)
+
+    def test_uri_outline_requires_resolution_with_empty_or_matching_regular_urls(self):
+        self.assert_catalog_review_required("/Outlines")
+
+    def test_parent_field_action_requires_resolution_with_empty_or_matching_regular_urls(self):
+        self.assert_catalog_review_required("/AcroForm")
+
+    def test_plain_pdf_does_not_warn_about_absent_catalog_features(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import handoff
+        for with_links in (False, True):
+            with self.subTest(with_links=with_links):
+                path, expected = self.catalog_pdf(None, with_links)
+                original = path.read_bytes()
+                result = links.inspect_links(path, expected)
+                self.assertEqual(result["warnings"], [])
+                self.assertEqual([row["target"] for row in result["links"]], expected)
+                self.assertTrue(result["comparison"]["ordered_lists_equal"])
+                if not with_links:
+                    report = self.base / "plain-links.json"
+                    report.write_text(json.dumps(result), encoding="utf-8")
+                    handoff.check_link_comparison(report, {}, [], [])
+                self.assertEqual(path.read_bytes(), original)
 
 
 if __name__ == "__main__":

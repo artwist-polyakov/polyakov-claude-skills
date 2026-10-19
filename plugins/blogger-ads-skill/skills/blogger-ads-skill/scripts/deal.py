@@ -827,6 +827,10 @@ def _plan(state, now=None, state_path=None, strict_deadlines=False):
     end = hours(base, duration)
     events = []
     completed = []
+    inactive = state["stage"] in ("paused", "cancelled", "closed")
+    omitted = {"creative", "erid", "readiness", "publication"} if inactive else set()
+    if inactive and not actual:
+        omitted.update(("link", "top_end", "placement_end", "claims", "closing"))
 
     def add(key, title, at, note, **metadata):
         linked = set(metadata.get("checks", EVENT_CHECKS.get(key, [])))
@@ -861,7 +865,7 @@ def _plan(state, now=None, state_path=None, strict_deadlines=False):
         if proof:
             event.update(overdue=False, completed_at=proof["checked_at"], completion_source=proof["source"])
             completed.append(event)
-        else:
+        elif key not in omitted and not (inactive and not actual and key.startswith("ord-")):
             events.append(event)
 
     creative_at = business_before(publication, text_days, holidays, working)
@@ -966,9 +970,9 @@ def _plan(state, now=None, state_path=None, strict_deadlines=False):
         warnings.append("Срок отправки ссылки заказчику после публикации не установлен. Событие link не создано: уточните условие или добавьте отдельную организационную проверку.")
     if closing is None:
         warnings.append("Срок выдачи закрывающих документов (УПД) после окончания размещения не установлен. Событие closing не создано: уточните условие и начало отсчёта; организационную проверку добавьте отдельно, не выдавая её за договорный срок.")
-    if monthly["applicability"] == "unknown":
+    if (actual or not inactive) and monthly["applicability"] == "unknown":
         warnings.append("Применимость обычного месячного срока ОРД не установлена. Предварительный контроль сохранён по месяцам размещения; уточните применимость и ответственного.")
-    if monthly["applicability"] != "not_applicable" and not monthly.get("distribution_end_at"):
+    if (actual or not inactive) and monthly["applicability"] != "not_applicable" and not monthly.get("distribution_end_at"):
         warnings.append("Месяцы ОРД пока рассчитаны по договорной длительности. Фактическое удаление/окончание распространения не подтверждено; если пост сохраняется, проверьте период дальнейшей отчётности и обновите его границу с источником.")
     if fee["applicability"] == "unknown":
         warnings.append("Применимость отчислений и законный плательщик не установлены. " +
@@ -984,7 +988,7 @@ def _plan(state, now=None, state_path=None, strict_deadlines=False):
         warnings.append("Точные договорные сроки оплаты и/или передачи ERID не заданы; общая проверка готовности их не заменяет.")
     if not schedule.get("work_calendar_verified"):
         warnings.append("Рабочие дни рассчитаны по субботам/воскресеньям и введённым исключениям. Производственный календарь не подтверждён.")
-    if not actual:
+    if not actual and not inactive:
         warnings.append("Сроки после размещения предварительные: после публикации внесите actual_at и пересчитайте план.")
     return {"deal_id": state["deal_id"], "generated_at": now.isoformat(), "revision": revision,
             "events": sorted(events, key=lambda x: stamp(x["at"])),

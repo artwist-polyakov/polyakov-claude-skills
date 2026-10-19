@@ -26,6 +26,7 @@ _LINK_SPEC.loader.exec_module(creative_links)
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+V = "{urn:schemas-microsoft-com:vml}"
 R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 COMPARISON_NOTE = (
@@ -46,7 +47,7 @@ def pdf_links(raw):
         raise ValueError("PDF защищён паролем: адреса не прочитаны")
     links, warnings = [], []
     catalog = reader.root_object
-    for key in ("/OpenAction", "/AA"):
+    for key in ("/OpenAction", "/AA", "/Outlines", "/AcroForm"):
         if key in catalog:
             warnings.append(f"Каталог PDF содержит {key}; действия не разобраны. "
                             "Сверьте их отдельно и сохраните разбор в resolution")
@@ -205,7 +206,7 @@ def docx_links(raw):
         if "word/document.xml" not in names:
             raise ValueError("В DOCX отсутствует word/document.xml")
         # Тело первым; остальные части (например, колонтитулы) — по имени.
-        parts = sorted(name for name in names if name.startswith("word/") and name.endswith(".xml"))
+        parts = sorted(name for name in names if name.startswith("word/") and name.endswith((".xml", ".vml")))
         parts.remove("word/document.xml")
         for part in ["word/document.xml"] + parts:
             root = ET.fromstring(archive.read(part))
@@ -214,6 +215,10 @@ def docx_links(raw):
                                 "Сверьте их вручную и сохраните разбор в resolution")
             if any(node.tag in (A + "hlinkClick", A + "hlinkHover") for node in root.iter()):
                 warnings.append(f"{part}: обнаружены ссылки DrawingML (hlinkClick/hlinkHover); их адреса и объекты не извлечены. "
+                                "Сверьте их вручную и сохраните разбор в resolution")
+            if any(node.tag.startswith(V) and any(key.rsplit("}", 1)[-1] == "href" for key in node.attrib)
+                   for node in root.iter()):
+                warnings.append(f"{part}: обнаружены ссылки VML (href); их адреса и объекты не извлечены. "
                                 "Сверьте их вручную и сохраните разбор в resolution")
             rel_path = str(Path(part).parent / "_rels" / (Path(part).name + ".rels"))
             relationships = {}
@@ -264,8 +269,8 @@ def inspect_links(path, expected=None):
     result = {"kind": "link_inspection", "source": {"path": str(path), "sha256": hashlib.sha256(raw).hexdigest()},
               "format": kind, "links": links, "warnings": warnings,
               "limitations": [COMPARISON_NOTE,
-                  "PDF: извлечены /Link с действием /URI; прочие действия, /A у других типов аннотаций, цепочки /Next, /AA аннотаций и страниц, /OpenAction, /AA и /Names/JavaScript каталога вызывают предупреждение. anchor_hint — текст из области той же аннотации, он может захватить соседнюю строку или отсутствовать у скана; видимый якорь сверяйте по странице и прямоугольнику. Это не OCR и не автоматическое подтверждение соответствия якоря адресу.",
-                  "DOCX: внешние адреса w:hyperlink учтены только при Type гиперссылки и TargetMode=External; внутренние w:anchor показаны отдельно. Обычный текст URL не извлекается; поля HYPERLINK и ссылки DrawingML (hlinkClick/hlinkHover) вызывают предупреждение и требуют отдельной сверки адресов и связанных текста или объектов. Номера абзацев относятся к каждой XML-части отдельно.",
+                  "PDF: извлечены /Link с действием /URI; прочие действия, /A у других типов аннотаций, цепочки /Next, /AA аннотаций и страниц, /OpenAction, /AA, /Outlines, /AcroForm и /Names/JavaScript каталога вызывают предупреждение. Закладки и поля форм не разбираются. anchor_hint — текст из области той же аннотации, он может захватить соседнюю строку или отсутствовать у скана; видимый якорь сверяйте по странице и прямоугольнику. Это не OCR и не автоматическое подтверждение соответствия якоря адресу.",
+                  "DOCX: внешние адреса w:hyperlink учтены только при Type гиперссылки и TargetMode=External; внутренние w:anchor показаны отдельно. Обычный текст URL не извлекается; поля HYPERLINK, ссылки DrawingML (hlinkClick/hlinkHover) и VML (href) вызывают предупреждение и требуют отдельной сверки адресов и связанных текста или объектов. Номера абзацев относятся к каждой XML-части отдельно.",
                   "Адреса не открывались. Для DOCX порядок между XML-частями не определяет порядок страниц."]}
     if expected is not None:
         actual = [row["target"] for row in links if row["target"] is not None]

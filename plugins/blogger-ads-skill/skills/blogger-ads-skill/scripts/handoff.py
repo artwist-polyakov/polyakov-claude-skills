@@ -608,6 +608,7 @@ def register(state_path, files, status, version, at, supersedes=(), group='docum
         document_classification(document_kind, kind_reason)
     documents = state.setdefault('documents', [])
     by_path = {resolve(base, item['path']): item for item in documents}
+    received_digests = {item['sha256'] for item in documents if received_status(item.get('status'))}
     exported_from = None
     if source_docx is not None:
         source_docx = Path(source_docx).resolve()
@@ -631,8 +632,8 @@ def register(state_path, files, status, version, at, supersedes=(), group='docum
         previous = by_path.get(path)
         if previous and previous.get('sha256') != digest:
             raise ValueError(f'Ранее зарегистрированный файл изменён: {path}. Сохраните новую версию отдельно')
-        if previous and received_status(previous.get('status')) and not received_status(status):
-            raise ValueError(f'Полученный оригинал {path}: сохраните статус received или received_*. '
+        if digest in received_digests and not received_status(status):
+            raise ValueError(f'Полученный оригинал или его точная копия {path}: сохраните статус received или received_*. '
                              'Подписи и согласование учитываются в checks, а не заменой статуса получения')
         if previous and fact_bound(previous) and previous.get('basis_sha256') != fact_basis(state):
             raise ValueError(f'Основание прежнего письма или заметки изменилось: {path}. Подготовьте актуальную редакцию отдельным файлом; повторная регистрация не обновляет его содержание')

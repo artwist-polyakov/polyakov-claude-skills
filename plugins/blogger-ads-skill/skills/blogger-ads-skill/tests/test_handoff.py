@@ -143,7 +143,7 @@ class HandoffTests(unittest.TestCase):
 
     def test_received_creative_requires_its_own_link_inspection(self):
         received = self.received_pdf('received-creative.pdf')
-        own = self.received_pdf('own-creative.pdf')
+        own = self.received_pdf('own-creative.pdf', 'Our revised creative.')
         handoff.register(self.state, [received], 'received', 'v1', self.at,
                          group='received', document_kind='creative')
         handoff.register(self.state, [own], 'draft', 'v1', self.at, group='creative', document_kind='creative')
@@ -614,17 +614,16 @@ class HandoffTests(unittest.TestCase):
 
     def test_inactive_status_does_not_skip_existing_current_plan_sequences(self):
         self.scheduled_state()
-        files = self.plan_package()
-        self.rewrite_plan(files, lambda data: data['events'][0].update(sequence=99))
-        self.register_plan(files)
+        initial = self.data()
         for stage in ('closed', 'paused', 'cancelled'):
             with self.subTest(stage=stage):
-                data = self.data()
-                data['stage'] = stage
-                handoff.save(self.state, data)
+                handoff.save(self.state, dict(initial, stage=stage))
+                files = self.plan_package('plan-' + stage)
+                self.rewrite_plan(files, lambda data: data['events'][0].update(sequence=99))
+                self.register_plan(files)
                 result = handoff.audit(self.state)
                 self.assertFalse(result['valid'])
-                self.assertTrue(any('SEQUENCE' in item for item in result['issues']))
+                self.assertTrue(any('SEQUENCE' in item for item in result['issues']), result['issues'])
 
     def test_record_issue_is_idempotent_and_same_plan_can_have_another_reply(self):
         self.scheduled_state()
@@ -926,7 +925,7 @@ class HandoffTests(unittest.TestCase):
     def test_bound_amendment_and_explicit_pdf_source_pass_without_changing_files(self):
         _, folder, _ = self.review_package(with_changes=True)
         docx, sidecar = self.amendment_package(folder)
-        pdf = self.received_pdf('export-with-another-name.pdf')
+        pdf = self.received_pdf('export-with-another-name.pdf', 'Our amendment with agreed corrections.')
         handoff.register(self.state, [pdf], 'draft_for_review', 'v1', self.at, group='amendment',
                          document_kind='amendment', source_docx=docx)
         paths = [self.state, docx, sidecar, pdf, *folder.iterdir()]
@@ -940,7 +939,7 @@ class HandoffTests(unittest.TestCase):
     def test_pdf_amendment_requires_explicit_current_source_and_matching_hash(self):
         _, folder, _ = self.review_package(with_changes=True)
         docx, _ = self.amendment_package(folder)
-        pdf = self.received_pdf('export.pdf')
+        pdf = self.received_pdf('export.pdf', 'Our amendment with agreed corrections.')
         handoff.register(self.state, [pdf], 'draft_for_review', 'v1', self.at, group='amendment', document_kind='amendment')
         self.assertTrue(any('--source-docx' in issue for issue in handoff.audit(self.state)['issues']))
         handoff.register(self.state, [pdf], 'draft_for_review', 'v1', self.at, group='amendment',
@@ -989,10 +988,12 @@ class HandoffTests(unittest.TestCase):
                 self.assertEqual(entry['delivered_at'], self.at)
 
     def test_bound_amendment_keeps_review_check_after_received_source_is_archived(self):
+        state = self.data()
+        state['stage'] = 'closed'
+        handoff.save(self.state, state)
         source, folder, _ = self.review_package(with_changes=True)
         self.amendment_package(folder)
         state = self.data()
-        state['stage'] = 'closed'
         next(item for item in state['documents'] if item['path'] == source.name)['current'] = False
         handoff.save(self.state, state)
         result = handoff.audit(self.state)
@@ -1000,7 +1001,9 @@ class HandoffTests(unittest.TestCase):
         state = self.data()
         state['responsibilities']['contract_author'] = 'Другая сторона'
         handoff.save(self.state, state)
-        self.assertFalse(handoff.audit(self.state)['valid'])
+        result = handoff.audit(self.state)
+        self.assertFalse(result['valid'])
+        self.assertTrue(any('/responsibilities/contract_author' in issue for issue in result['issues']), result['issues'])
 
     def test_render_amendment_cli_uses_checked_review(self):
         _, folder, _ = self.review_package(with_changes=True)
@@ -1887,6 +1890,50 @@ class ReceivedDocumentStatusTests(unittest.TestCase):
                     self.assertEqual(state['documents'][0]['status'], previous_status)
                     self.assert_review_required()
                     self.assertEqual(self.snapshot(), before)
+
+    def test_exact_received_copy_cannot_bypass_review_or_partially_register_files(self):
+        copied = self.root / 'working-copy.pdf'
+        copied.write_bytes(self.original.read_bytes())
+        additional = self.received_pdf('new.pdf', 'A different document in the same batch.')
+        self.assert_review_required()
+        for status in ('draft', 'reviewed', 'signed'):
+            with self.subTest(status=status):
+                before = self.snapshot()
+                with self.assertRaisesRegex(ValueError, 'точная копия.*сохраните статус received'):
+                    handoff.register(self.state, [additional, copied], status, 'v2', self.later,
+                                     group='source', document_kind='contract')
+                self.assertEqual(self.snapshot(), before)
+                self.assert_review_required()
+                self.assertEqual(self.snapshot(), before)
+        handoff.register(self.state, [copied], 'received', 'v2', self.later,
+                         group='source', document_kind='contract')
+        state = handoff.deal.read_json(self.state)
+        by_path = {item['path']: item for item in state['documents']}
+        self.assertFalse(by_path[self.original.name]['current'])
+        self.assertTrue(by_path[copied.name]['current'])
+        self.assertEqual(by_path[copied.name]['status'], 'received')
+        self.assert_review_required()
+
+    def test_changed_own_revision_is_allowed_but_historical_received_copy_keeps_origin(self):
+        revised = self.received_pdf('own-revision.pdf', 'Our revised advertising contract.')
+        handoff.register(self.state, [revised], 'draft', 'v2', self.later,
+                         group='source', document_kind='contract')
+        state = handoff.deal.read_json(self.state)
+        by_path = {item['path']: item for item in state['documents']}
+        self.assertFalse(by_path[self.original.name]['current'])
+        self.assertEqual(by_path[revised.name]['status'], 'draft')
+        self.assertNotEqual(by_path[self.original.name]['sha256'], by_path[revised.name]['sha256'])
+        self.assertTrue(handoff.audit(self.state)['valid'])
+        copied = self.root / 'historical-copy.pdf'
+        copied.write_bytes(self.original.read_bytes())
+        before = self.snapshot()
+        with self.assertRaisesRegex(ValueError, 'точная копия.*сохраните статус received'):
+            handoff.register(self.state, [copied], 'draft', 'v3', self.later,
+                             group='source', document_kind='contract')
+        self.assertEqual(self.snapshot(), before)
+        handoff.register(self.state, [copied], 'received_customer_signed', 'v3', self.later,
+                         group='source', document_kind='contract')
+        self.assert_review_required()
 
     def test_received_reregistration_and_status_refinement_keep_origin_and_review(self):
         original_bytes = self.original.read_bytes()
