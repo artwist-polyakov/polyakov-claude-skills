@@ -60,6 +60,19 @@ def stamp(value):
     return result
 
 
+def local_datetime(day, clock, zone, field):
+    """Местные дата и час должны задавать единственный существующий момент."""
+    result = datetime.fromisoformat(f"{day}T{clock}").replace(tzinfo=zone)
+    roundtrip = result.astimezone(timezone.utc).astimezone(zone)
+    if roundtrip.replace(tzinfo=None) != result.replace(tzinfo=None):
+        raise ValueError(f"{field}: {result:%Y-%m-%d %H:%M} не существует в {zone.key} "
+                         "из-за перевода часов; выберите другое время напоминания")
+    if result.utcoffset() != result.replace(fold=1).utcoffset():
+        raise ValueError(f"{field}: {result:%Y-%m-%d %H:%M} встречается дважды в {zone.key} "
+                         "из-за перевода часов; выберите другое время напоминания")
+    return result
+
+
 def scene_clock_entries(state):
     clock = state.get("clock")
     if clock is None:
@@ -371,7 +384,7 @@ def ord_events(reporting, start, planned_end, zone):
             note += "Применимость месячного срока требует проверки; дата пока служит предварительным контролем. "
         note += "После исполнения договора и при сохранении поста отдельно проверить продолжительность отчётности и оговорку п. 10 об авторских видеороликах; не считать дату УПД концом распространения."
         result.append({"id": f"ord-{month}", "title": ("Предварительный контроль: " if preliminary else "") + f"Проверить передачу сведений в ОРД за {month}",
-                       "at": datetime.fromisoformat(f"{deadline.isoformat()}T{reporting['reminder_time']}").replace(tzinfo=zone),
+                       "at": local_datetime(deadline, reporting["reminder_time"], zone, "ord_reporting.reminder_time"),
                        "note": note, "month": month, "control_date": deadline.isoformat(),
                        "legal_date": None if preliminary else deadline.isoformat(), "legal_source": ORD_RULE_SOURCE,
                        "applicability": reporting["applicability"], "responsible": reporting.get("responsible"),
@@ -507,7 +520,7 @@ def fee_events(fee, zone, payment_due_on=None):
             if step == "assessment":
                 note += " Если расчёт ещё не появился утром 15-го, проверить повторно после его формирования; отсутствие утром не означает просрочку РКН."
             result.append({"id": f"fee-{quarter}-{step}", "title": f"{title} за {quarter}",
-                           "at": datetime.fromisoformat(f"{deadline.isoformat()}T{fee['reminder_time']}").replace(tzinfo=zone),
+                           "at": local_datetime(deadline, fee["reminder_time"], zone, "fee_obligation.reminder_time"),
                            "note": note, "quarter": quarter, "legal_date": deadline.isoformat(),
                            "legal_source": FEE_RULE_SOURCE, "obligation_source": fee["source"],
                            "applicability": fee["applicability"], "payer": fee.get("payer"), **metadata})
@@ -841,7 +854,10 @@ def _plan(state, now=None, state_path=None, strict_deadlines=False):
         else:
             events.append(event)
 
-    add("creative", "Согласовать текст, ссылки и материалы", business_before(publication, text_days, holidays, working),
+    creative_at = business_before(publication, text_days, holidays, working)
+    if text_days:
+        creative_at = local_datetime(creative_at.date(), creative_at.time(), zone, "text_before_business_days")
+    add("creative", "Согласовать текст, ссылки и материалы", creative_at,
         "Организационное напоминание; время публикации не задаёт договорный час передачи текста. Сверить окончательную версию до регистрации в ОРД; сохранить подтверждение сторон.")
     for key, title in (("payment", "Проверить выполнение условий оплаты"), ("erid", "Получить и проверить маркировку")):
         if schedule.get(key + "_due_at"):
@@ -916,14 +932,8 @@ def _plan(state, now=None, state_path=None, strict_deadlines=False):
     recovery = state.get("checks", {}).get("edo_exchange", {})
     recovery_check_on = recovery.get("recovery_check_on") or recovery.get("recovery_expected_on")
     if recovery_check_on is not None:
-        recovery_at = datetime.fromisoformat(recovery_check_on + "T" + recovery["recovery_check_time"]).replace(tzinfo=zone)
-        local_roundtrip = recovery_at.astimezone(timezone.utc).astimezone(zone)
-        if local_roundtrip.replace(tzinfo=None) != recovery_at.replace(tzinfo=None):
-            raise ValueError(f"edo_exchange.recovery_check_time: {recovery_at:%Y-%m-%d %H:%M} не существует в {zone.key} "
-                             "из-за перевода часов; выберите другое время проверки")
-        if recovery_at.utcoffset() != recovery_at.replace(fold=1).utcoffset():
-            raise ValueError(f"edo_exchange.recovery_check_time: {recovery_at:%Y-%m-%d %H:%M} встречается дважды в {zone.key} "
-                             "из-за перевода часов; выберите другое время проверки")
+        recovery_at = local_datetime(recovery_check_on, recovery["recovery_check_time"], zone,
+                                     "edo_exchange.recovery_check_time")
         reported = (f"Дата из сообщения об ЭДО: {recovery['recovery_expected_on']}. "
                     if recovery.get("recovery_expected_on") else "Дата восстановления ЭДО в сообщении не указана. ")
         add("edo-recovery", "Проверить доступность ЭДО", recovery_at,

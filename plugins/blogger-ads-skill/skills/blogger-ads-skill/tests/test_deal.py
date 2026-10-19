@@ -1833,6 +1833,76 @@ class DealTests(unittest.TestCase):
         events = {e["id"]: e for e in deal.plan(state, self.now)["events"]}
         self.assertEqual(events["placement_end"]["at"], "2026-10-26T08:00:00+01:00")
 
+    def test_ord_and_fee_reminders_require_unique_local_time(self):
+        for field, zone, publication, quarter, event_id, invalid, reason, valid, expected, utc in (
+                ("ord_reporting", "Europe/Berlin", "2025-02-10T09:00:00+01:00", None,
+                 "ord-2025-02", "02:30", "не существует", "03:30", "2025-03-30T03:30:00+02:00", "20250330T013000Z"),
+                ("ord_reporting", "Europe/Berlin", "2033-09-10T09:00:00+02:00", None,
+                 "ord-2033-09", "02:30", "встречается дважды", "03:30", "2033-10-30T03:30:00+01:00", "20331030T023000Z"),
+                ("fee_obligation", "America/Santiago", "2026-11-09T09:00:00-03:00", "2027-Q2",
+                 "fee-2027-Q2-payment", "00:30", "не существует", "01:30", "2027-09-05T01:30:00-03:00", "20270905T043000Z"),
+                ("fee_obligation", "Africa/Casablanca", "2026-01-09T09:00:00+01:00", "2025-Q4",
+                 "fee-2025-Q4-assessment", "02:30", "встречается дважды", "03:30", "2026-02-15T03:30:00+00:00", "20260215T033000Z")):
+            with self.subTest(field=field, zone=zone, reason=reason), tempfile.TemporaryDirectory() as directory:
+                state = copy.deepcopy(self.state)
+                state["schedule"].update(timezone=zone, publication_at=publication)
+                for action in state["schedule"]["reporting_deadlines"]:
+                    action["at"] = "2024-01-01T10:00:00+03:00"
+                if quarter:
+                    state["schedule"][field] = self.fee_settings(quarters=[quarter])
+                state["schedule"][field]["reminder_time"] = invalid
+                state_path, output = Path(directory) / "state.json", Path(directory) / "plan"
+                state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+                before = state_path.read_bytes()
+                result = subprocess.run(
+                    [sys.executable, str(ROOT / "scripts/deal.py"), "plan", "--state", str(state_path),
+                     "--now", self.now.isoformat(), "--output-dir", str(output)], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn(field + ".reminder_time", result.stderr)
+                self.assertIn(reason, result.stderr)
+                self.assertIn(zone, result.stderr)
+                self.assertEqual(result.stdout, "")
+                self.assertFalse(output.exists())
+                self.assertEqual(state_path.read_bytes(), before)
+                state["schedule"][field]["reminder_time"] = valid
+                current = deal.plan(state, self.now)
+                event = next(event for event in current["events"] if event["id"] == event_id)
+                self.assertEqual(event["at"], expected)
+                calendar_event = next(chunk for chunk in deal.ics(current, self.now).split("BEGIN:VEVENT")
+                                      if event["uid"] in chunk)
+                self.assertIn("DTSTART:" + utc, calendar_event)
+
+    def test_creative_business_deadline_requires_unique_local_time(self):
+        for publication, day, reason, expected in (
+                ("2026-03-30T02:30:00+02:00", "2026-03-29", "не существует", "2026-03-29T03:30:00+02:00"),
+                ("2026-10-26T02:30:00+01:00", "2026-10-25", "встречается дважды", "2026-10-25T03:30:00+01:00")):
+            with self.subTest(day=day):
+                self.state["schedule"].update(timezone="Europe/Berlin", publication_at=publication,
+                                              text_before_business_days=1, working_days=[day])
+                with self.assertRaisesRegex(ValueError, "text_before_business_days.*" + reason):
+                    deal.plan(self.state, self.now)
+                self.state["schedule"]["publication_at"] = publication.replace("T02:30", "T03:30")
+                event = next(event for event in deal.plan(self.state, self.now)["events"] if event["id"] == "creative")
+                self.assertEqual(event["at"], expected)
+
+    def test_explicit_publication_offset_remains_valid_in_repeated_hour(self):
+        for offset in ("+02:00", "+01:00"):
+            with self.subTest(offset=offset):
+                publication = "2026-10-25T02:30:00" + offset
+                self.state["schedule"].update(timezone="Europe/Berlin", publication_at=publication,
+                                              text_before_business_days=0)
+                events = {event["id"]: event for event in deal.plan(self.state, self.now)["events"]}
+                self.assertEqual(events["creative"]["at"], publication)
+                self.assertEqual(events["publication"]["at"], publication)
+
+    def test_ord_month_boundary_does_not_require_existing_midnight(self):
+        self.state["schedule"].update(timezone="America/Asuncion", publication_at="2023-09-30T09:00:00-04:00")
+        for action in self.state["schedule"]["reporting_deadlines"]:
+            action["at"] = "2023-01-01T10:00:00+03:00"
+        events = self.monthly_events(deal.plan(self.state, self.now))
+        self.assertEqual(set(events), {"ord-2023-09", "ord-2023-10"})
+        self.assertEqual(events["ord-2023-09"]["at"], "2023-10-30T09:00:00-03:00")
+
     def test_separate_deals_have_disjoint_calendar_ids(self):
         with tempfile.TemporaryDirectory() as folder:
             states = []
