@@ -148,16 +148,69 @@ class HandoffTests(unittest.TestCase):
     def test_link_report_without_expected_blocks_otherwise_valid_handoff(self):
         import inspect_links
         source, report = self.received_links([], [])
-        # Собственный PDF не требует договорной сверки: до добавления отчёта
-        # выдача проходит, затем блокируется именно отсутствующим comparison.
+        # Собственный PDF не требует договорной сверки. Отчёт с comparison
+        # позволяет выдачу, замена на отчёт без comparison блокирует её.
         handoff.register(self.state, [source], 'draft', 'v1', self.at, group='received')
-        self.assertTrue(handoff.audit(self.state)['valid'])
-        report.write_text(json.dumps(inspect_links.inspect_links(source)))
         self.register_link_report(report)
+        self.assertTrue(handoff.audit(self.state)['valid'])
+        unchecked = self.file('unchecked-links.json', json.dumps(inspect_links.inspect_links(source)))
+        handoff.register(self.state, [unchecked], 'checked', 'v2', self.at, group='link-evidence')
         self.assertTrue(any('нет comparison' in issue for issue in self.link_issues()))
         result = handoff.audit(self.state)
         self.assertFalse(result['valid'])
         self.assertTrue(any('нет comparison' in issue for issue in result['issues']))
+
+    def test_outgoing_docx_and_pdf_each_require_current_compared_link_report(self):
+        from pypdf.annotations import Link
+        url = 'https://example.test/product'
+        data = self.data()
+        data['creative']['links'] = [url]
+        handoff.save(self.state, data)
+        docx, pdf = self.root / 'outgoing.docx', self.root / 'outgoing.pdf'
+        with ZipFile(docx, 'w') as archive:
+            archive.writestr('word/document.xml',
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>'
+                '<w:p><w:hyperlink r:id="r1"><w:r><w:t>Продукт</w:t></w:r></w:hyperlink></w:p>'
+                '</w:body></w:document>')
+            archive.writestr('word/_rels/document.xml.rels',
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+                f'Target="{url}" TargetMode="External"/></Relationships>')
+        writer = PdfWriter()
+        writer.add_blank_page(300, 300)
+        writer.add_annotation(0, Link(rect=(10, 10, 100, 20), url=url))
+        with pdf.open('wb') as output:
+            writer.write(output)
+        handoff.register(self.state, [docx, pdf], 'draft_for_review', 'v1', self.at,
+                         group='creative', document_kind='creative')
+        self.layout(docx)
+        response = self.file('reply.txt', f'[Приложение](<{docx}>) и [PDF](<{pdf}>)')
+        result = handoff.audit(self.state, response)
+        self.assertFalse(result['valid'])
+        for path in (docx, pdf):
+            self.assertTrue(any(str(path) in issue and 'нет актуального отчёта' in issue for issue in result['issues']))
+
+        docx_report = self.link_report(docx, 'docx-links.json', [url])
+        self.register_link_report(docx_report)
+        result = handoff.audit(self.state, response)
+        self.assertFalse(result['valid'])
+        self.assertTrue(any(str(pdf) in issue and 'нет актуального отчёта' in issue for issue in result['issues']))
+        self.assertFalse(any(str(docx) in issue and 'нет актуального отчёта' in issue for issue in result['issues']))
+
+        pdf_report = self.link_report(pdf, 'pdf-links.json', [url])
+        handoff.register(self.state, [docx_report, pdf_report], 'checked', 'v1', self.at, group='link-evidence')
+        before = {path: path.read_bytes() for path in (self.state, docx, pdf, docx_report, pdf_report)}
+        result = handoff.audit(self.state, response)
+        self.assertTrue(result['valid'], result['issues'])
+        self.assertEqual(before, {path: path.read_bytes() for path in before})
+        for path in (docx, pdf):
+            with self.subTest(changed_source=path.name):
+                path.write_bytes(before[path] + b'\nchanged')
+                result = handoff.audit(self.state, response)
+                self.assertFalse(result['valid'])
+                self.assertTrue(any('проверенный исходник изменён' in issue for issue in result['issues']))
+                path.write_bytes(before[path])
 
     def test_received_link_report_uses_current_deal_map(self):
         _, report = self.received_links([], [])

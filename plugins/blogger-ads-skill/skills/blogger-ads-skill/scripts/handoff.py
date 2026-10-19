@@ -362,12 +362,14 @@ def link_report_issues(documents, expected_urls):
         except (ValueError, OSError, TypeError) as error:
             issues.append(str(error))
     for path, item in documents.items():
-        if (received_document(item, path) and item.get('document_kind') == 'creative'
+        if (item.get('current') and path.suffix.lower() in {'.pdf', '.docx'}
+                and item.get('document_kind') == 'creative'
                 and (path, item['sha256']) not in covered):
-            issues.append(f'{path}: нет актуального отчёта по адресам перехода полученного приложения. '
+            kind = 'полученного оригинала приложения' if received_status(item.get('status')) else 'собственного приложения'
+            issues.append(f'{path}: нет актуального отчёта по адресам перехода {kind}. '
                           'Выполните inspect_links.py --input именно этого файла --expected исходная-карта.json '
                           '--output новый-отчёт.json, прочитайте якоря и различия, зарегистрируйте отчёт. '
-                          'Проверка собственного DOCX не проверяет входящий PDF')
+                          'Каждый DOCX и PDF проверяется отдельно; отчёт другого файла не подходит')
     return issues
 
 
