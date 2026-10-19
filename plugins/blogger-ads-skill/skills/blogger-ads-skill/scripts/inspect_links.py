@@ -25,6 +25,7 @@ _LINK_SPEC.loader.exec_module(creative_links)
 
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 COMPARISON_NOTE = (
@@ -187,6 +188,9 @@ def docx_links(raw):
             if has_hyperlink_field(root):
                 warnings.append(f"{part}: обнаружено поле HYPERLINK; его адрес и якорь не извлечены. "
                                 "Сверьте их вручную и сохраните разбор в resolution")
+            if any(node.tag in (A + "hlinkClick", A + "hlinkHover") for node in root.iter()):
+                warnings.append(f"{part}: обнаружены ссылки DrawingML (hlinkClick/hlinkHover); их адреса и объекты не извлечены. "
+                                "Сверьте их вручную и сохраните разбор в resolution")
             rel_path = str(Path(part).parent / "_rels" / (Path(part).name + ".rels"))
             relationships = {}
             if rel_path in names:
@@ -231,7 +235,7 @@ def inspect_links(path, expected=None):
               "format": kind, "links": links, "warnings": warnings,
               "limitations": [COMPARISON_NOTE,
                   "PDF: извлечены /Link с действием /URI. anchor_hint — текст из области той же аннотации, он может захватить соседнюю строку или отсутствовать у скана; видимый якорь сверяйте по странице и прямоугольнику. Это не OCR и не автоматическое подтверждение соответствия якоря адресу.",
-                  "DOCX: извлечены элементы w:hyperlink. Обычный текст URL не извлекается; поля HYPERLINK вызывают предупреждение и требуют отдельной сверки адресов и якорей. Номера абзацев относятся к каждой XML-части отдельно.",
+                  "DOCX: извлечены элементы w:hyperlink. Обычный текст URL не извлекается; поля HYPERLINK и ссылки DrawingML (hlinkClick/hlinkHover) вызывают предупреждение и требуют отдельной сверки адресов и связанных текста или объектов. Номера абзацев относятся к каждой XML-части отдельно.",
                   "Адреса не открывались. Для DOCX порядок между XML-частями не определяет порядок страниц."]}
     if expected is not None:
         actual = [row["target"] for row in links if row["target"] is not None]

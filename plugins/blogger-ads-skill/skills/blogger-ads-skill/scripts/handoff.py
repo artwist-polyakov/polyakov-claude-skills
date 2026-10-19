@@ -385,7 +385,79 @@ def check_link_comparison(path, documents, expected_urls):
             raise ValueError(f'{path}: resolution.source должен указывать на актуальный зарегистрированный файл сверки')
 
 
-def link_report_issues(documents, expected_urls):
+def check_creative_document(path, report_path, documents, state, state_path):
+    """Приложение содержит текущий импортированный пост; его согласование отдельно."""
+    creative = state.get('creative', {})
+    provenance = creative.get('provenance')
+    provenance = provenance.get('text') if isinstance(provenance, dict) else None
+    text = creative.get('text')
+    if not isinstance(provenance, dict) or not isinstance(text, str) or not text.strip():
+        raise ValueError(f'{path}: сначала импортируйте исходный пост через deal.py import-creative; '
+                         'одинаковые URL не подтверждают текст приложения')
+    creative_hash = deal.fingerprint(state, state_path)
+    normal_lines = lambda value: value.replace('\r\n', '\n').replace('\r', '\n')
+    sidecar = path.with_suffix(path.suffix + '.fields.json')
+    saved = (deal.read_json(sidecar) if path.suffix.lower() == '.docx'
+             and not received_status(documents[path].get('status')) and sidecar.is_file() else None)
+    if isinstance(saved, dict) and saved.get('output_sha256') == sha(path):
+        if not isinstance(saved.get('fields'), dict):
+            raise ValueError(f'{sidecar}: нужна сохранённая карта fields')
+        source = saved.get('post_source')
+        if (saved['fields'].get('POST_TEXT') != text
+                or not isinstance(source, dict) or source.get('sha256') != provenance.get('sha256')
+                or not isinstance(source.get('path'), str) or sha(resolve(sidecar.parent, source['path'])) != source['sha256']):
+            raise ValueError(f'{path}: POST_TEXT, post_source или SHA результата не совпадает с текущим импортированным постом; '
+                             'сохраните отдельную версию, не подменяйте карту полей')
+        import render_contract
+        if not any(normal_lines(row['text']) == normal_lines(text)
+                   for row in render_contract.inspect_document(path)['paragraphs'] if row['part'] == 'word/document.xml'):
+            raise ValueError(f'{path}: точный POST_TEXT не найден в самом DOCX; карта полей не заменяет проверку текста')
+        return
+
+    report = deal.read_json(report_path)
+    proof = report.get('creative_review')
+    if (not isinstance(proof, dict) or proof.get('creative_sha256') != creative_hash
+            or not isinstance(proof.get('source'), str) or not proof['source'].strip()):
+        raise ValueError(f'{path}: нужна явная creative_review текущего текста в отчёте ссылок: '
+                         'creative_sha256, source зарегистрированной сверки и citations по документу')
+    evidence = resolve(report_path.parent, proof['source'])
+    record = documents.get(evidence, {})
+    if (evidence in {path, report_path} or record.get('group') not in {'review', 'analysis'}
+            or not record.get('current') or not evidence.is_file() or record.get('sha256') != sha(evidence)):
+        raise ValueError(f'{path}: creative_review.source должен указывать на актуальную зарегистрированную сверку')
+    citations = proof.get('citations')
+    if (not isinstance(citations, list) or not citations
+            or any(not isinstance(row, dict) or not isinstance(row.get('quote'), str)
+                   or (path.suffix.lower() == '.pdf' and not row['quote']) for row in citations)):
+        raise ValueError(f'{path}: creative_review.citations должен содержать дословные части всего поста')
+    if path.suffix.lower() == '.pdf':
+        import review
+        pages = [row.get('page') for row in citations]
+        if (any(type(page) is not int or page < 1 for page in pages)
+                or pages != list(range(pages[0], pages[-1] + 1))):
+            raise ValueError(f'{path}: citations требуют одну цитату на страницу, страницы идут подряд в порядке PDF')
+        readers = {}
+        for index, citation in enumerate(citations, 1):
+            review.verify_citation({'id': f'creative-{index}', 'source': dict(citation, document='creative')},
+                                   {'path': str(path)}, readers)
+        actual = ''.join(row['quote'] for row in citations)
+    else:
+        import render_contract
+        paragraphs = {row['paragraph']: row['text'] for row in render_contract.inspect_document(path)['paragraphs']
+                      if row['part'] == 'word/document.xml'}
+        indices = [row.get('paragraph') for row in citations]
+        if (any(type(index) is not int or index not in paragraphs for index in indices)
+                or indices != list(range(indices[0], indices[-1] + 1))):
+            raise ValueError(f'{path}: citations должны указывать последовательные абзацы word/document.xml из --inspect')
+        for row in citations:
+            if normal_lines(row['quote']) != normal_lines(paragraphs[row['paragraph']]):
+                raise ValueError(f'{path}: цитата поста не совпадает с указанным абзацем DOCX')
+        actual = '\n'.join(row['quote'] for row in citations)
+    if normal_lines(actual) != normal_lines(text):
+        raise ValueError(f'{path}: полный текст из creative_review не совпадает с текущим импортированным постом')
+
+
+def link_report_issues(documents, expected_urls, state=None, state_path=None):
     issues, covered = [], set()
     for path, item in documents.items():
         if not item.get('current'):
@@ -399,8 +471,10 @@ def link_report_issues(documents, expected_urls):
                     raise ValueError(f'{path}: отчёт ссылок относится к незарегистрированной или исторической версии; '
                                      'зарегистрируйте исходник либо сохраните этот отчёт как исторический')
                 check_link_comparison(path, documents, expected_urls)
+                if state is not None and record.get('document_kind') == 'creative':
+                    check_creative_document(original, path, documents, state, state_path)
                 covered.add((original, digest))
-        except (ValueError, OSError, TypeError) as error:
+        except (KeyError, ValueError, OSError, TypeError) as error:
             issues.append(str(error))
     for path, item in documents.items():
         if (item.get('current') and path.suffix.lower() in {'.pdf', '.docx'}
@@ -553,6 +627,9 @@ def register(state_path, files, status, version, at, supersedes=(), group='docum
     if set(replaced) & {p for p, *_ in prepared}:
         raise ValueError('Нельзя одновременно выдать и заменить один файл')
     refresh_records(state, at)
+    current_contracts = [item for item in documents
+                         if item.get('current') and item.get('document_kind') in CONTRACT_KINDS
+                         and Path(item['path']).suffix.lower() in {'.pdf', '.docx'}]
     for item in documents:
         if item.get('group') == group and item.get('version') != version:
             item['current'] = False
@@ -579,6 +656,16 @@ def register(state_path, files, status, version, at, supersedes=(), group='docum
             deliveries.append(at)
         if previous is None:
             documents.append(item)
+    replaced_contracts = [{'path': item['path'], 'sha256': item['sha256']}
+                          for item in current_contracts if not item.get('current')]
+    proof = state.get('checks', {}).get('contract', {})
+    if replaced_contracts and proof.get('status') == 'confirmed':
+        state['checks']['contract'] = dict(proof, status='pending',
+                                          reason='Договорный документ заменён; требуется подтверждение текущей версии')
+        state.setdefault('history', []).append({
+            'at': at, 'action': 'register_documents', 'replaced_documents': replaced_contracts,
+            'invalidated_checks': {'contract': dict(proof)}})
+        refresh_records(state, at)
     archive_link_reports(state, base)
     archive_layout_manifests(state, base)
     save(state_path, state)
@@ -714,7 +801,11 @@ def own_contract_identity(path, documents, base):
             raise ValueError(f'{sidecar}: нужны CONTRACT_NUMBER и CONTRACT_DATE основного договора')
         return None
     record = documents.get(sidecar, {})
-    if (record and record.get('sha256') != sha(sidecar)) or saved.get('output_sha256') != sha(path):
+    if record and record.get('sha256') != sha(sidecar):
+        raise ValueError(f'{path}: сохраните точную карту .fields.json; зарегистрированный SHA должен совпадать с файлом')
+    if saved.get('output_sha256') != sha(path) and item.get('document_kind') == 'creative':
+        return None  # После ручной правки текст сверяется отдельно; старая карта не доказывает дату.
+    if saved.get('output_sha256') != sha(path):
         raise ValueError(f'{path}: сохраните точную карту .fields.json; зарегистрированный SHA и output_sha256 должны совпадать с файлами')
     number = contract_number(fields['CONTRACT_NUMBER'])
     return {'number': number, 'date': contract_date(fields['CONTRACT_DATE']),
@@ -910,7 +1001,7 @@ def audit(state_path, response=None, historical=(), record_issue=False):
     for group, versions in current_groups.items():
         if len(versions) > 1:
             issues.append(f'documents: группа {group} содержит несколько актуальных версий; прежние версии должны быть историческими')
-    issues.extend(link_report_issues(documents, state.get('creative', {}).get('links', [])))
+    issues.extend(link_report_issues(documents, state.get('creative', {}).get('links', []), state, state_path))
     issues.extend(layout_issues(documents))
     contract_history, contract_documents = [], {}
     unchecked_contract_dates = [
@@ -923,6 +1014,12 @@ def audit(state_path, response=None, historical=(), record_issue=False):
         contract_history, contract_documents = check_contract_dates(state, documents, base, history)
     except (ValueError, KeyError, TypeError, OSError) as error:
         issues.append(f'Дата договора: {error}')
+    unchecked_contract_dates += [
+        {'path': str(path), 'reason': 'Сохранённая карта прежней версии не подтверждает дату после ручной правки приложения. '
+         'Сверьте номер и дату по документу; текст поста требует отдельной creative_review.'}
+        for path, item in documents.items() if item.get('current') and not received_status(item.get('status'))
+        and item.get('document_kind') == 'creative' and path.suffix.lower() == '.docx'
+        and path not in contract_documents and path.with_suffix(path.suffix + '.fields.json').is_file()]
     plan_path = None
     needs_review = any(received_document(item, path) and item.get('document_kind') in CONTRACT_KINDS
                        for path, item in documents.items())

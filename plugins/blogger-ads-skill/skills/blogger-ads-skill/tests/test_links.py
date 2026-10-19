@@ -148,6 +148,38 @@ class LinkInspectionTests(unittest.TestCase):
         self.assertEqual(len(result["links"]), 3)
         self.assertEqual(result["warnings"], [])
 
+    def test_docx_drawingml_links_warn_in_every_word_part(self):
+        expected = ["https://pricing.example.test/?a=1&b=2"] * 2 + ["https://product.example.test/?a=1&b=2"]
+        for tag in ("hlinkClick", "hlinkHover", "no_link"):
+            drawing = ('<w:p><w:r><w:drawing xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+                       'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+                       'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                       '<wp:inline><wp:docPr id="1" name="Image">'
+                       + (f'<a:{tag} r:id="r1"/>' if tag != "no_link" else '')
+                       + '</wp:docPr></wp:inline></w:drawing></w:r></w:p>')
+            for part in ("word/document.xml", "word/header1.xml", "word/drawings/drawing1.xml"):
+                with self.subTest(tag=tag, part=part):
+                    path = self.docx(drawing if part == "word/document.xml" else "")
+                    if part != "word/document.xml":
+                        with ZipFile(path, "a") as archive:
+                            archive.writestr(part, '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                                             + drawing + '</w:hdr>')
+                            rel_path = str(Path(part).parent / "_rels" / (Path(part).name + ".rels"))
+                            archive.writestr(rel_path,
+                                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                                '<Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+                                'Target="https://hidden.example.test/" TargetMode="External"/></Relationships>')
+                    before = path.read_bytes()
+                    result = links.inspect_links(path, expected)
+                    self.assertTrue(result["comparison"]["ordered_lists_equal"])
+                    self.assertEqual(result["comparison"]["differences"], [])
+                    self.assertEqual(len(result["warnings"]), int(tag != "no_link"))
+                    if tag != "no_link":
+                        self.assertIn(part, result["warnings"][0])
+                        self.assertIn("DrawingML", result["warnings"][0])
+                        self.assertIn("resolution", result["warnings"][0])
+                    self.assertEqual(path.read_bytes(), before)
+
     def test_docx_hyperlink_field_requires_registered_resolution(self):
         sys.path.insert(0, str(ROOT / "scripts"))
         import handoff
@@ -166,6 +198,20 @@ class LinkInspectionTests(unittest.TestCase):
         report.write_text(json.dumps(result), encoding="utf-8")
         handoff.check_link_comparison(report, {
             review.resolve(): {"group": "review", "current": True, "sha256": handoff.sha(review)}}, expected)
+
+    def test_docx_drawingml_warning_requires_resolution_despite_equal_urls(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import handoff
+
+        path = self.docx('<w:p><w:r><w:drawing xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+                         '<a:hlinkClick r:id="r1"/></w:drawing></w:r></w:p>')
+        expected = ["https://pricing.example.test/?a=1&b=2"] * 2 + ["https://product.example.test/?a=1&b=2"]
+        result = links.inspect_links(path, expected)
+        self.assertTrue(result["comparison"]["ordered_lists_equal"])
+        report = self.base / "drawing-links.json"
+        report.write_text(json.dumps(result), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "resolution.result=accepted"):
+            handoff.check_link_comparison(report, {}, expected)
 
     def test_docx_textbox_links_count_once_in_xml_order_with_nearest_paragraph(self):
         path = self.base / "textbox.docx"
