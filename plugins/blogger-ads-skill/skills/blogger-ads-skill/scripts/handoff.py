@@ -631,6 +631,9 @@ def register(state_path, files, status, version, at, supersedes=(), group='docum
         previous = by_path.get(path)
         if previous and previous.get('sha256') != digest:
             raise ValueError(f'Ранее зарегистрированный файл изменён: {path}. Сохраните новую версию отдельно')
+        if previous and received_status(previous.get('status')) and not received_status(status):
+            raise ValueError(f'Полученный оригинал {path}: сохраните статус received или received_*. '
+                             'Подписи и согласование учитываются в checks, а не заменой статуса получения')
         if previous and fact_bound(previous) and previous.get('basis_sha256') != fact_basis(state):
             raise ValueError(f'Основание прежнего письма или заметки изменилось: {path}. Подготовьте актуальную редакцию отдельным файлом; повторная регистрация не обновляет его содержание')
         kind = document_kind if document_kind is not None else (previous or {}).get('document_kind')
@@ -1106,7 +1109,10 @@ def audit(state_path, response=None, historical=(), record_issue=False):
         response_links, link_issues = local_response_links(text)
         issues.extend(link_issues)
         for path in response_links:
-            if path.is_file() and path != state_path:
+            if path == state_path:
+                issues.append(f'Внутренний файл состояния сделки не входит в выдачу: {path}. '
+                              'Дайте ссылку на план или зарегистрированные документы')
+            elif path.is_file():
                 item = documents.get(path)
                 if not item or not item.get('delivered_at'):
                     issues.append(f'Выдаваемый файл не зарегистрирован, включая PDF: {path}')

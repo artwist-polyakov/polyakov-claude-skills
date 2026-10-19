@@ -1843,6 +1843,69 @@ class ContractSignatureRevisionTests(unittest.TestCase):
         self.assertEqual(state['history'], [])
 
 
+class ReceivedDocumentStatusTests(unittest.TestCase):
+    received_pdf = HandoffTests.received_pdf
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.state = self.root / 'deal-state.json'
+        self.state.write_bytes((ROOT / 'assets/deal.example.json').read_bytes())
+        self.at = '2026-11-01T12:00:00+03:00'
+        self.later = '2026-11-02T12:00:00+03:00'
+        self.original = self.received_pdf()
+        handoff.register(self.state, [self.original], 'received', 'v1', self.at,
+                         group='source', document_kind='contract')
+        state = handoff.deal.read_json(self.state)
+        self.proof = {'status': 'confirmed', 'source': 'Подписи полученного договора', 'checked_at': self.at}
+        state['checks']['contract'] = dict(self.proof)
+        handoff.save(self.state, state)
+
+    def snapshot(self):
+        return {path.relative_to(self.root): path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
+
+    def assert_review_required(self):
+        result = handoff.audit(self.state)
+        self.assertFalse(result['valid'])
+        self.assertTrue(any('пакет review' in issue for issue in result['issues']), result['issues'])
+
+    def test_received_origin_cannot_be_removed_or_partially_register_a_package(self):
+        additional = self.received_pdf('new.pdf', 'A new document in the same registration batch.')
+        for previous_status in ('received', 'received_unsigned', ' RECEIVED_CUSTOMER_SIGNED '):
+            handoff.register(self.state, [self.original], previous_status, 'v1', self.at,
+                             group='source', document_kind='contract')
+            for status in ('reviewed', 'signed', 'draft'):
+                with self.subTest(previous=previous_status, new=status):
+                    before = self.snapshot()
+                    with self.assertRaisesRegex(ValueError, 'сохраните статус received'):
+                        handoff.register(self.state, [additional, self.original], status, 'v2', self.later,
+                                         group='source', document_kind='contract')
+                    self.assertEqual(self.snapshot(), before)
+                    state = handoff.deal.read_json(self.state)
+                    self.assertEqual(state['checks']['contract'], self.proof)
+                    self.assertEqual(state['documents'][0]['status'], previous_status)
+                    self.assert_review_required()
+                    self.assertEqual(self.snapshot(), before)
+
+    def test_received_reregistration_and_status_refinement_keep_origin_and_review(self):
+        original_bytes = self.original.read_bytes()
+        initial = handoff.deal.read_json(self.state)['documents'][0]
+        archive = handoff.archive_file(self.root, initial)
+        for status in ('received', 'received_unsigned', 'received_customer_signed', ' RECEIVED '):
+            with self.subTest(status=status):
+                handoff.register(self.state, [self.original], status, 'v1', self.later,
+                                 group='source', document_kind='contract')
+                state = handoff.deal.read_json(self.state)
+                self.assertEqual(state['documents'][0]['status'], status)
+                self.assertTrue(state['documents'][0]['current'])
+                self.assertEqual(state['checks']['contract'], self.proof)
+                self.assertEqual(state['history'], [])
+                self.assertEqual(self.original.read_bytes(), original_bytes)
+                self.assertEqual(archive.read_bytes(), original_bytes)
+                self.assert_review_required()
+
+
 class HandoffLinkCheckTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -2260,6 +2323,72 @@ class AnchorPairAuditTests(unittest.TestCase):
         self.assert_anchor_resolution_needed()
         self.accept_resolution(report)
         self.assert_audit_readonly(True)
+
+
+class StateFileDeliveryTests(unittest.TestCase):
+    setUp = HandoffTests.setUp
+    file = HandoffTests.file
+    data = HandoffTests.data
+    scheduled_state = HandoffTests.scheduled_state
+    plan_package = HandoffTests.plan_package
+    register_plan = HandoffTests.register_plan
+
+    def delivery_package(self):
+        self.scheduled_state()
+        plan = self.plan_package()
+        self.register_plan(plan)
+        document = self.file('placement-summary.txt', 'Согласованные условия размещения.')
+        handoff.register(self.state, [document], 'prepared', 'v1', self.at, group='summary')
+        response = self.file('reply.txt', f'[План](<{plan[1]}>) и [условия](<{document}>).')
+        return plan, response
+
+    def snapshot(self):
+        return {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
+
+    def test_state_link_blocks_audit_and_recording_without_changing_files(self):
+        _, response = self.delivery_package()
+        response.write_text(response.read_text() + f' [Состояние](<{self.state}>)')
+        before = self.snapshot()
+        for record_issue in (False, True):
+            with self.subTest(record_issue=record_issue):
+                result = handoff.audit(self.state, response, record_issue=record_issue)
+                self.assertFalse(result['valid'], result['issues'])
+                self.assertEqual(len(result['issues']), 1, result['issues'])
+                self.assertIn('Внутренний файл состояния сделки не входит в выдачу', result['issues'][0])
+                self.assertIn(str(self.state.resolve()), result['issues'][0])
+                if record_issue:
+                    self.assertFalse(result['plan_issue_recorded'])
+                    self.assertEqual(result['plan_issue_count'], 0)
+                self.assertEqual(before, self.snapshot())
+
+    def test_registered_plan_and_document_pass_and_record_plan_issue(self):
+        plan, response = self.delivery_package()
+        before = self.snapshot()
+        result = handoff.audit(self.state, response)
+        self.assertTrue(result['valid'], result['issues'])
+        self.assertEqual(before, self.snapshot())
+        result = handoff.audit(self.state, response, record_issue=True)
+        self.assertTrue(result['valid'], result['issues'])
+        self.assertTrue(result['plan_issue_recorded'])
+        self.assertEqual(result['plan_issue_count'], 1)
+        entry = self.data()['plan_issues'][0]
+        self.assertEqual(entry['plan'], {'path': str(plan[0].relative_to(self.root)), 'sha256': handoff.sha(plan[0])})
+        self.assertEqual(entry['response'], {'path': response.name, 'sha256': handoff.sha(response)})
+        self.assertNotEqual(before[self.state], self.state.read_bytes())
+        self.assertEqual({p: raw for p, raw in before.items() if p != self.state},
+                         {p: raw for p, raw in self.snapshot().items() if p != self.state})
+
+    def test_check_links_cli_accepts_existing_state_file_without_reading_it(self):
+        self.state.write_text('Не JSON: проверка путей не должна читать состояние.')
+        response = self.file('reply.txt', f'[Состояние](<{self.state}>)')
+        before = self.snapshot()
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/handoff.py'), 'check-links',
+                                 '--response', str(response)], cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertTrue(data['valid'], data['issues'])
+        self.assertEqual(data['local_links'], [str(self.state.resolve())])
+        self.assertEqual(before, self.snapshot())
 
 
 if __name__ == '__main__':
