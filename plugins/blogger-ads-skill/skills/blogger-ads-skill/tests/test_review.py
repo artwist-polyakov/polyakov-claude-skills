@@ -185,23 +185,29 @@ class ReviewTests(unittest.TestCase):
         quote = item["source"]["quote"] + " Urgent placement requires an extra fee."
         self.pdf(self.source, ["Page one.", "Page two.", quote])
         item["source"]["quote"] = quote
+        item["decision"]["target"] = "Договор, п. 5.2, первое предложение"
         duplicate = copy.deepcopy(item)
         duplicate["id"] = "payment-copy"
         appended = copy.deepcopy(item)
         appended["id"] = "add-exchange"
-        appended["decision"].update(action="append", text="Стороны обмениваются документами по согласованным адресам.")
+        appended["decision"].update(action="append", target="Договор, новый пункт 5.3",
+                                    text="Стороны обмениваются документами по согласованным адресам.")
         appended["decision"].pop("original")
         self.data["decisions"] += [duplicate, appended]
         self.build()
         generated = review.amendment_changes(self.output)
         text = generated["text"]
-        self.assertEqual(text.count("Заменить только фрагмент:"), 1)
+        self.assertEqual(text.count("заменить словами"), 1)
         self.assertNotIn("sign-first", text)
         self.assertNotIn("payment-copy", text)
-        self.assertIn("Заменить только фрагмент:\n" + item["decision"]["original"] + "\nна:\n" + item["decision"]["text"], text)
-        self.assertIn("Остальное условие сохранить.", text)
+        self.assertIn(f"В документе «Полученный договор» ({item['decision']['target']}) "
+                      f"слова «{item['decision']['original']}» заменить словами «{item['decision']['text']}».", text)
         self.assertNotIn("Urgent placement requires an extra fee.", text)
-        self.assertIn("Добавить:\n" + appended["decision"]["text"], text)
+        self.assertIn(f"Документ «Полученный договор» ({appended['decision']['target']}) "
+                      f"дополнить следующим текстом:\n«{appended['decision']['text']}».", text)
+        for service_text in ("Документ:", "Место правки:", "страница", "Заменить только фрагмент:",
+                             "Остальное условие сохранить.", item["decision"]["reason"]):
+            self.assertNotIn(service_text, text)
         self.assertFalse(text.startswith("1."))
         self.assertEqual(generated["review_source"], {
             "directory": str(self.output.resolve()),

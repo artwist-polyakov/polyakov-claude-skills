@@ -178,7 +178,7 @@ class ContractTests(unittest.TestCase):
     def test_claims_keep_different_deadlines_and_start_events_verbatim(self):
         deadlines = ("в течение 24 часов после окончания размещения",
                      "в течение трёх рабочих дней после получения отчёта",
-                     "[УТОЧНИТЬ СРОК И НАЧАЛО ОТСЧЁТА]")
+                     "____")
         for index, deadline in enumerate(deadlines):
             fields = dict(self.fields, CLAIMS_DEADLINE=deadline)
             output = self.output.with_name(f"deadline-{index}.docx")

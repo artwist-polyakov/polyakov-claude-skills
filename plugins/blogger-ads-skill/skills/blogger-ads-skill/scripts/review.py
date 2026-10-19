@@ -781,13 +781,14 @@ def amendment_changes(directory):
     for group in groups:
         first, decision = group[0], group[0]["decision"]
         source = first["source"]
-        lines = [f"Документ: {sources[source['document']]['label']}. Место правки: {decision['target']}.",
-                 f"Пункт {source['clause']}; страница {source['page']}."]
+        label = sources[source["document"]]["label"]
+        target = decision["target"]
         if decision["action"] == "replace":
-            lines += ["Заменить только фрагмент:", decision["original"], "на:", decision["text"], "Остальное условие сохранить."]
+            text = (f"В документе «{label}» ({target}) слова «{decision['original']}» "
+                    f"заменить словами «{decision['text']}».")
         else:
-            lines += ["Добавить:", decision["text"]]
-        sections.append("\n".join(lines))
+            text = f"Документ «{label}» ({target}) дополнить следующим текстом:\n«{decision['text']}»."
+        sections.append(text)
     return {"text": "\n\n".join(sections), "review_source": {
         "directory": str(directory), "manifest_sha256": sha256(manifest_raw), "input_sha256": sha256(input_raw)}}
 

@@ -26,7 +26,7 @@ EMOJI_FONT = TEMPLATES / "NotoEmoji.ttf"
 EMOJI = re.compile(r"([\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0E\uFE0F\u200D\u20E3]+)")
 LINK_FIELDS = {"LINK_INDEX", "LINK_ANCHOR", "LINK_URL"}
 EXCHANGE_FIELDS = {"EXCHANGE_CLAUSE", "CLOSING_DOCUMENTS_CLAUSE"}
-UNKNOWN_CLAIMS_CONTACT = "[УТОЧНИТЬ ПОДТВЕРЖДЁННЫЙ КОНТАКТ ИСПОЛНИТЕЛЯ]"
+UNKNOWN_CLAIMS_CONTACT = "____"
 
 
 def nodes(element, name):
