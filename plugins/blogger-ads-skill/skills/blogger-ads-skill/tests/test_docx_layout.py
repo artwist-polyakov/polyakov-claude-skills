@@ -157,7 +157,7 @@ class DocxLayoutTests(unittest.TestCase):
         self.assertEqual(manifest.read_bytes(), confirmed)
 
     def test_handoff_requires_registered_passed_layout_for_own_docx(self):
-        self.register([self.source])
+        self.register([self.source], kind='contract')
         manifest = self.package()
         self.confirm(manifest)
         self.assertFalse(handoff.audit(self.state)['valid'])  # Незарегистрированное подтверждение не используется.
@@ -173,7 +173,7 @@ class DocxLayoutTests(unittest.TestCase):
         self.assertEqual(self.state.read_bytes(), before)
 
     def test_handoff_rejects_pending_and_needs_changes(self):
-        self.register([self.source])
+        self.register([self.source], kind='contract')
         for name, verdict in [('pending', None), ('rejected', 'needs_changes')]:
             with self.subTest(verdict=verdict):
                 manifest = self.package(name)
@@ -195,13 +195,13 @@ class DocxLayoutTests(unittest.TestCase):
         self.assertTrue(result['valid'], result['issues'])
 
     def test_replacing_docx_archives_layout_and_new_source_requires_new_view(self):
-        self.register([self.source])
+        self.register([self.source], kind='contract')
         manifest = self.package()
         self.confirm(manifest)
         self.register([manifest], group='layout')
         newer = self.root / 'final-v2.docx'
         newer.write_bytes(b'new final source')
-        self.register([newer], version='v2')
+        self.register([newer], version='v2', kind='contract')
         records = {item['path']: item for item in json.loads(self.state.read_text())['documents']}
         self.assertFalse(records['layout/manifest.json']['current'])
         result = handoff.audit(self.state)

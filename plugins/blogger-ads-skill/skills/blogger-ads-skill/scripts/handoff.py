@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pypdf>=5,<7"]
+# dependencies = ["pypdf>=5,<7", "pymupdf>=1.26,<2"]
 # ///
 """Учёт выдачи, дословные поручения и проверка файлов перед ответом. Без сети."""
 import argparse
@@ -308,7 +308,10 @@ def archive_link_reports(state, base):
 
 def check_link_comparison(path, documents, expected_urls):
     """Отчёт закрывает проверку только после сверки адресов и разбора различий."""
-    from inspect_links import compare_urls
+    from inspect_links import compare_urls, inspect_links
+    from pypdf.errors import PdfReadError
+    from xml.etree.ElementTree import ParseError
+    from zipfile import BadZipFile
 
     deal.validate_creative_links(expected_urls)
     value = deal.read_json(path)
@@ -320,7 +323,18 @@ def check_link_comparison(path, documents, expected_urls):
         raise ValueError(f'{path}: warnings должен быть списком строк')
     if not isinstance(comparison, dict):
         raise ValueError(f'{path}: нет comparison; пересоздайте отчёт inspect_links с --expected исходная-карта.json')
-    actual_urls = [row['target'] for row in rows if row['target'] is not None]
+    original = resolve(path.parent, value['source']['path'])
+    try:
+        extracted = inspect_links(original)
+    except (BadZipFile, ParseError, PdfReadError) as error:
+        raise ValueError(f'{path}: не удалось прочитать ссылки исходного документа {original}: {error}') from error
+    if extracted['source']['sha256'] != value['source']['sha256']:
+        raise ValueError(f'{path}: проверенный исходник изменён; нужен новый отчёт inspect_links')
+    for key in ('format', 'links', 'warnings'):
+        if json.dumps(value.get(key), sort_keys=True) != json.dumps(extracted[key], sort_keys=True):
+            raise ValueError(f'{path}: {key} не совпадает с извлечением из исходного документа; '
+                             'пересоздайте отчёт inspect_links, сохранив адреса, якоря и предупреждения')
+    actual_urls = [row['target'] for row in extracted['links'] if row['target'] is not None]
     computed = compare_urls(expected_urls, actual_urls)
     for key, expected in computed.items():
         if key == 'note':
@@ -494,7 +508,7 @@ def register(state_path, files, status, version, at, supersedes=(), group='docum
             raise ValueError(f'Основание прежнего письма или заметки изменилось: {path}. Подготовьте актуальную редакцию отдельным файлом; повторная регистрация не обновляет его содержание')
         kind = document_kind if document_kind is not None else (previous or {}).get('document_kind')
         reason = kind_reason if kind_reason is not None else ((previous or {}).get('kind_reason') if kind == 'other' else None)
-        document_classification(kind, reason, received_status(status) and path.suffix.lower() in {'.pdf', '.docx'})
+        document_classification(kind, reason, path.suffix.lower() in {'.pdf', '.docx'})
         if exported_from and (path.suffix.lower() != '.pdf' or kind != 'amendment' or received_status(status)):
             raise ValueError('--source-docx применяется только к собственному PDF с document-kind=amendment')
         if exported_from and previous and previous.get('source_docx') not in (None, exported_from):
@@ -861,7 +875,7 @@ def audit(state_path, response=None, historical=(), record_issue=False):
                 current_groups.setdefault(item['group'], set()).add(item.get('version'))
                 if fact_bound(item) and item.get('basis_sha256') != basis:
                     raise ValueError('письмо или аналитическая заметка основаны на прежних фактах; выполните refresh и подготовьте новую версию при необходимости')
-            if received_document(item, path):
+            if item.get('current') and path.suffix.lower() in {'.pdf', '.docx'}:
                 document_classification(item.get('document_kind'), item.get('kind_reason'), required=True)
             documents[path] = item
         except (KeyError, ValueError, OSError, TypeError) as error:
@@ -1009,7 +1023,7 @@ def main():
     reg.add_argument('--at', required=True)
     reg.add_argument('--group', required=True, help='Постоянное назначение пакета, без версии: contract, plan, review, correspondence, evidence')
     reg.add_argument('--supersedes', nargs='*', default=[], type=Path)
-    reg.add_argument('--document-kind', choices=sorted(DOCUMENT_KINDS), help='Вид PDF/DOCX по содержанию; обязателен для полученных и при сверке — для своих актуальных документов')
+    reg.add_argument('--document-kind', choices=sorted(DOCUMENT_KINDS), help='Вид PDF/DOCX по содержанию; обязателен для собственных и полученных документов')
     reg.add_argument('--kind-reason', help='Обоснование document-kind=other')
     reg.add_argument('--source-docx', type=Path, help='Зарегистрированный исходный DOCX собственного PDF-допсоглашения; качество экспорта проверяется визуально')
     ins = sub.add_parser('instruction')

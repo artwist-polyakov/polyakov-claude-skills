@@ -129,7 +129,7 @@ class HandoffTests(unittest.TestCase):
         own = self.received_pdf('own-creative.pdf')
         handoff.register(self.state, [received], 'received', 'v1', self.at,
                          group='received', document_kind='creative')
-        handoff.register(self.state, [own], 'draft', 'v1', self.at, group='creative')
+        handoff.register(self.state, [own], 'draft', 'v1', self.at, group='creative', document_kind='creative')
         own_report = self.link_report(own)
         handoff.register(self.state, [own_report], 'checked', 'v1', self.at, group='own-evidence')
         self.assertTrue(any(str(received) in issue for issue in self.link_issues()))
@@ -238,12 +238,97 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(before, {path: path.read_bytes() for path in before})
 
     def test_received_link_warnings_require_resolution_even_when_lists_match(self):
-        _, report = self.received_links([], [])
+        from pypdf.annotations import Link
+        source = self.root / 'warning.pdf'
+        writer = PdfWriter()
+        writer.add_blank_page(300, 300)
+        writer.add_annotation(0, Link(rect=(10, 10, 100, 20), url='https://example.test/product'))
+        writer.pages[0]['/Annots'][0].get_object()['/A'].pop('/URI')
+        with source.open('wb') as output:
+            writer.write(output)
+        handoff.register(self.state, [source], 'draft', 'v1', self.at, document_kind='creative')
+        report = self.link_report(source)
         data = json.loads(report.read_text())
-        data['warnings'] = ['Страница 1: аннотация не прочитана']
-        report.write_text(json.dumps(data))
+        self.assertTrue(data['warnings'])
         self.register_link_report(report)
         self.assertTrue(any('не разобраны' in issue for issue in self.link_issues()))
+        data['warnings'] = []
+        report.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, 'warnings не совпадает'):
+            handoff.check_link_comparison(report, self.registered(), [])
+
+    def test_report_cannot_replace_actual_pdf_docx_links_or_anchors_with_invented_rows(self):
+        import inspect_links
+        from pypdf.annotations import Link
+        wanted, actual = 'https://example.test/product', 'https://example.test/wrong-target'
+        data = self.data()
+        data['creative']['links'] = [wanted]
+        handoff.save(self.state, data)
+        for suffix in ('pdf', 'docx'):
+            with self.subTest(suffix=suffix):
+                source = self.root / ('creative.' + suffix)
+                if suffix == 'pdf':
+                    writer = PdfWriter()
+                    writer.add_blank_page(300, 300)
+                    writer.add_annotation(0, Link(rect=(10, 10, 100, 20), url=actual))
+                    with source.open('wb') as output:
+                        writer.write(output)
+                else:
+                    with ZipFile(source, 'w') as archive:
+                        archive.writestr('word/document.xml',
+                            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+                            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                            '<w:body><w:p><w:hyperlink r:id="r1"><w:r><w:t>Продукт</w:t></w:r></w:hyperlink>'
+                            '</w:p></w:body></w:document>')
+                        archive.writestr('word/_rels/document.xml.rels',
+                            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                            f'<Relationship Id="r1" Target="{actual}" TargetMode="External"/></Relationships>')
+                handoff.register(self.state, [source], 'draft', 'v1', self.at,
+                                 group='creative-' + suffix, document_kind='creative')
+                report = self.link_report(source, suffix + '-links.json', [wanted])
+                original = json.loads(report.read_text())
+                forged = json.loads(json.dumps(original))
+                forged['links'][0]['target'] = wanted
+                forged['comparison'] = inspect_links.compare_urls([wanted], [wanted])
+                report.write_text(json.dumps(forged))
+                handoff.register(self.state, [report], 'checked', 'v1', self.at, group='evidence-' + suffix)
+                before = {path: path.read_bytes() for path in (self.state, source, report)}
+                result = handoff.audit(self.state)
+                self.assertFalse(result['valid'])
+                self.assertTrue(any('links не совпадает с извлечением' in issue for issue in result['issues']))
+                self.assertEqual(before, {path: path.read_bytes() for path in before})
+                # Подмена якорей или формата тоже не исправляется верными URL/SHA.
+                for key in ('anchor', 'format'):
+                    altered = json.loads(json.dumps(original))
+                    if key == 'anchor':
+                        altered['links'][0]['anchor' if suffix == 'docx' else 'anchor_hint'] = 'Другой продукт'
+                    else:
+                        altered['format'] = 'docx' if suffix == 'pdf' else 'pdf'
+                    report.write_text(json.dumps(altered))
+                    with self.assertRaisesRegex(ValueError, 'не совпадает с извлечением'):
+                        handoff.check_link_comparison(report, self.registered(), [wanted])
+                report.write_bytes(before[report])
+
+    def test_link_audit_reports_damaged_pdf_zip_and_xml_without_traceback(self):
+        import inspect_links
+        for name in ('damaged.pdf', 'damaged.docx', 'malformed-xml.docx'):
+            with self.subTest(name=name):
+                source = self.file(name, 'Повреждённый документ')
+                if name == 'malformed-xml.docx':
+                    with ZipFile(source, 'w') as archive:
+                        archive.writestr('word/document.xml', '<unfinished')
+                handoff.register(self.state, [source], 'draft', name, self.at,
+                                 group='creative', document_kind='creative')
+                report = self.file(name + '.json', json.dumps({
+                    'kind': 'link_inspection', 'source': {'path': str(source), 'sha256': handoff.sha(source)},
+                    'format': source.suffix[1:], 'links': [], 'warnings': [],
+                    'comparison': inspect_links.compare_urls([], [])}))
+                handoff.register(self.state, [report], 'checked', name, self.at, group='link-evidence')
+                before = self.state.read_bytes()
+                result = handoff.audit(self.state)
+                self.assertFalse(result['valid'])
+                self.assertTrue(any('не удалось прочитать ссылки' in issue for issue in result['issues']))
+                self.assertEqual(before, self.state.read_bytes())
 
     def test_link_report_rejects_tampered_comparison_and_malformed_rows(self):
         url = 'https://example.test/product'
@@ -302,12 +387,12 @@ class HandoffTests(unittest.TestCase):
 
     def test_replacing_document_archives_its_link_report_across_groups(self):
         old = self.received_pdf('old.pdf')
-        handoff.register(self.state, [old], 'draft', 'v1', self.at, group='creative')
+        handoff.register(self.state, [old], 'draft', 'v1', self.at, group='creative', document_kind='creative')
         report = self.link_report(old)
         handoff.register(self.state, [report], 'checked', 'v1', self.at, group='evidence')
         contents = {p: p.read_bytes() for p in (old, report)}
         new = self.received_pdf('new.pdf', 'A revised creative.')
-        handoff.register(self.state, [new], 'draft', 'v2', self.at, group='creative')
+        handoff.register(self.state, [new], 'draft', 'v2', self.at, group='creative', document_kind='creative')
         records = self.registered()
         self.assertFalse(records[old.resolve()]['current'])
         self.assertFalse(records[report.resolve()]['current'])
@@ -323,7 +408,7 @@ class HandoffTests(unittest.TestCase):
 
     def test_link_report_rejects_changed_source_without_mutation(self):
         source = self.received_pdf()
-        handoff.register(self.state, [source], 'draft', 'v1', self.at, group='creative')
+        handoff.register(self.state, [source], 'draft', 'v1', self.at, group='creative', document_kind='creative')
         report = self.link_report(source)
         source.write_bytes(source.read_bytes() + b'\nchanged')
         before = self.state.read_bytes()
@@ -794,7 +879,10 @@ class HandoffTests(unittest.TestCase):
     def test_received_review_requires_classification_of_own_docx_without_name_guessing(self):
         self.review_package()
         own = self.file('unrelated.docx', 'Проект документа')
-        handoff.register(self.state, [own], 'draft_for_review', 'v1', self.at, group='own')
+        handoff.register(self.state, [own], 'draft_for_review', 'v1', self.at, group='own', document_kind='contract')
+        data = self.data()
+        next(item for item in data['documents'] if item['path'] == own.name).pop('document_kind')
+        handoff.save(self.state, data)
         result = handoff.audit(self.state)
         self.assertFalse(result['valid'])
         self.assertTrue(any('document_kind' in issue for issue in result['issues']))
@@ -996,8 +1084,8 @@ class HandoffTests(unittest.TestCase):
         old = self.file('old.docx')
         new = self.file('new.docx')
         pdf = self.file('new.pdf')
-        handoff.register(self.state, [old], 'draft', 'v1', self.at)
-        handoff.register(self.state, [new, pdf], 'draft', 'v2', '2026-11-02T12:00:00+03:00', [old])
+        handoff.register(self.state, [old], 'draft', 'v1', self.at, document_kind='contract')
+        handoff.register(self.state, [new, pdf], 'draft', 'v2', '2026-11-02T12:00:00+03:00', [old], document_kind='contract')
         by_name = {item['path']: item for item in self.data()['documents']}
         self.assertFalse(by_name['old.docx']['current'])
         self.assertEqual(by_name['old.docx']['delivered_at'], self.at)
@@ -1006,7 +1094,7 @@ class HandoffTests(unittest.TestCase):
 
     def test_registration_refuses_changed_original_without_mutating_state(self):
         doc = self.file('document.docx')
-        handoff.register(self.state, [doc], 'draft', 'v1', self.at)
+        handoff.register(self.state, [doc], 'draft', 'v1', self.at, document_kind='contract')
         before = self.state.read_bytes()
         doc.write_text('Ручная правка')
         with self.assertRaisesRegex(ValueError, 'изменён'):
@@ -1018,7 +1106,7 @@ class HandoffTests(unittest.TestCase):
         pdf = self.file('invoice.pdf')
         response = self.file('reply.txt', f'[Счёт]({pdf})')
         self.assertFalse(handoff.audit(self.state, response)['valid'])
-        handoff.register(self.state, [pdf], 'unsigned', 'v1', self.at)
+        handoff.register(self.state, [pdf], 'unsigned', 'v1', self.at, document_kind='payment')
         self.assertTrue(handoff.audit(self.state, response)['valid'])
         response.write_text(f'[Счёт]({self.root / "missing.pdf"})')
         self.assertFalse(handoff.audit(self.state, response)['valid'])
@@ -1045,10 +1133,10 @@ class HandoffTests(unittest.TestCase):
         result = handoff.audit(self.state, response)
         self.assertFalse(result['valid'], result['issues'])
         self.assertTrue(any('конкретный файл' in issue for issue in result['issues']))
-        handoff.register(self.state, [old], 'unsigned', 'v1', self.at)
+        handoff.register(self.state, [old], 'unsigned', 'v1', self.at, document_kind='payment')
         new = folder / 'invoice-v2.pdf'
         new.write_text('Счёт v2')
-        handoff.register(self.state, [new], 'unsigned', 'v2', self.at, [old])
+        handoff.register(self.state, [new], 'unsigned', 'v2', self.at, [old], document_kind='payment')
         self.assertFalse(handoff.audit(self.state, response)['valid'])
         response.write_text(f'[Счёт]({new})')
         result = handoff.audit(self.state, response)
@@ -1058,27 +1146,27 @@ class HandoffTests(unittest.TestCase):
         doc = self.file('first.docx')
         before = self.state.read_bytes()
         with self.assertRaises(ValueError):
-            handoff.register(self.state, [doc, self.root / 'missing.pdf'], 'draft', 'v1', self.at)
+            handoff.register(self.state, [doc, self.root / 'missing.pdf'], 'draft', 'v1', self.at, document_kind='contract')
         self.assertEqual(before, self.state.read_bytes())
 
     def test_duplicate_files_are_rejected_before_registration(self):
         doc = self.file('first.docx')
         before = self.state.read_bytes()
         with self.assertRaisesRegex(ValueError, 'повторно'):
-            handoff.register(self.state, [doc, doc], 'draft', 'v1', self.at)
+            handoff.register(self.state, [doc, doc], 'draft', 'v1', self.at, document_kind='contract')
         self.assertEqual(before, self.state.read_bytes())
 
     def test_parentheses_spaces_and_encoded_symbols_in_local_links(self):
         pdf = self.file('Счёт (1) #2.pdf')
-        handoff.register(self.state, [pdf], 'unsigned', 'v1', self.at)
+        handoff.register(self.state, [pdf], 'unsigned', 'v1', self.at, document_kind='payment')
         response = self.file('reply.txt', f'[Счёт](<{str(pdf).replace("#", "%23")}>)')
         self.assertTrue(handoff.audit(self.state, response)['valid'])
 
     def test_superseded_link_requires_explicit_historical_use(self):
         old = self.file('old.docx')
         new = self.file('new.docx')
-        handoff.register(self.state, [old], 'draft', 'v1', self.at)
-        handoff.register(self.state, [new], 'draft', 'v2', self.at, [old])
+        handoff.register(self.state, [old], 'draft', 'v1', self.at, document_kind='contract')
+        handoff.register(self.state, [new], 'draft', 'v2', self.at, [old], document_kind='contract')
         self.layout(new)
         response = self.file('reply.txt', f'[Прежняя версия]({old})')
         self.assertFalse(handoff.audit(self.state, response)['valid'])
@@ -1113,7 +1201,7 @@ class HandoffTests(unittest.TestCase):
         old_calendar = self.file('old-calendar.ics')
         new = self.file('new-plan.md')
         contract = self.file('contract.docx')
-        handoff.register(self.state, [contract], 'draft', 'v1', self.at, group='contract')
+        handoff.register(self.state, [contract], 'draft', 'v1', self.at, group='contract', document_kind='contract')
         self.layout(contract)
         handoff.register(self.state, [old, old_calendar], 'draft', 'v1', self.at, group='plan')
         handoff.register(self.state, [new], 'draft', 'v2', '2026-11-02T12:00:00+03:00', group='plan')
@@ -1222,17 +1310,45 @@ class HandoffTests(unittest.TestCase):
         handoff.save(self.state, data)
         self.assertFalse(handoff.audit(self.state)['valid'])
 
-    def test_received_pdf_docx_require_classification_before_mutating_state(self):
-        for suffix in ('.pdf', '.docx'):
-            path = self.file('source' + suffix)
-            before = self.state.read_bytes()
-            with self.subTest(suffix=suffix), self.assertRaisesRegex(ValueError, 'document_kind'):
-                handoff.register(self.state, [path], 'received', 'v1', self.at, group='source')
-            self.assertEqual(self.state.read_bytes(), before)
+    def test_all_pdf_docx_require_classification_before_mutating_state(self):
+        for status in ('received', 'draft_for_review'):
+            for suffix in ('.pdf', '.docx'):
+                path = self.file('source' + suffix)
+                before = self.state.read_bytes()
+                with self.subTest(status=status, suffix=suffix), self.assertRaisesRegex(ValueError, 'document_kind'):
+                    handoff.register(self.state, [path], status, 'v1', self.at, group='source')
+                self.assertEqual(self.state.read_bytes(), before)
         path = self.file('own-draft.docx')
-        handoff.register(self.state, [path], 'draft_for_review', 'v1', self.at, group='contract')
+        handoff.register(self.state, [path], 'draft_for_review', 'v1', self.at, group='contract', document_kind='contract')
         self.layout(path)
         self.assertTrue(handoff.audit(self.state)['valid'])
+
+    def test_own_pdf_docx_without_kind_cannot_bypass_audit_or_require_creative_report_for_other_kinds(self):
+        for suffix in ('.pdf', '.docx'):
+            path = self.file('own' + suffix)
+            handoff.register(self.state, [path], 'draft', 'v1', self.at, group=suffix, document_kind='contract')
+            if suffix == '.docx':
+                self.layout(path)
+            for kind in ('contract', 'payment', 'other'):
+                with self.subTest(suffix=suffix, kind=kind):
+                    reason = 'Описание продукта без договорных условий.' if kind == 'other' else None
+                    handoff.register(self.state, [path], 'draft', 'v1', self.at,
+                                     group=suffix, document_kind=kind, kind_reason=reason)
+                    # Неизменная повторная регистрация сохраняет классификацию.
+                    handoff.register(self.state, [path], 'draft', 'v1', self.at, group=suffix)
+                    self.assertTrue(handoff.audit(self.state)['valid'])
+            data = self.data()
+            record = next(item for item in data['documents'] if item['path'] == path.name)
+            record.pop('document_kind')
+            record.pop('kind_reason')
+            handoff.save(self.state, data)
+            before = self.state.read_bytes()
+            result = handoff.audit(self.state)
+            self.assertFalse(result['valid'])
+            self.assertTrue(any('document_kind' in issue for issue in result['issues']))
+            self.assertEqual(before, self.state.read_bytes())
+            record['current'] = False
+            handoff.save(self.state, data)
 
     def test_other_needs_reason_and_payment_does_not_require_contract_review(self):
         path = self.file('received.pdf', 'Подтверждение поступления оплаты')
