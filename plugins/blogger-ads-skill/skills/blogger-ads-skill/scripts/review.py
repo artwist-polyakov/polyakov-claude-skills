@@ -318,7 +318,7 @@ def normalized(text):
     return " ".join(text.split())
 
 
-def source_page(document, page_number, readers):
+def source_page(document, page_number, readers, *, extraction_mode="plain"):
     if type(page_number) is not int or page_number < 1:
         raise ValueError("source.page: номер страницы, целое число от 1")
     path = Path(document["path"])
@@ -332,7 +332,7 @@ def source_page(document, page_number, readers):
         reader = readers[path]
         if page_number > len(reader.pages):
             raise ValueError(f"В PDF нет страницы {page_number}: {path}")
-        page_text = reader.pages[page_number - 1].extract_text() or ""
+        page_text = reader.pages[page_number - 1].extract_text(extraction_mode=extraction_mode) or ""
     elif path.suffix.lower() in IMAGE_SUFFIXES:
         if page_number != 1:
             raise ValueError("У отдельного изображения source.page должен быть 1")
@@ -354,7 +354,13 @@ def verify_citation(item, document, readers):
         if "verification" in source:
             raise ValueError(f"{item['id']}: страница содержит извлекаемый текст; визуальный режим не заменяет автоматическую сверку")
         if normalized(source["quote"]) not in normalized(page_text):
-            raise ValueError(f"{item['id']}: цитата не найдена на странице {page_number} PDF. Проверьте страницу и дословность по оригиналу")
+            # Раздельно позиционированные буквы иногда дают ложный пробел в plain.
+            # Сверяем ту же полную цитату со вторым стандартным извлечением,
+            # сохраняя реальные пробелы, знаки и порядок слов.
+            layout_text = source_page(document, page_number, readers, extraction_mode="layout")
+            if normalized(source["quote"]) not in normalized(layout_text):
+                raise ValueError(f"{item['id']}: цитата не найдена на странице {page_number} PDF. Проверьте страницу и дословность по оригиналу")
+            return dict(result, method="pdf_text", extraction_mode="layout")
         return dict(result, method="pdf_text")
     verification = source.get("verification")
     fields(verification, ("method", "basis"), (), f"{item['id']}.source.verification")

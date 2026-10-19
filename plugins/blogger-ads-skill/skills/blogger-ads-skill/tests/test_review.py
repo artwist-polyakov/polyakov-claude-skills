@@ -10,8 +10,8 @@ import unittest
 from pathlib import Path
 from zipfile import ZipFile
 
-from pypdf import PdfWriter
-from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+from pypdf import PdfReader, PdfWriter
+from pypdf.generic import ArrayObject, DecodedStreamObject, DictionaryObject, NameObject, NumberObject
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("review", ROOT / "scripts/review.py")
@@ -467,6 +467,39 @@ class ReviewTests(unittest.TestCase):
         manifest = json.loads((self.output / "manifest.json").read_text())
         self.assertEqual(manifest["verification"]["citations"][0]["method"], "visual_scan")
         self.assertTrue(review.audit(self.output)["valid"])
+
+    def test_layout_extraction_recovers_positioned_letters_without_removing_real_spaces(self):
+        # Малый межбуквенный отступ: plain ошибочно читает «W here»,
+        # layout учитывает положение букв и читает целое «Where».
+        writer = PdfWriter()
+        page = writer.add_blank_page(width=300, height=300)
+        font = DictionaryObject({
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+            NameObject("/FirstChar"): NumberObject(32),
+            NameObject("/LastChar"): NumberObject(126),
+            NameObject("/Widths"): ArrayObject([NumberObject(80)] + [NumberObject(600)] * 94),
+        })
+        page[NameObject("/Resources")] = DictionaryObject({
+            NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})})
+        content = DecodedStreamObject()
+        content.set_data(b"BT /F1 12 Tf 10 200 Td [(W) -40 (here is the word.)] TJ ET")
+        page[NameObject("/Contents")] = writer._add_object(content)
+        with self.source.open("wb") as stream:
+            writer.write(stream)
+
+        self.assertEqual(PdfReader(self.source).pages[0].extract_text(), "W here is the word.")
+        item = {"id": "positioned", "source": {
+            "document": "contract", "page": 1, "quote": "Where is the word."}}
+        document = {"path": str(self.source)}
+        result = review.verify_citation(item, document, {})
+        self.assertEqual(result["method"], "pdf_text")
+        self.assertEqual(result["extraction_mode"], "layout")
+        for quote in ("Whereistheword.", "Where is theword.", "Where is the word!", "Where is word."):
+            item["source"]["quote"] = quote
+            with self.subTest(quote=quote), self.assertRaisesRegex(ValueError, "цитата не найдена"):
+                review.verify_citation(item, document, {})
 
     def test_visual_claim_cannot_override_wrong_quote_on_searchable_pdf_page(self):
         source = self.data["decisions"][0]["source"]
