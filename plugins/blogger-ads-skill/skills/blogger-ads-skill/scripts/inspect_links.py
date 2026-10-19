@@ -188,6 +188,18 @@ def docx_links(raw):
     return links, warnings
 
 
+def compare_urls(expected, actual):
+    """Сравнить точные адреса с сохранением порядка и повторов."""
+    wanted_counts, actual_counts = Counter(expected), Counter(actual)
+    urls = dict.fromkeys(expected + actual)
+    counts = [{"url": url, "expected": wanted_counts[url], "actual": actual_counts[url],
+               "difference": actual_counts[url] - wanted_counts[url]} for url in urls]
+    return {"expected_urls": expected, "actual_urls": actual,
+            "expected_count": len(expected), "actual_count": len(actual),
+            "counts": counts, "differences": [row for row in counts if row["difference"]],
+            "ordered_lists_equal": expected == actual, "note": COMPARISON_NOTE}
+
+
 def inspect_links(path, expected=None):
     path = Path(path).resolve()
     raw = path.read_bytes()
@@ -203,14 +215,7 @@ def inspect_links(path, expected=None):
                   "Адреса не открывались. Для DOCX порядок между XML-частями не определяет порядок страниц."]}
     if expected is not None:
         actual = [row["target"] for row in links if row["target"] is not None]
-        wanted_counts, actual_counts = Counter(expected), Counter(actual)
-        urls = dict.fromkeys(expected + actual)
-        counts = [{"url": url, "expected": wanted_counts[url], "actual": actual_counts[url],
-                   "difference": actual_counts[url] - wanted_counts[url]} for url in urls]
-        result["comparison"] = {"expected_urls": expected, "actual_urls": actual,
-                                "expected_count": len(expected), "actual_count": len(actual),
-                                "counts": counts, "differences": [row for row in counts if row["difference"]],
-                                "ordered_lists_equal": expected == actual, "note": COMPARISON_NOTE}
+        result["comparison"] = compare_urls(expected, actual)
     return result
 
 

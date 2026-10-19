@@ -284,7 +284,8 @@ def link_report_source(path):
             and isinstance(value.get('source'), dict))):
         return None
     source = value.get('source', {})
-    if not isinstance(source, dict) or not source.get('path') or not source.get('sha256'):
+    if (not isinstance(source, dict) or not isinstance(source.get('path'), str) or not source['path'].strip()
+            or not isinstance(source.get('sha256'), str) or re.fullmatch(r'[0-9a-f]{64}', source['sha256']) is None):
         raise ValueError(f'{path}: у отчёта ссылок нет пути и SHA исходного документа')
     original = resolve(path.parent, source['path'])
     if sha(original) != source['sha256']:
@@ -303,7 +304,45 @@ def archive_link_reports(state, base):
             item.update(current=False, archive_reason='Проверенный документ заменён; отчёт относится к его исторической версии')
 
 
-def link_report_issues(documents):
+def check_link_comparison(path, documents, expected_urls):
+    """Отчёт закрывает проверку только после сверки адресов и разбора различий."""
+    from inspect_links import compare_urls
+
+    deal.validate_creative_links(expected_urls)
+    value = deal.read_json(path)
+    rows, warnings, comparison = (value.get(key) for key in ('links', 'warnings', 'comparison'))
+    if (not isinstance(rows, list) or any(not isinstance(row, dict) or 'target' not in row
+            or (row['target'] is not None and not isinstance(row['target'], str)) for row in rows)):
+        raise ValueError(f'{path}: links должен содержать объекты с target: строка или null')
+    if not isinstance(warnings, list) or any(not isinstance(item, str) for item in warnings):
+        raise ValueError(f'{path}: warnings должен быть списком строк')
+    if not isinstance(comparison, dict):
+        raise ValueError(f'{path}: нет comparison; пересоздайте отчёт inspect_links с --expected исходная-карта.json')
+    actual_urls = [row['target'] for row in rows if row['target'] is not None]
+    computed = compare_urls(expected_urls, actual_urls)
+    for key, expected in computed.items():
+        if key == 'note':
+            continue
+        # JSON различает true и 1, в отличие от обычного сравнения Python.
+        if key not in comparison or json.dumps(comparison[key], sort_keys=True) != json.dumps(expected, sort_keys=True):
+            raise ValueError(f'{path}: comparison.{key} не совпадает с текущей картой сделки и links[].target; '
+                             'пересоздайте отчёт с правильным --expected')
+    if not computed['ordered_lists_equal'] or warnings or any(row['target'] is None for row in rows):
+        resolution = value.get('resolution')
+        if (not isinstance(resolution, dict) or resolution.get('result') != 'accepted'
+                or any(not isinstance(resolution.get(key), str) or not resolution[key].strip()
+                       for key in ('notes', 'source'))):
+            raise ValueError(f'{path}: различия или предупреждения не разобраны; нужны resolution.result=accepted, '
+                             'notes с объяснением якорей и source с путём зарегистрированной сверки')
+        source = resolve(path.parent, resolution['source'])
+        record = documents.get(source, {})
+        if (source in {path, resolve(path.parent, value['source']['path'])}
+                or record.get('group') not in {'review', 'analysis'} or not record.get('current')
+                or not source.is_file() or record.get('sha256') != sha(source)):
+            raise ValueError(f'{path}: resolution.source должен указывать на актуальный зарегистрированный файл сверки')
+
+
+def link_report_issues(documents, expected_urls):
     issues, covered = [], set()
     for path, item in documents.items():
         if not item.get('current'):
@@ -316,6 +355,7 @@ def link_report_issues(documents):
                 if not record.get('current') or record.get('sha256') != digest:
                     raise ValueError(f'{path}: отчёт ссылок относится к незарегистрированной или исторической версии; '
                                      'зарегистрируйте исходник либо сохраните этот отчёт как исторический')
+                check_link_comparison(path, documents, expected_urls)
                 covered.add((original, digest))
         except (ValueError, OSError, TypeError) as error:
             issues.append(str(error))
@@ -825,7 +865,7 @@ def audit(state_path, response=None, historical=(), record_issue=False):
     for group, versions in current_groups.items():
         if len(versions) > 1:
             issues.append(f'documents: группа {group} содержит несколько актуальных версий; прежние версии должны быть историческими')
-    issues.extend(link_report_issues(documents))
+    issues.extend(link_report_issues(documents, state.get('creative', {}).get('links', [])))
     issues.extend(layout_issues(documents))
     contract_history, contract_documents = [], {}
     unchecked_contract_dates = [

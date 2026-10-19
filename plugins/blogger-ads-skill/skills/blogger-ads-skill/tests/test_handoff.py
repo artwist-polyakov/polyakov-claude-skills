@@ -86,9 +86,40 @@ class HandoffTests(unittest.TestCase):
         files[0].write_text(json.dumps(data))
         files[2].write_text(handoff.deal.ics(data, handoff.deal.stamp(data['generated_at'])))
 
-    def link_report(self, source, name='links-report.json'):
-        return self.file(name, json.dumps({'kind': 'link_inspection', 'format': source.suffix[1:],
-            'source': {'path': str(source), 'sha256': handoff.sha(source)}, 'links': []}))
+    def link_report(self, source, name='links-report.json', expected=None):
+        import inspect_links
+        return self.file(name, json.dumps(inspect_links.inspect_links(source, [] if expected is None else expected)))
+
+    def link_issues(self):
+        return handoff.link_report_issues(self.registered(), self.data()['creative']['links'])
+
+    def received_links(self, expected, actual):
+        from pypdf.annotations import Link
+        data = self.data()
+        data['creative']['links'] = expected
+        handoff.save(self.state, data)
+        source = self.root / 'received-links.pdf'
+        writer = PdfWriter()
+        writer.add_blank_page(300, 300)
+        for index, url in enumerate(actual):
+            writer.add_annotation(0, Link(rect=(10, 10 + index * 20, 100, 20 + index * 20), url=url))
+        with source.open('wb') as output:
+            writer.write(output)
+        handoff.register(self.state, [source], 'received', 'v1', self.at,
+                         group='received', document_kind='creative')
+        return source, self.link_report(source, expected=expected)
+
+    def register_link_report(self, report):
+        handoff.register(self.state, [report], 'checked', 'v1', self.at, group='link-evidence')
+
+    def resolved_links(self, report):
+        note = self.file('link-resolution.md', 'Адрес в печатной таблице повторён: якоря проверены на странице 1.')
+        handoff.register(self.state, [note], 'reviewed', 'v1', self.at, group='analysis')
+        data = json.loads(report.read_text())
+        data['resolution'] = {'result': 'accepted', 'notes': 'Дополнительная ссылка относится к печатной таблице.',
+                              'source': note.name}
+        report.write_text(json.dumps(data))
+        return note
 
     def registered(self):
         return {handoff.resolve(self.root, item['path']): item for item in self.data()['documents']}
@@ -101,10 +132,120 @@ class HandoffTests(unittest.TestCase):
         handoff.register(self.state, [own], 'draft', 'v1', self.at, group='creative')
         own_report = self.link_report(own)
         handoff.register(self.state, [own_report], 'checked', 'v1', self.at, group='own-evidence')
-        self.assertTrue(any(str(received) in issue for issue in handoff.link_report_issues(self.registered())))
+        self.assertTrue(any(str(received) in issue for issue in self.link_issues()))
         received_report = self.link_report(received, 'received-links.json')
         handoff.register(self.state, [received_report], 'checked', 'v1', self.at, group='received-evidence')
-        self.assertEqual(handoff.link_report_issues(self.registered()), [])
+        self.assertEqual(self.link_issues(), [])
+
+    def test_received_link_report_with_matching_nonempty_map_passes_readonly(self):
+        urls = ['https://example.test/?b=2&a=1', 'https://example.test/?a=1&b=2'] * 2
+        source, report = self.received_links(urls, urls)
+        self.register_link_report(report)
+        before = {path: path.read_bytes() for path in (self.state, source, report)}
+        self.assertEqual(self.link_issues(), [])
+        self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+    def test_link_report_without_expected_blocks_otherwise_valid_handoff(self):
+        import inspect_links
+        source, report = self.received_links([], [])
+        # Собственный PDF не требует договорной сверки: до добавления отчёта
+        # выдача проходит, затем блокируется именно отсутствующим comparison.
+        handoff.register(self.state, [source], 'draft', 'v1', self.at, group='received')
+        self.assertTrue(handoff.audit(self.state)['valid'])
+        report.write_text(json.dumps(inspect_links.inspect_links(source)))
+        self.register_link_report(report)
+        self.assertTrue(any('нет comparison' in issue for issue in self.link_issues()))
+        result = handoff.audit(self.state)
+        self.assertFalse(result['valid'])
+        self.assertTrue(any('нет comparison' in issue for issue in result['issues']))
+
+    def test_received_link_report_uses_current_deal_map(self):
+        _, report = self.received_links([], [])
+        self.register_link_report(report)
+        data = self.data()
+        data['creative']['links'] = ['https://example.test/expected']
+        handoff.save(self.state, data)
+        self.assertTrue(any('comparison.expected_urls' in issue for issue in self.link_issues()))
+
+    def test_received_link_differences_require_explicit_resolution(self):
+        urls = ['https://example.test/product', 'https://example.test/pricing']
+        _, report = self.received_links(urls, urls[::-1])
+        # Числа одинаковы, но изменённый порядок тоже нужно разобрать по якорям.
+        self.assertEqual(json.loads(report.read_text())['comparison']['differences'], [])
+        self.register_link_report(report)
+        self.assertTrue(any('не разобраны' in issue for issue in self.link_issues()))
+
+    def test_extra_table_link_with_registered_resolution_passes(self):
+        url = 'https://example.test/product'
+        _, report = self.received_links([url], [url, url])
+        note = self.resolved_links(report)
+        self.register_link_report(report)
+        before = {path: path.read_bytes() for path in (self.state, report, note)}
+        self.assertEqual(self.link_issues(), [])
+        self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+    def test_received_link_warnings_require_resolution_even_when_lists_match(self):
+        _, report = self.received_links([], [])
+        data = json.loads(report.read_text())
+        data['warnings'] = ['Страница 1: аннотация не прочитана']
+        report.write_text(json.dumps(data))
+        self.register_link_report(report)
+        self.assertTrue(any('не разобраны' in issue for issue in self.link_issues()))
+
+    def test_link_report_rejects_tampered_comparison_and_malformed_rows(self):
+        url = 'https://example.test/product'
+        _, report = self.received_links([url], [url, url])
+        original = json.loads(report.read_text())
+        mutations = {
+            'forged_match': lambda data: data['comparison'].update(ordered_lists_equal=True),
+            'forged_actual': lambda data: data['comparison'].update(actual_urls=[url]),
+            'forged_expected': lambda data: data['comparison'].update(expected_urls=[url, url]),
+            'hidden_difference': lambda data: data['comparison'].update(differences=[]),
+            'forged_counts': lambda data: data['comparison']['counts'][0].update(actual=1),
+            'bool_as_count': lambda data: data['comparison'].update(expected_count=True),
+            'null_comparison': lambda data: data.update(comparison=None),
+            'list_comparison': lambda data: data.update(comparison=[]),
+            'dict_links': lambda data: data.update(links={}),
+            'string_row': lambda data: data.update(links=['url']),
+            'missing_target': lambda data: data.update(links=[{}]),
+            'object_target': lambda data: data.update(links=[{'target': {'url': url}}]),
+            'string_warnings': lambda data: data.update(warnings=''),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                data = json.loads(json.dumps(original))
+                mutate(data)
+                report.write_text(json.dumps(data))
+                with self.assertRaises(ValueError):
+                    handoff.check_link_comparison(report, self.registered(), [url])
+
+    def test_link_report_rejects_malformed_current_expected_map(self):
+        _, report = self.received_links([], [])
+        for invalid in (None, {}, '', [True], [{}], ['not-a-url']):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, 'creative.links'):
+                handoff.check_link_comparison(report, self.registered(), invalid)
+
+    def test_link_resolution_requires_current_unchanged_registered_review(self):
+        url = 'https://example.test/product'
+        source, report = self.received_links([url], [url, url])
+        note = self.resolved_links(report)
+        original = json.loads(report.read_text())
+        for change in ({'result': 'pending'}, {'notes': ' '}, {'notes': []}, {'source': {}},
+                       {'source': 'missing.md'}, {'source': source.name}, {'source': report.name}):
+            with self.subTest(change=change):
+                data = json.loads(json.dumps(original))
+                data['resolution'].update(change)
+                report.write_text(json.dumps(data))
+                with self.assertRaises(ValueError):
+                    handoff.check_link_comparison(report, self.registered(), [url])
+        report.write_text(json.dumps(original))
+        records = self.registered()
+        for change in ({'current': False}, {'sha256': '0' * 64}, {'group': 'source'}):
+            with self.subTest(change=change):
+                changed = {path: dict(item) for path, item in records.items()}
+                changed[note.resolve()].update(change)
+                with self.assertRaisesRegex(ValueError, 'resolution.source'):
+                    handoff.check_link_comparison(report, changed, [url])
 
     def test_replacing_document_archives_its_link_report_across_groups(self):
         old = self.received_pdf('old.pdf')
