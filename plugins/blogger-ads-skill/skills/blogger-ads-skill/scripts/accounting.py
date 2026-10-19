@@ -159,12 +159,14 @@ def validate_data(data, command):
     for section in ("payment_docs", "advance_invoices"):
         for item in data[section]:
             required(item, "number", section)
-            iso_date(required(item, "date", section))
-            if iso_date(item["date"]) > iso_date(data["document"]["date"]):
+            item_date = iso_date(required(item, "date", section))
+            if item_date > iso_date(data["document"]["date"]):
                 raise ValueError(f"{section}: дата позже УПД")
             if item.get("correction"):
                 required(item["correction"], "number", section + ".correction")
                 correction_date = iso_date(required(item["correction"], "date", section + ".correction"))
+                if correction_date < item_date:
+                    raise ValueError(f"{section}.correction: дата раньше исходного документа")
                 if correction_date > iso_date(data["document"]["date"]):
                     raise ValueError(f"{section}.correction: дата позже УПД")
     if not isinstance(data.get("had_advance"), bool):
