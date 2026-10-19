@@ -435,10 +435,11 @@ class HandoffTests(unittest.TestCase):
         files = self.plan_package()
         self.register_plan(files)
         response = self.file('reply.txt', f'[План](<{files[1]}>)')
-        before = self.state.read_bytes()
-        self.assertTrue(handoff.audit(self.state, response)['valid'])
+        before = {path: path.read_bytes() for path in (self.state, *files, response)}
+        result = handoff.audit(self.state, response)
+        self.assertTrue(result['valid'], result['issues'])
         self.assertNotIn('plan_issues', self.data())
-        self.assertEqual(before, self.state.read_bytes())
+        self.assertEqual(before, {path: path.read_bytes() for path in before})
         # Даже повторная регистрация с delivered_at не становится базой.
         self.register_plan(files)
         self.assertNotIn('plan_issues', self.data())
@@ -1041,6 +1042,40 @@ class HandoffTests(unittest.TestCase):
         result = handoff.audit(self.state)
         self.assertFalse(result['valid'])
         self.assertTrue(any('ICS не соответствует' in issue for issue in result['issues']))
+
+    def test_plan_markdown_tampered_before_registration_blocks_issue_without_writes(self):
+        self.scheduled_state()
+        old = self.plan_package('old-deadlines')
+        self.change_plan_state(49, 2)
+        for name in ('old-deadlines', 'arbitrary', 'manually-edited', 'crlf'):
+            with self.subTest(content=name):
+                files = self.plan_package('current-' + name)
+                generated = files[1].read_bytes()
+                if name == 'old-deadlines':
+                    changed = old[1].read_bytes()
+                elif name == 'arbitrary':
+                    changed = 'Публиковать можно сразу, остальные действия не нужны.\n'.encode('utf-8')
+                elif name == 'manually-edited':
+                    changed = generated.replace('ещё не установлены'.encode('utf-8'), 'установлены'.encode('utf-8'))
+                else:
+                    changed = generated.replace(b'\n', b'\r\n')
+                self.assertNotEqual(generated, changed)
+                # Подмена до регистрации даёт честный SHA и архив, но неверный читаемый план.
+                files[1].write_bytes(changed)
+                self.register_plan(files)
+                entry = self.registered()[files[1].resolve()]
+                self.assertEqual(entry['sha256'], handoff.sha(files[1]))
+                response = self.file('reply-' + name + '.txt', f'[План](<{files[1]}>)')
+                before = {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
+                for record in (False, True):
+                    result = handoff.audit(self.state, response, record_issue=record)
+                    self.assertFalse(result['valid'])
+                    self.assertTrue(any('plan.md не соответствует' in issue for issue in result['issues']),
+                                    result['issues'])
+                    if record:
+                        self.assertFalse(result['plan_issue_recorded'])
+                    self.assertNotIn('plan_issues', self.data())
+                    self.assertEqual(before, {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()})
 
     def test_inactive_deal_does_not_require_new_plan(self):
         self.scheduled_state()

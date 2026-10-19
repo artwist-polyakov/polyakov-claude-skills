@@ -41,13 +41,13 @@ class LinkInspectionTests(unittest.TestCase):
             writer.write(file)
         return path
 
-    def docx(self):
+    def docx(self, extra=""):
         path = self.base / "received.docx"
         with ZipFile(path, "w") as archive:
             archive.writestr("word/document.xml", '''<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>
 <w:p><w:hyperlink r:id="r1"><w:r><w:t>При</w:t></w:r><w:r><w:t>мер</w:t></w:r></w:hyperlink></w:p>
 <w:p><w:r><w:t>https://plain.example.test/</w:t></w:r><w:hyperlink r:id="r1"><w:r><w:t>OpenAI</w:t><w:tab/><w:t>тарифы</w:t><w:br/><w:t>подробнее</w:t></w:r></w:hyperlink><w:hyperlink r:id="r2"><w:r><w:t>Пример</w:t></w:r></w:hyperlink></w:p>
-</w:body></w:document>''')
+</w:body></w:document>'''.replace("</w:body>", extra + "</w:body>"))
             archive.writestr("word/_rels/document.xml.rels", '''<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://pricing.example.test/?a=1&amp;b=2" TargetMode="External"/>
 <Relationship Id="r2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://product.example.test/?a=1&amp;b=2" TargetMode="External"/>
@@ -110,6 +110,62 @@ class LinkInspectionTests(unittest.TestCase):
         self.assertEqual([row["difference"] for row in comparison["differences"]], [-1, 1])
         self.assertFalse(comparison["ordered_lists_equal"])
         self.assertIn("не автоматическое доказательство", comparison["note"])
+
+    def test_docx_hyperlink_fields_warn_even_when_relationship_urls_match(self):
+        expected = ["https://pricing.example.test/?a=1&b=2"] * 2 + ["https://product.example.test/?a=1&b=2"]
+        for field in (
+                '<w:fldSimple w:instr=\' HYPERLINK "https://hidden.example.test/" \'>\n'
+                '<w:r><w:t>Другой адрес</w:t></w:r></w:fldSimple>',
+                '<w:r><w:fldChar w:fldCharType="begin"/><w:instrText> HYPERLINK "https://hidden.example.test/" </w:instrText>'
+                '<w:fldChar w:fldCharType="separate"/><w:t>Другой адрес</w:t><w:fldChar w:fldCharType="end"/></w:r>',
+                '<w:r><w:fldChar w:fldCharType="begin"/><w:instrText> HYPER</w:instrText></w:r>'
+                '<w:r><w:instrText>LINK "https://hidden.example.test/" </w:instrText>'
+                '<w:fldChar w:fldCharType="separate"/><w:t>Другой адрес</w:t><w:fldChar w:fldCharType="end"/></w:r>'):
+            for part in ("word/document.xml", "word/header1.xml"):
+                with self.subTest(field=field, part=part):
+                    path = self.docx("<w:p>" + field + "</w:p>" if part == "word/document.xml" else "")
+                    if part != "word/document.xml":
+                        with ZipFile(path, "a") as archive:
+                            archive.writestr(part, '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                                             '<w:p>' + field + '</w:p></w:hdr>')
+                    before = path.read_bytes()
+                    result = links.inspect_links(path, expected)
+                    self.assertTrue(result["comparison"]["ordered_lists_equal"])
+                    self.assertEqual(result["comparison"]["differences"], [])
+                    self.assertEqual(len(result["warnings"]), 1)
+                    self.assertIn(part, result["warnings"][0])
+                    self.assertIn("HYPERLINK", result["warnings"][0])
+                    self.assertIn("resolution", result["warnings"][0])
+                    self.assertEqual(path.read_bytes(), before)
+
+    def test_docx_other_fields_and_separate_instructions_do_not_warn(self):
+        fields = '<w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple>'
+        for instruction in (' MERGEFIELD "HYPERLINK" ', ' HYPER', 'LINK "https://example.test/" ', ' HYPERLINKED '):
+            fields += ('<w:r><w:fldChar w:fldCharType="begin"/><w:instrText>' + instruction
+                       + '</w:instrText><w:fldChar w:fldCharType="separate"/><w:t>Результат</w:t>'
+                       '<w:fldChar w:fldCharType="end"/></w:r>')
+        result = links.inspect_links(self.docx("<w:p>" + fields + "</w:p>"))
+        self.assertEqual(len(result["links"]), 3)
+        self.assertEqual(result["warnings"], [])
+
+    def test_docx_hyperlink_field_requires_registered_resolution(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import handoff
+
+        field = '<w:p><w:fldSimple w:instr=\' HYPERLINK "https://hidden.example.test/" \'>\n'
+        path = self.docx(field + '<w:r><w:t>Другой адрес</w:t></w:r></w:fldSimple></w:p>')
+        expected = ["https://pricing.example.test/?a=1&b=2"] * 2 + ["https://product.example.test/?a=1&b=2"]
+        result = links.inspect_links(path, expected)
+        report = self.base / "links.json"
+        report.write_text(json.dumps(result), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "resolution.result=accepted"):
+            handoff.check_link_comparison(report, {}, expected)
+        review = self.base / "review.md"
+        review.write_text("Поле HYPERLINK отдельно просмотрено: адрес и видимый якорь проверены.", encoding="utf-8")
+        result["resolution"] = {"result": "accepted", "notes": "Поле проверено отдельно", "source": str(review)}
+        report.write_text(json.dumps(result), encoding="utf-8")
+        handoff.check_link_comparison(report, {
+            review.resolve(): {"group": "review", "current": True, "sha256": handoff.sha(review)}}, expected)
 
     def test_docx_textbox_links_count_once_in_xml_order_with_nearest_paragraph(self):
         path = self.base / "textbox.docx"

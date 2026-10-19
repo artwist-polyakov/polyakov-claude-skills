@@ -1321,6 +1321,24 @@ def changes(previous, current):
     return result
 
 
+def markdown(plan_data):
+    """Читаемый план из того же JSON, по которому строится календарь."""
+    lines = [f"# Сделка {plan_data['deal_id']}", "", "Напоминания подготовлены, но ещё не установлены в календарь или расписание агента.", ""]
+    lines += ["Условия готовности по ОРД и ЕРИР:",
+              "- " + plan_data["readiness_policy"]["ord"]["note"],
+              "- " + plan_data["readiness_policy"]["erir_visibility"]["note"], ""]
+    lines += [f"- {e['at']}: {e['title']}" + (" — время напоминания прошло" if e["overdue"] else "")
+              + (f". Дата по норме: {e['legal_date']}; час организационный, источник: {e['legal_source']}." if e.get("legal_date") else
+                 f". Предварительная дата контроля: {e['control_date']}; применимость срока не установлена, час организационный." if e.get("control_date") else "")
+              + f"\n  {e['note']}"
+              for e in plan_data["events"]]
+    if plan_data["completed"]:
+        lines += ["", "## Выполнено — напоминание больше не требуется", ""]
+        lines += [f"- {e['title']}: {e['completed_at']}; основание: {e['completion_source']}" for e in plan_data["completed"]]
+    lines += ["", *plan_data["warnings"]]
+    return "\n".join(lines) + "\n"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1407,20 +1425,7 @@ def main():
         args.output_dir.mkdir(parents=True, exist_ok=False)
         (args.output_dir / "plan.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         (args.output_dir / "reminders.ics").write_bytes(ics(result, now).encode("utf-8"))
-        lines = [f"# Сделка {state['deal_id']}", "", "Напоминания подготовлены, но ещё не установлены в календарь или расписание агента.", ""]
-        lines += ["Условия готовности по ОРД и ЕРИР:",
-                  "- " + result["readiness_policy"]["ord"]["note"],
-                  "- " + result["readiness_policy"]["erir_visibility"]["note"], ""]
-        lines += [f"- {e['at']}: {e['title']}" + (" — время напоминания прошло" if e["overdue"] else "")
-                  + (f". Дата по норме: {e['legal_date']}; час организационный, источник: {e['legal_source']}." if e.get("legal_date") else
-                     f". Предварительная дата контроля: {e['control_date']}; применимость срока не установлена, час организационный." if e.get("control_date") else "")
-                  + f"\n  {e['note']}"
-                  for e in result["events"]]
-        if result["completed"]:
-            lines += ["", "## Выполнено — напоминание больше не требуется", ""]
-            lines += [f"- {e['title']}: {e['completed_at']}; основание: {e['completion_source']}" for e in result["completed"]]
-        lines += ["", *result["warnings"]]
-        (args.output_dir / "plan.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        (args.output_dir / "plan.md").write_bytes(markdown(result).encode("utf-8"))
         print(json.dumps({"directory": str(args.output_dir), "events": len(result["events"]), "installed": False}, ensure_ascii=False))
     except (ValueError, KeyError, TypeError, OSError) as error:
         parser.exit(1, f"Ошибка: {error}\n")

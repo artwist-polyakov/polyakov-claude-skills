@@ -11,6 +11,7 @@ import importlib.util
 from io import BytesIO
 import json
 from pathlib import Path
+import re
 import sys
 from xml.etree import ElementTree as ET
 from zipfile import BadZipFile, ZipFile
@@ -156,6 +157,22 @@ def paragraph_links(root):
     yield from walk(root)
 
 
+def has_hyperlink_field(root):
+    """Склеить части команды, сохраняя границы отдельных полей Word."""
+    command = re.compile(r"\s*HYPERLINK\b", re.IGNORECASE)
+    fragments = []
+    for node in root.iter():
+        if node.tag in (W + "fldSimple", W + "fldChar"):
+            if command.match("".join(fragments)):
+                return True
+            fragments.clear()
+            if node.tag == W + "fldSimple" and command.match(node.get(W + "instr", "")):
+                return True
+        elif node.tag == W + "instrText":
+            fragments.append(node.text or "")
+    return command.match("".join(fragments)) is not None
+
+
 def docx_links(raw):
     links, warnings = [], []
     with ZipFile(BytesIO(raw)) as archive:
@@ -167,6 +184,9 @@ def docx_links(raw):
         parts.remove("word/document.xml")
         for part in ["word/document.xml"] + parts:
             root = ET.fromstring(archive.read(part))
+            if has_hyperlink_field(root):
+                warnings.append(f"{part}: обнаружено поле HYPERLINK; его адрес и якорь не извлечены. "
+                                "Сверьте их вручную и сохраните разбор в resolution")
             rel_path = str(Path(part).parent / "_rels" / (Path(part).name + ".rels"))
             relationships = {}
             if rel_path in names:
@@ -211,7 +231,7 @@ def inspect_links(path, expected=None):
               "format": kind, "links": links, "warnings": warnings,
               "limitations": [COMPARISON_NOTE,
                   "PDF: извлечены /Link с действием /URI. anchor_hint — текст из области той же аннотации, он может захватить соседнюю строку или отсутствовать у скана; видимый якорь сверяйте по странице и прямоугольнику. Это не OCR и не автоматическое подтверждение соответствия якоря адресу.",
-                  "DOCX: извлечены элементы w:hyperlink. Обычный текст URL и поля HYPERLINK не считаются такими элементами; номера абзацев относятся к каждой XML-части отдельно.",
+                  "DOCX: извлечены элементы w:hyperlink. Обычный текст URL не извлекается; поля HYPERLINK вызывают предупреждение и требуют отдельной сверки адресов и якорей. Номера абзацев относятся к каждой XML-части отдельно.",
                   "Адреса не открывались. Для DOCX порядок между XML-частями не определяет порядок страниц."]}
     if expected is not None:
         actual = [row["target"] for row in links if row["target"] is not None]
