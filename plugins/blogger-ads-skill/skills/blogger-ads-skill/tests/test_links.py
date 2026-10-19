@@ -378,6 +378,42 @@ class LinkInspectionTests(unittest.TestCase):
                     handoff.check_link_comparison(report, {}, expected)
                 self.assertEqual(path.read_bytes(), before)
 
+    def test_pdf_additional_annotation_actions_require_resolution(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import handoff
+
+        expected = ["https://example.test/?a=1&b=2"] * 2 + ["https://example.test/?b=2&a=1"]
+        self.assertEqual(links.inspect_links(self.pdf(), expected)["warnings"], [])
+        for subtype in ("/Link", "/Text"):
+            for kind in ("/Launch", "/GoToR"):
+                with self.subTest(subtype=subtype, kind=kind):
+                    path = self.pdf()
+                    writer = PdfWriter()
+                    writer.clone_document_from_reader(PdfReader(path))
+                    page = writer.pages[0]
+                    if subtype == "/Link":
+                        annotation = page["/Annots"][0].get_object()
+                    else:
+                        annotation = DictionaryObject({NameObject("/Subtype"): NameObject(subtype),
+                            NameObject("/Rect"): ArrayObject([FloatObject(n) for n in [50, 50, 90, 80]])})
+                        page["/Annots"].append(writer._add_object(annotation))
+                    action = DictionaryObject({NameObject("/S"): NameObject(kind),
+                        NameObject("/F"): TextStringObject("https://hidden.example.test/remote.pdf"),
+                        NameObject("/D"): TextStringObject("section")})
+                    annotation[NameObject("/AA")] = writer._add_object(DictionaryObject({NameObject("/U"): action}))
+                    with path.open("wb") as file:
+                        writer.write(file)
+                    before = path.read_bytes()
+                    result = links.inspect_links(path, expected)
+                    self.assertTrue(result["comparison"]["ordered_lists_equal"])
+                    self.assertEqual(len(result["warnings"]), 1)
+                    self.assertIn("/AA", result["warnings"][0])
+                    report = self.base / "additional-action-links.json"
+                    report.write_text(json.dumps(result), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "resolution.result=accepted"):
+                        handoff.check_link_comparison(report, {}, expected)
+                    self.assertEqual(path.read_bytes(), before)
+
 
 if __name__ == "__main__":
     unittest.main()

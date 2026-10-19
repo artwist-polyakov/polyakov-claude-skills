@@ -1225,6 +1225,38 @@ class HandoffTests(unittest.TestCase):
         response.write_text('[Счёт](file:///definitely-missing-invoice.pdf)')
         self.assertFalse(handoff.audit(self.state, response)['valid'])
 
+    def test_raw_html_response_is_rejected_without_changing_files(self):
+        document = self.file('invoice.pdf')
+        handoff.register(self.state, [document], 'unsigned', 'v1', self.at, document_kind='payment')
+        response = self.file('reply.txt')
+
+        def snapshot():
+            return {path.relative_to(self.root): (path.read_bytes(), path.stat().st_mtime_ns)
+                    for path in self.root.rglob('*') if path.is_file()}
+
+        for html in (f'<a href="{document}">Счёт</a>', f'<img src="{document}" alt="Счёт">'):
+            for text in (f'Готово: {html}', f'<div>\n{html}\n</div>'):
+                for record in (False, True):
+                    with self.subTest(text=text, record=record):
+                        response.write_text(text)
+                        before = snapshot()
+                        result = handoff.audit(self.state, response, record_issue=record)
+                        self.assertFalse(result['valid'], result['issues'])
+                        self.assertTrue(any('HTML в ответе не поддерживается' in issue
+                                            for issue in result['issues']), result['issues'])
+                        self.assertEqual(before, snapshot())
+
+        ignored_html = f'<a href="{self.root / "missing.pdf"}">Пример</a>'
+        for text in (f'[Счёт](<{document}>)',
+                     f'[Счёт](<{document}>)\n\n`{ignored_html}`',
+                     f'[Счёт](<{document}>)\n\n```html\n<div>\n{ignored_html}\n</div>\n```'):
+            with self.subTest(markdown=text):
+                response.write_text(text)
+                before = snapshot()
+                result = handoff.audit(self.state, response)
+                self.assertTrue(result['valid'], result['issues'])
+                self.assertEqual(before, snapshot())
+
     def test_directory_link_cannot_deliver_unregistered_or_superseded_files(self):
         folder = self.root / 'documents'
         folder.mkdir()
@@ -1888,6 +1920,20 @@ class HandoffLinkCheckTests(unittest.TestCase):
         result, data = self.run_check()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(data['local_links'], [str(self.artifact.resolve())])
+
+    def test_raw_html_links_and_images_are_rejected_but_code_examples_are_allowed(self):
+        for tag in (f'<a href="{self.artifact}">Счёт</a>', f'<img src="{self.artifact}" alt="Счёт">'):
+            for content in (f'Готово: {tag}', f'<div>\n{tag}\n</div>'):
+                with self.subTest(content=content):
+                    self.response.write_text(content)
+                    result, data = self.run_check()
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertFalse(data['valid'])
+                    self.assertTrue(any('HTML в ответе не поддерживается' in issue for issue in data['issues']))
+            self.response.write_text(f'`{tag}`\n\n```html\n{tag}\n```\n\n[Счёт](<{self.artifact}>)')
+            result, data = self.run_check()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(data['local_links'], [str(self.artifact.resolve())])
 
     def test_literal_percent_filename_is_not_confused_with_space_filename(self):
         literal = self.root / 'file%20name.pdf'

@@ -171,15 +171,23 @@ def local_response_links(text):
     # Путь цитаты читается целиком, даже если в имени есть Markdown-символы.
     parser.inline.ruler.before('text', 'file_citation', file_citation)
     hrefs = []
+    has_html = False
     for block in parser.parse(text):
+        if block.type == 'html_block':
+            has_html = True
         for token in block.children or ():
             if token.type in {'link_open', 'image'}:
                 hrefs.append(token.attrGet('href' if token.type == 'link_open' else 'src'))
             elif token.type == 'file_citation':
                 hrefs.append(token.attrGet('path'))
+            elif token.type == 'html_inline':
+                has_html = True
             elif token.type == 'text':
                 # Прежняя диагностика ошибочных inline-ссылок с пробелами без <…>.
                 hrefs += re.findall(r'\]\((/[^)\n]*\s[^)\n]*)\)', token.content)
+    if has_html:
+        issues.append('HTML в ответе не поддерживается: используйте обычные Markdown-ссылки и изображения; '
+                      'пример HTML поместите в блок кода')
     for href in hrefs:
         target = href.strip().removeprefix('<').removesuffix('>')
         if target.lower().startswith('file:'):

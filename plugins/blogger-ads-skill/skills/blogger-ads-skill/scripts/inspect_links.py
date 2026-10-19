@@ -62,6 +62,9 @@ def pdf_links(raw):
             if not isinstance(annotation, dict):
                 warnings.append(f"{location}: аннотация не является словарём")
                 continue
+            if "/AA" in annotation:
+                warnings.append(f"{location}: дополнительные действия аннотации /AA не разобраны; "
+                                "сверьте их отдельно и сохраните разбор в resolution")
             if annotation.get("/Subtype") != "/Link":
                 continue
             action = annotation.get("/A")
@@ -244,7 +247,7 @@ def inspect_links(path, expected=None):
     result = {"kind": "link_inspection", "source": {"path": str(path), "sha256": hashlib.sha256(raw).hexdigest()},
               "format": kind, "links": links, "warnings": warnings,
               "limitations": [COMPARISON_NOTE,
-                  "PDF: извлечены /Link с действием /URI; прочие действия и цепочки /Next вызывают предупреждение. anchor_hint — текст из области той же аннотации, он может захватить соседнюю строку или отсутствовать у скана; видимый якорь сверяйте по странице и прямоугольнику. Это не OCR и не автоматическое подтверждение соответствия якоря адресу.",
+                  "PDF: извлечены /Link с действием /URI; прочие действия, цепочки /Next и дополнительные действия аннотаций /AA вызывают предупреждение. anchor_hint — текст из области той же аннотации, он может захватить соседнюю строку или отсутствовать у скана; видимый якорь сверяйте по странице и прямоугольнику. Это не OCR и не автоматическое подтверждение соответствия якоря адресу.",
                   "DOCX: внешние адреса w:hyperlink учтены только при Type гиперссылки и TargetMode=External; внутренние w:anchor показаны отдельно. Обычный текст URL не извлекается; поля HYPERLINK и ссылки DrawingML (hlinkClick/hlinkHover) вызывают предупреждение и требуют отдельной сверки адресов и связанных текста или объектов. Номера абзацев относятся к каждой XML-части отдельно.",
                   "Адреса не открывались. Для DOCX порядок между XML-частями не определяет порядок страниц."]}
     if expected is not None:
