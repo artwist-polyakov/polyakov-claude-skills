@@ -163,18 +163,18 @@
       ]
     },
     "CHANNEL_NAME": {
-      "question": "Как называется канал?",
-      "example": "Пример канала",
+      "question": "Как называется рекламная площадка (канал, сообщество, сайт и т. п.)?",
+      "example": "Пример площадки",
       "group": "Размещение",
-      "note": "",
+      "note": "В договоре любая выбранная рекламная площадка далее называется «Канал»; поле не ограничено Telegram.",
       "templates": [
         "contract",
         "placement-terms"
       ]
     },
     "CHANNEL_URL": {
-      "question": "Каков точный адрес канала?",
-      "example": "https://t.me/example_channel",
+      "question": "Каков точный адрес рекламной площадки?",
+      "example": "https://example.org/community",
       "group": "Размещение",
       "note": "",
       "templates": [
