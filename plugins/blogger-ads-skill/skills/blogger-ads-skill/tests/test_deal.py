@@ -2297,6 +2297,83 @@ class CreativeImportTests(unittest.TestCase):
         self.assertEqual(result["invalidated_checks"], [])
         self.assertEqual(self.state, before)
 
+    def test_changed_text_link_map_or_media_resets_all_dependent_checks(self):
+        self.import_source()
+        self.confirm()
+        before = copy.deepcopy(self.state)
+        raw_links = self.links_path.read_bytes()
+        dependent = {"creative_approval", "erid", "ord_creative", "marking", "legality", "scheduled_message"}
+        for changed in ("text", "link_map", "media_sha256"):
+            with self.subTest(changed=changed):
+                self.state = copy.deepcopy(before)
+                self.text_path.write_bytes(self.raw_text + (b"new" if changed == "text" else b""))
+                self.links_path.write_bytes(raw_links)
+                if changed == "link_map":
+                    link_map = copy.deepcopy(before["creative"]["link_map"])
+                    link_map[0]["anchor"] = "Новый якорь при прежнем адресе"
+                    self.links_path.write_text(json.dumps(link_map, ensure_ascii=False), encoding="utf-8")
+                elif changed == "media_sha256":
+                    self.state["creative"][changed] = [hashlib.sha256(b"new image").hexdigest()]
+                self.save_state()
+                result = self.import_source()
+                self.assertTrue(result["changed"])
+                self.assertEqual(set(result["invalidated_checks"]), dependent)
+                for key, proof in before["checks"].items():
+                    if key in dependent:
+                        self.assertEqual(self.state["checks"][key]["status"], "pending")
+                        self.assertEqual(self.state["history"][-1]["invalidated_checks"][key], proof)
+                    else:
+                        self.assertEqual(self.state["checks"][key], proof)
+                self.assertEqual(self.state["publication"], before["publication"])
+                self.assertEqual(self.state["history"][-1]["previous_creative_sha256"], deal.digest(before["creative"]))
+                after = copy.deepcopy(self.state)
+                repeated = self.import_source()
+                self.assertFalse(repeated["changed"])
+                self.assertEqual(repeated["invalidated_checks"], [])
+                self.assertEqual(self.state, after)
+
+    def test_reconfirmed_creative_still_requires_legality_and_queue_checks(self):
+        self.import_source()
+        self.confirm()
+        before = copy.deepcopy(self.state)
+        for scheduled_message_id in (None, "existing-message-id"):
+            with self.subTest(scheduled_message_id=scheduled_message_id):
+                self.state = copy.deepcopy(before)
+                self.state["publication"]["scheduled_message_id"] = scheduled_message_id
+                self.save_state()
+                self.text_path.write_bytes(self.raw_text + b"new")
+                self.import_source()
+                for key in ("creative_approval", "erid", "ord_creative", "marking"):
+                    self.state["checks"][key].update(status="confirmed", creative_sha256=deal.digest(self.state["creative"]))
+                result = deal.check(self.state, self.now, self.state_path)
+                self.assertFalse(result["ready"])
+                self.assertEqual(set(result["blockers"]), {"legality", "scheduled_message"})
+                self.assertEqual(self.state["publication"]["scheduled_message_id"], scheduled_message_id)
+                for key in ("legality", "scheduled_message"):
+                    self.state["checks"][key].update(status="confirmed", source="Повторно проверена новая версия",
+                                                     checked_at=self.now.isoformat())
+                    result = deal.check(self.state, self.now, self.state_path)
+                    self.assertEqual(set(result["blockers"]), {"scheduled_message"} if key == "legality" else set())
+                self.assertTrue(result["ready"])
+
+    def test_reimport_checks_optional_legality_and_queue_hashes(self):
+        self.import_source()
+        self.confirm()
+        before = copy.deepcopy(self.state)
+        for key in ("legality", "scheduled_message"):
+            for version in (deal.digest(before["creative"]), "old-version"):
+                with self.subTest(check=key, version=version):
+                    self.state = copy.deepcopy(before)
+                    self.state["checks"][key]["creative_sha256"] = version
+                    self.save_state()
+                    expected = copy.deepcopy(self.state["checks"])
+                    result = self.import_source()
+                    self.assertFalse(result["changed"])
+                    self.assertEqual(result["invalidated_checks"], [key] if version == "old-version" else [])
+                    if version == "old-version":
+                        expected[key].update(status="pending", reason="Импортирован креатив; требуется подтверждение этой версии")
+                    self.assertEqual(self.state["checks"], expected)
+
     def test_reimporting_manually_changed_text_does_not_keep_forged_approval(self):
         self.import_source()
         self.confirm()

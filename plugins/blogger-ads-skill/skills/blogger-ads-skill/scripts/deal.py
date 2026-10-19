@@ -252,6 +252,11 @@ def import_creative(state_path, text_path, links_path, now=None):
     now = effective_now(state, now)
     previous = state.get("creative", {})
     previous_digest = digest(previous)
+    previous_import_digest = previous_digest
+    for entry in reversed(state.get("history", [])):
+        if isinstance(entry, dict) and entry.get("action") == "import_creative" and entry.get("creative_sha256"):
+            previous_import_digest = entry["creative_sha256"]
+            break
     raw_sources = {"text": Path(text_path).read_bytes(), "links": Path(links_path).read_bytes()}
     text = raw_sources["text"].decode("utf-8")
     link_map = creative_links.parse_links(json.loads(raw_sources["links"].decode("utf-8")))
@@ -269,13 +274,15 @@ def import_creative(state_path, text_path, links_path, now=None):
             not isinstance(previous_sources.get(key), dict)
             or previous_sources[key].get("sha256") != provenance[key]["sha256"]
             for key in ("text", "links")))
-    # Сверяем также сохранённый источник: рабочий текст могли уже подменить вручную.
-    changed = current_digest != previous_digest or source_changed
+    # Рабочие текст/медиа могли изменить до импорта; учитываем прежнюю полную версию и исходники.
+    changed = current_digest != previous_digest or current_digest != previous_import_digest or source_changed
     invalidated = {}
     checks = state.setdefault("checks", {})
-    for key in ("creative_approval", "erid", "ord_creative", "marking"):
+    hash_checks = ("creative_approval", "erid", "ord_creative", "marking")
+    for key in (*hash_checks, "legality", "scheduled_message"):
         proof = checks.get(key, {})
-        if changed or proof.get("creative_sha256") != current_digest:
+        requires_hash = key in hash_checks or proof.get("creative_sha256") is not None
+        if changed or (requires_hash and proof.get("creative_sha256") != current_digest):
             if proof.get("status") != "pending":
                 invalidated[key] = dict(proof)
             checks[key] = dict(proof, status="pending",
@@ -284,7 +291,7 @@ def import_creative(state_path, text_path, links_path, now=None):
     if changed or previous.get("provenance") != provenance or invalidated:
         state.setdefault("history", []).append({
             "at": now.isoformat(), "action": "import_creative",
-            "previous_creative_sha256": previous_digest, "creative_sha256": current_digest,
+            "previous_creative_sha256": previous_import_digest, "creative_sha256": current_digest,
             "provenance": provenance, "invalidated_checks": invalidated})
     validate(state, state_path)
     inspection = inspect_creative(state, state_path)
