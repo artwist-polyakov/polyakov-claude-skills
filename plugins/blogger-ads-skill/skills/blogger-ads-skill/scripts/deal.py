@@ -608,11 +608,18 @@ def validate(state, state_path=None):
     return state
 
 
+def confirmation_time(proof):
+    """Время записи с текстовым источником; внешние факты не проверяются."""
+    if (not isinstance(proof, dict) or proof.get("status") != "confirmed"
+            or not isinstance(proof.get("source"), str) or not proof["source"].strip()
+            or not proof.get("checked_at")):
+        return None
+    return stamp(proof["checked_at"])
+
+
 def confirmed(proof, now):
-    """Только записанное подтверждение; внешних фактов эта функция не проверяет."""
-    return (isinstance(proof, dict) and proof.get("status") == "confirmed"
-            and bool(proof.get("source")) and bool(proof.get("checked_at"))
-            and stamp(proof["checked_at"]) <= now)
+    checked_at = confirmation_time(proof)
+    return checked_at is not None and checked_at <= now
 
 
 def valid_token(token):
@@ -1011,11 +1018,11 @@ def readiness_issues(state, now):
         missing("publication_at", "Согласованная дата и время публикации")
 
     def evidence(key, label):
-        item = checks.get(key, {})
-        if not isinstance(item, dict) or item.get("status") != "confirmed" or not item.get("source") or not item.get("checked_at"):
+        checked_at = confirmation_time(checks.get(key, {}))
+        if checked_at is None:
             missing(key, label)
             return False
-        if stamp(item["checked_at"]) > now:
+        if checked_at > now:
             missing(key, f"{label}: время подтверждения находится в будущем")
             return False
         return True

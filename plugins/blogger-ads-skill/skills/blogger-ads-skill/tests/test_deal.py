@@ -961,6 +961,8 @@ class DealTests(unittest.TestCase):
         issued = deal.plan(self.state, self.now)
         self.state["schedule"]["reporting_deadlines"].remove(joint)
         for key, proof in (("contract", {"status": "pending"}),
+                           ("contract", {"status": "confirmed", "source": True, "checked_at": self.now.isoformat()}),
+                           ("payment", {"status": "confirmed", "source": " \t\n", "checked_at": self.now.isoformat()}),
                            ("payment", {"status": "confirmed", "source": "Будущий факт", "checked_at": "2026-11-02T12:00:00+03:00"})):
             with self.subTest(key=key):
                 original = self.state["checks"][key]
@@ -1788,6 +1790,65 @@ class DealTests(unittest.TestCase):
         self.assertEqual(result["missing"], ["Актуальная проверка очереди публикаций и отсутствия дублей"])
         self.state["checks"]["scheduled_message"] = queue_proof
         self.assertTrue(deal.check(self.state, self.now)["ready"])
+
+    def test_readiness_requires_nonblank_text_source_for_each_confirmation(self):
+        self.confirm_readiness()
+        self.state["policy"]["require_erir_visibility"] = True
+        self.state["checks"]["erir"] = dict(self.state["checks"]["erid"])
+        self.state["checks"]["payment_terms"] = dict(self.state["checks"]["payment"])
+        for key in self.state["checks"]:
+            proof = self.state["checks"][key]
+            if proof.get("status") != "confirmed":
+                continue
+            self.state["policy"]["require_prepayment"] = key != "payment_terms"
+            original = proof["source"]
+            for source in (True, ["Свидетельство"], {"file": "proof.txt"}, 1, " \t\n", "  Свидетельство  "):
+                with self.subTest(check=key, source=source):
+                    proof["source"] = source
+                    valid = source == "  Свидетельство  "
+                    result = deal.check(self.state, self.now)
+                    self.assertEqual(result["ready"], valid)
+                    self.assertEqual(key in result["blockers"], not valid)
+                    self.assertEqual(key in deal.unfinished_checks(self.state, self.now), not valid)
+                    self.assertEqual(proof["source"], source)
+            proof["source"] = original
+
+    def test_future_confirmation_keeps_specific_readiness_reason(self):
+        self.confirm_readiness()
+        self.state["checks"]["contract"]["checked_at"] = "2026-11-02T12:00:00+03:00"
+        self.assertEqual(deal.check(self.state, self.now)["blockers"]["contract"],
+                         ["Подписание договора и приложений: время подтверждения находится в будущем"])
+
+    def test_completion_requires_text_source_for_automatic_and_explicit_proofs(self):
+        self.confirm_readiness()
+        self.state["completed_events"]["link"] = dict(self.state["checks"]["contract"])
+        for section, key, event_id in (("checks", "creative_approval", "creative"),
+                                       ("checks", "ord_creative", "erid"),
+                                       ("completed_events", "link", "link")):
+            proof = self.state[section][key]
+            original = proof["source"]
+            for source in (True, ["Свидетельство"], {"file": "proof.txt"}, 1, " \t\n", "  Свидетельство  "):
+                with self.subTest(event=event_id, source=source):
+                    proof["source"] = source
+                    result = deal.completion(self.state, event_id, self.now)
+                    self.assertEqual(result is not None, source == "  Свидетельство  ")
+                    if event_id != "erid":
+                        current = deal.plan(self.state, self.now)
+                        self.assertEqual(event_id in {event["id"] for event in current["completed"]}, result is not None)
+                        uid = f"{self.state['deal_id']}-{event_id}@blogger-ads-skill"
+                        self.assertEqual(uid in deal.ics(current, self.now), result is None)
+            proof["source"] = original
+
+    def test_exchange_with_invalid_source_still_requires_an_action(self):
+        proof = {"status": "confirmed", "checked_at": self.now.isoformat(), "recovery_expected_on": None}
+        self.state["checks"]["edo_exchange"] = proof
+        for source in (True, ["Свидетельство"], {"file": "proof.txt"}, 1, " \t\n"):
+            with self.subTest(source=source):
+                proof["source"] = source
+                with self.assertRaisesRegex(ValueError, "План неполон:.*edo_exchange"):
+                    deal.plan(self.state, self.now)
+        proof["source"] = "  Квитанции отправки и получения  "
+        self.assertNotIn("edo_exchange", deal.plan(self.state, self.now)["action_coverage"])
 
     def test_check_rejects_invalid_legacy_creative_links(self):
         self.assertIsNone(self.state["creative"].get("provenance"))

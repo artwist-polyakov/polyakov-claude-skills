@@ -164,7 +164,9 @@ def validate_data(data, command):
                 raise ValueError(f"{section}: дата позже УПД")
             if item.get("correction"):
                 required(item["correction"], "number", section + ".correction")
-                iso_date(required(item["correction"], "date", section + ".correction"))
+                correction_date = iso_date(required(item["correction"], "date", section + ".correction"))
+                if correction_date > iso_date(data["document"]["date"]):
+                    raise ValueError(f"{section}.correction: дата позже УПД")
     if not isinstance(data.get("had_advance"), bool):
         raise ValueError("Укажите had_advance: true или false — был ли получен аванс")
     if data["had_advance"] and not data["payment_docs"]:

@@ -96,6 +96,37 @@ class AccountingTests(unittest.TestCase):
         self.assertEqual(totals, {"net": Decimal("0.41"), "tax": Decimal("0.09"), "gross": Decimal("0.50")})
         self.assertEqual(rows[0]["tax"], Decimal("0.05"))
 
+    def test_advance_invoice_correction_before_or_on_upd_date_is_preserved(self):
+        data = fixture()
+        data["vat"]["rate"] = "22"
+        data["had_advance"] = True
+        data["payment_docs"] = [{"number": "99", "date": "2026-10-12"}]
+        for correction_date, rendered_date in (("2026-10-16", "16.10.2026"), ("2026-10-17", "17.10.2026")):
+            with self.subTest(correction_date=correction_date):
+                data["advance_invoices"] = [{"number": "А-1", "date": "2026-10-12", "correction": {"number": "1", "date": correction_date}}]
+                _, xml = accounting.render_xml(data)
+                advance = ET.fromstring(xml).find(".//ДопСвФХЖ1/СопрДокФХЖ")
+                self.assertEqual(advance.get("РеквДопСведДок"), f"ИспАСЧФ №1 от {rendered_date}")
+                self.assertIn(f"исправление № 1 от {rendered_date}", accounting.render_html(data, "upd-print"))
+
+    def test_future_advance_invoice_correction_rejects_upd_without_output(self):
+        data = fixture()
+        data["vat"]["rate"] = "22"
+        data["had_advance"] = True
+        data["payment_docs"] = [{"number": "99", "date": "2026-10-12"}]
+        data["advance_invoices"] = [{"number": "А-1", "date": "2026-10-12", "correction": {"number": "1", "date": "2026-10-18"}}]
+        message = r"advance_invoices\.correction: дата позже УПД"
+        with self.assertRaisesRegex(ValueError, message):
+            accounting.render_xml(data)
+        with self.assertRaisesRegex(ValueError, message):
+            accounting.render_html(data, "upd-print")
+        data["demo"] = True
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "training"
+            with self.assertRaisesRegex(ValueError, message):
+                accounting.write_training_bundle(data, output)
+            self.assertFalse(output.exists())
+
     def test_invoice_unit_price_preserves_precision_and_reconciles_line_amount(self):
         from lxml import etree
         cases = (
