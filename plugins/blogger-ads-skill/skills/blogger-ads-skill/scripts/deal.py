@@ -917,6 +917,13 @@ def _plan(state, now=None, state_path=None, strict_deadlines=False):
     recovery_check_on = recovery.get("recovery_check_on") or recovery.get("recovery_expected_on")
     if recovery_check_on is not None:
         recovery_at = datetime.fromisoformat(recovery_check_on + "T" + recovery["recovery_check_time"]).replace(tzinfo=zone)
+        local_roundtrip = recovery_at.astimezone(timezone.utc).astimezone(zone)
+        if local_roundtrip.replace(tzinfo=None) != recovery_at.replace(tzinfo=None):
+            raise ValueError(f"edo_exchange.recovery_check_time: {recovery_at:%Y-%m-%d %H:%M} не существует в {zone.key} "
+                             "из-за перевода часов; выберите другое время проверки")
+        if recovery_at.utcoffset() != recovery_at.replace(fold=1).utcoffset():
+            raise ValueError(f"edo_exchange.recovery_check_time: {recovery_at:%Y-%m-%d %H:%M} встречается дважды в {zone.key} "
+                             "из-за перевода часов; выберите другое время проверки")
         reported = (f"Дата из сообщения об ЭДО: {recovery['recovery_expected_on']}. "
                     if recovery.get("recovery_expected_on") else "Дата восстановления ЭДО в сообщении не указана. ")
         add("edo-recovery", "Проверить доступность ЭДО", recovery_at,

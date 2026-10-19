@@ -1,5 +1,9 @@
 import copy
 import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 
 from test_deal import ROOT, deal, planned_actions
@@ -57,6 +61,44 @@ class EdoRecoveryDatesTests(unittest.TestCase):
         self.assertEqual(self.state, before)
         later = self.event(deal.plan(self.state, deal.hours(self.now, 240)))
         self.assertEqual(later['at'], event['at'])
+
+    def test_valid_local_times_around_clock_changes_match_calendar(self):
+        self.state['schedule'].update(timezone='Europe/Berlin', publication_at='2026-11-09T09:00:00+01:00')
+        for day, hour, offset, utc in (
+                ('2026-03-29', '01:30', '+01:00', '20260329T003000Z'),
+                ('2026-03-29', '03:30', '+02:00', '20260329T013000Z'),
+                ('2026-10-25', '01:30', '+02:00', '20261024T233000Z'),
+                ('2026-10-25', '03:30', '+01:00', '20261025T023000Z')):
+            with self.subTest(day=day, hour=hour):
+                self.recovery.update(recovery_check_on=day, recovery_check_time=hour)
+                before = copy.deepcopy(self.state)
+                current = deal.plan(self.state, self.now)
+                event = self.event(current)
+                self.assertEqual(event['at'], f'{day}T{hour}:00{offset}')
+                calendar_event = next(chunk for chunk in deal.ics(current, self.now).split('BEGIN:VEVENT')
+                                      if event['uid'] in chunk)
+                self.assertIn('DTSTART:' + utc, calendar_event)
+                self.assertEqual(self.state, before)
+
+    def test_invalid_local_time_cli_creates_no_plan_or_calendar(self):
+        self.state['schedule'].update(timezone='Europe/Berlin', publication_at='2026-11-09T09:00:00+01:00')
+        for field in ('recovery_expected_on', 'recovery_check_on'):
+            for day, reason in (('2026-03-29', 'не существует'), ('2026-10-25', 'встречается дважды')):
+                with self.subTest(field=field, day=day), tempfile.TemporaryDirectory() as directory:
+                    self.state['checks']['edo_exchange'] = dict(self.recovery, **{field: day}, recovery_check_time='02:30')
+                    state_path, output = Path(directory) / 'state.json', Path(directory) / 'plan'
+                    state_path.write_text(json.dumps(self.state, ensure_ascii=False), encoding='utf-8')
+                    before = state_path.read_bytes()
+                    result = subprocess.run(
+                        [sys.executable, str(ROOT / 'scripts/deal.py'), 'plan', '--state', str(state_path),
+                         '--now', self.now.isoformat(), '--output-dir', str(output)], capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn('edo_exchange.recovery_check_time', result.stderr)
+                    self.assertIn(reason, result.stderr)
+                    self.assertIn('Europe/Berlin', result.stderr)
+                    self.assertEqual(result.stdout, '')
+                    self.assertFalse(output.exists())
+                    self.assertEqual(state_path.read_bytes(), before)
 
     def test_changing_only_check_day_moves_same_event_without_changing_source(self):
         issued = deal.plan(self.state, self.now)
