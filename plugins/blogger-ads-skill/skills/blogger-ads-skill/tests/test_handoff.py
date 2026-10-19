@@ -303,7 +303,8 @@ class HandoffTests(unittest.TestCase):
                             '</w:p></w:body></w:document>')
                         archive.writestr('word/_rels/document.xml.rels',
                             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-                            f'<Relationship Id="r1" Target="{actual}" TargetMode="External"/></Relationships>')
+                            f'<Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+                            f'Target="{actual}" TargetMode="External"/></Relationships>')
                 handoff.register(self.state, [source], 'draft', 'v1', self.at,
                                  group='creative-' + suffix, document_kind='creative')
                 report = self.link_report(source, suffix + '-links.json', [wanted])
@@ -1687,7 +1688,11 @@ class ContractSignatureRevisionTests(unittest.TestCase):
                 self.assertIn('contract', handoff.deal.readiness_issues(state, handoff.deal.stamp(self.later)))
                 history = state['history'][-1]
                 self.assertEqual(history['invalidated_checks'], {'contract': self.proof})
-                self.assertEqual(history['replaced_documents'], [{'path': old.name, 'sha256': handoff.sha(old)}])
+                self.assertEqual(history['previous_contract_documents'][old.name],
+                                 {'sha256': handoff.sha(old), 'document_kind': kind})
+                self.assertNotIn(old.name, history['contract_documents'])
+                self.assertEqual(history['contract_documents'][new.name],
+                                 {'sha256': handoff.sha(new), 'document_kind': kind})
                 by_path = {item['path']: item for item in state['documents']}
                 self.assertFalse(by_path[old.name]['current'])
                 self.assertTrue(by_path[new.name]['current'])
@@ -1719,13 +1724,53 @@ class ContractSignatureRevisionTests(unittest.TestCase):
         revised_invoice = self.document('invoice-v2.pdf')
         handoff.register(self.state, [revised_invoice], 'draft', 'v2', self.later,
                          group='payment', document_kind='payment')
-        separate = self.document('separate-contract.pdf')
-        handoff.register(self.state, [separate], 'draft', 'v1', self.later,
-                         group='separate-contract', document_kind='contract')
         state = handoff.deal.read_json(self.state)
         self.assertEqual(state['checks']['contract'], self.proof)
         self.assertEqual(state['history'], [])
         self.assertNotIn('contract', handoff.deal.readiness_issues(state, handoff.deal.stamp(self.later)))
+
+    def test_adding_contractual_file_in_new_group_or_same_version_invalidates_signature(self):
+        for new_group in (False, True):
+            with self.subTest(new_group=new_group):
+                group = f'contract-{new_group}'
+                contract = self.document(group + '.pdf')
+                addition = self.document(f'amendment-{new_group}.pdf')
+                handoff.register(self.state, [contract], 'received', 'v1', self.at,
+                                 group=group, document_kind='contract')
+                self.confirm_contract()
+                handoff.register(self.state, [addition], 'received', 'v1', self.later,
+                                 group='amendment' if new_group else group, document_kind='amendment')
+                state = handoff.deal.read_json(self.state)
+                self.assertEqual(state['checks']['contract']['status'], 'pending')
+                self.assertIn('contract', handoff.deal.readiness_issues(state, handoff.deal.stamp(self.later)))
+                history = state['history'][-1]
+                self.assertEqual(history['invalidated_checks'], {'contract': self.proof})
+                self.assertNotIn(addition.name, history['previous_contract_documents'])
+                self.assertIn(contract.name, history['contract_documents'])
+                self.assertEqual(history['contract_documents'][addition.name],
+                                 {'sha256': handoff.sha(addition), 'document_kind': 'amendment'})
+                by_path = {item['path']: item for item in state['documents']}
+                self.assertTrue(by_path[contract.name]['current'])
+                self.assertTrue(by_path[addition.name]['current'])
+
+    def test_reclassification_changes_contractual_set_and_invalidates_signature(self):
+        document = self.document('reclassified.pdf')
+        handoff.register(self.state, [document], 'draft', 'v1', self.at,
+                         group='contract', document_kind='payment')
+        for kind in ('contract', 'amendment', 'payment'):
+            with self.subTest(kind=kind):
+                self.confirm_contract()
+                handoff.register(self.state, [document], 'draft', 'v1', self.later,
+                                 group='contract', document_kind=kind)
+                state = handoff.deal.read_json(self.state)
+                self.assertEqual(state['checks']['contract']['status'], 'pending')
+                history = state['history'][-1]
+                self.assertEqual(history['invalidated_checks'], {'contract': self.proof})
+                self.assertNotEqual(history['previous_contract_documents'], history['contract_documents'])
+                if kind in handoff.CONTRACT_KINDS:
+                    self.assertEqual(history['contract_documents'][document.name]['document_kind'], kind)
+                else:
+                    self.assertNotIn(document.name, history['contract_documents'])
 
     def test_replacing_only_fields_map_preserves_signature_of_unchanged_document(self):
         contract = self.document('contract.docx')
@@ -1749,14 +1794,14 @@ class ContractSignatureRevisionTests(unittest.TestCase):
     def test_already_historical_replacement_preserves_new_confirmation(self):
         old = self.document('old-contract.pdf')
         current = self.document('current-contract.pdf')
-        next_document = self.document('another-contract.pdf')
+        next_document = self.document('invoice.pdf')
         handoff.register(self.state, [old], 'received', 'v1', self.at,
                          group='contract', document_kind='contract')
         handoff.register(self.state, [current], 'received', 'v2', self.later,
                          group='contract', document_kind='contract')
         self.confirm_contract()
         handoff.register(self.state, [next_document], 'draft', 'v1', self.later, [old],
-                         group='another-contract', document_kind='contract')
+                         group='payment', document_kind='payment')
         state = handoff.deal.read_json(self.state)
         self.assertEqual(state['checks']['contract'], self.proof)
         self.assertEqual(state['history'], [])

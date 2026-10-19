@@ -570,6 +570,14 @@ def refresh(state_path, at):
     return {'refreshed_at': at, 'note': 'Прежние советы и устаревшие письма сохранены как исторические; проверки и обязательства не закрывались'}
 
 
+def contract_snapshot(documents):
+    """Состав действующих договорных файлов, к которому относится подтверждение подписей."""
+    return {item['path']: {'sha256': item['sha256'], 'document_kind': item['document_kind']}
+            for item in documents
+            if item.get('current') and item.get('document_kind') in CONTRACT_KINDS
+            and Path(item['path']).suffix.lower() in {'.pdf', '.docx'}}
+
+
 def register(state_path, files, status, version, at, supersedes=(), group='documents', document_kind=None, kind_reason=None, source_docx=None):
     """Зарегистрировать подготовленные файлы; явную выдачу плана фиксирует check."""
     state_path = Path(state_path).resolve()
@@ -626,10 +634,8 @@ def register(state_path, files, status, version, at, supersedes=(), group='docum
         raise ValueError('supersedes: предыдущая версия должна быть зарегистрирована')
     if set(replaced) & {p for p, *_ in prepared}:
         raise ValueError('Нельзя одновременно выдать и заменить один файл')
+    previous_contracts = contract_snapshot(documents)
     refresh_records(state, at)
-    current_contracts = [item for item in documents
-                         if item.get('current') and item.get('document_kind') in CONTRACT_KINDS
-                         and Path(item['path']).suffix.lower() in {'.pdf', '.docx'}]
     for item in documents:
         if item.get('group') == group and item.get('version') != version:
             item['current'] = False
@@ -656,14 +662,14 @@ def register(state_path, files, status, version, at, supersedes=(), group='docum
             deliveries.append(at)
         if previous is None:
             documents.append(item)
-    replaced_contracts = [{'path': item['path'], 'sha256': item['sha256']}
-                          for item in current_contracts if not item.get('current')]
+    current_contracts = contract_snapshot(documents)
     proof = state.get('checks', {}).get('contract', {})
-    if replaced_contracts and proof.get('status') == 'confirmed':
+    if previous_contracts != current_contracts and proof.get('status') == 'confirmed':
         state['checks']['contract'] = dict(proof, status='pending',
-                                          reason='Договорный документ заменён; требуется подтверждение текущей версии')
+                                          reason='Состав договорных документов изменён; требуется подтверждение текущего комплекта')
         state.setdefault('history', []).append({
-            'at': at, 'action': 'register_documents', 'replaced_documents': replaced_contracts,
+            'at': at, 'action': 'register_documents',
+            'previous_contract_documents': previous_contracts, 'contract_documents': current_contracts,
             'invalidated_checks': {'contract': dict(proof)}})
         refresh_records(state, at)
     archive_link_reports(state, base)

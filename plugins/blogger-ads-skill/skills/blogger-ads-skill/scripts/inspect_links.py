@@ -73,10 +73,14 @@ def pdf_links(raw):
             if not isinstance(action, dict):
                 warnings.append(f"{location}: /A не является словарём")
                 continue
+            if "/Next" in action:
+                warnings.append(f"{location}: цепочка действий /Next не разобрана; сверьте её отдельно и сохраните разбор в resolution")
             if "/S" not in action:
                 warnings.append(f"{location}: у действия нет типа /S")
                 continue
             if action.get("/S") != "/URI":
+                warnings.append(f"{location}: неподдерживаемое действие {action.get('/S')}; "
+                                "сверьте переход отдельно и сохраните разбор в resolution")
                 continue
             if "/URI" not in action:
                 warnings.append(f"{location}: действие /URI не содержит адреса")
@@ -199,6 +203,12 @@ def docx_links(raw):
                 relationship_id = link.get(R + "id")
                 relationship = relationships.get(relationship_id)
                 target = relationship.get("Target") if relationship is not None else None
+                if relationship is not None and (
+                        relationship.get("Type") != "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
+                        or relationship.get("TargetMode") != "External"):
+                    target = None
+                    warnings.append(f"{part}, абзац {paragraph_index}: отношение {relationship_id} не является внешней гиперссылкой; "
+                                    "нужны Type гиперссылки и TargetMode=External, адрес не учтён")
                 row = {"order": len(links) + 1, "part": part,
                        "paragraph_index": paragraph_index, "hyperlink_index": hyperlink_index,
                        "anchor": visible_text(link), "target": target,
@@ -234,8 +244,8 @@ def inspect_links(path, expected=None):
     result = {"kind": "link_inspection", "source": {"path": str(path), "sha256": hashlib.sha256(raw).hexdigest()},
               "format": kind, "links": links, "warnings": warnings,
               "limitations": [COMPARISON_NOTE,
-                  "PDF: извлечены /Link с действием /URI. anchor_hint — текст из области той же аннотации, он может захватить соседнюю строку или отсутствовать у скана; видимый якорь сверяйте по странице и прямоугольнику. Это не OCR и не автоматическое подтверждение соответствия якоря адресу.",
-                  "DOCX: извлечены элементы w:hyperlink. Обычный текст URL не извлекается; поля HYPERLINK и ссылки DrawingML (hlinkClick/hlinkHover) вызывают предупреждение и требуют отдельной сверки адресов и связанных текста или объектов. Номера абзацев относятся к каждой XML-части отдельно.",
+                  "PDF: извлечены /Link с действием /URI; прочие действия и цепочки /Next вызывают предупреждение. anchor_hint — текст из области той же аннотации, он может захватить соседнюю строку или отсутствовать у скана; видимый якорь сверяйте по странице и прямоугольнику. Это не OCR и не автоматическое подтверждение соответствия якоря адресу.",
+                  "DOCX: внешние адреса w:hyperlink учтены только при Type гиперссылки и TargetMode=External; внутренние w:anchor показаны отдельно. Обычный текст URL не извлекается; поля HYPERLINK и ссылки DrawingML (hlinkClick/hlinkHover) вызывают предупреждение и требуют отдельной сверки адресов и связанных текста или объектов. Номера абзацев относятся к каждой XML-части отдельно.",
                   "Адреса не открывались. Для DOCX порядок между XML-частями не определяет порядок страниц."]}
     if expected is not None:
         actual = [row["target"] for row in links if row["target"] is not None]

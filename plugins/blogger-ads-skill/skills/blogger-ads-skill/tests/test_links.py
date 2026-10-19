@@ -102,6 +102,46 @@ class LinkInspectionTests(unittest.TestCase):
         self.assertEqual(actual[2]["relationship_id"], "r2")
         self.assertEqual(actual[2]["target_mode"], "External")
 
+    def test_docx_target_requires_external_hyperlink_relationship(self):
+        expected = ["https://pricing.example.test/?a=1&b=2"] * 2 + ["https://product.example.test/?a=1&b=2"]
+        hyperlink_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
+        for field, value in (("Type", None), ("Type", hyperlink_type.replace("hyperlink", "image")),
+                             ("TargetMode", None), ("TargetMode", "Internal"), ("TargetMode", "External")):
+            with self.subTest(field=field, value=value):
+                path = self.docx()
+                with ZipFile(path) as archive:
+                    parts = {name: archive.read(name) for name in archive.namelist()}
+                rel_path = "word/_rels/document.xml.rels"
+                root = links.ET.fromstring(parts[rel_path])
+                relationship = next(node for node in root if node.get("Id") == "r2")
+                if value is None:
+                    relationship.attrib.pop(field)
+                else:
+                    relationship.set(field, value)
+                parts[rel_path] = links.ET.tostring(root)
+                with ZipFile(path, "w") as archive:
+                    for name, raw in parts.items():
+                        archive.writestr(name, raw)
+                before = path.read_bytes()
+                result = links.inspect_links(path, expected)
+                valid = value == "External"
+                self.assertEqual(result["links"][-1]["target"], expected[-1] if valid else None)
+                self.assertEqual(result["comparison"]["ordered_lists_equal"], valid)
+                self.assertEqual(len(result["warnings"]), 0 if valid else 1)
+                if not valid:
+                    self.assertIn("r2", result["warnings"][0])
+                    self.assertIn("Type", result["warnings"][0])
+                    self.assertIn("TargetMode", result["warnings"][0])
+                self.assertEqual(path.read_bytes(), before)
+
+    def test_docx_internal_bookmark_does_not_require_external_relationship(self):
+        path = self.docx('<w:p><w:bookmarkStart w:id="1" w:name="section"/><w:bookmarkEnd w:id="1"/>'
+                         '<w:hyperlink w:anchor="section"><w:r><w:t>Раздел</w:t></w:r></w:hyperlink></w:p>')
+        result = links.inspect_links(path)
+        self.assertEqual(result["links"][-1]["internal_anchor"], "section")
+        self.assertIsNone(result["links"][-1]["target"])
+        self.assertEqual(result["warnings"], [])
+
     def test_counts_expose_swapped_anchor_without_declaring_document_invalid(self):
         expected = ["https://product.example.test/?a=1&b=2"] * 2 + ["https://pricing.example.test/?a=1&b=2"]
         comparison = links.inspect_links(self.docx(), expected)["comparison"]
@@ -302,6 +342,41 @@ class LinkInspectionTests(unittest.TestCase):
         self.assertIsNone(result["links"][0]["rect"])
         self.assertEqual(len(result["warnings"]), 3)
         self.assertTrue(any("не содержит адреса" in item for item in result["warnings"]))
+
+    def test_pdf_unparsed_actions_require_resolution_even_when_urls_match(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import handoff
+
+        expected = ["https://example.test/?a=1&b=2"] * 2 + ["https://example.test/?b=2&a=1"]
+        for kind in ("/GoToR", "/Launch", "/JavaScript", "/GoTo", "/Next", "/Next-array"):
+            with self.subTest(kind=kind):
+                path = self.pdf()
+                writer = PdfWriter()
+                writer.clone_document_from_reader(PdfReader(path))
+                page = writer.pages[0]
+                action = DictionaryObject({NameObject("/S"): NameObject(kind if not kind.startswith("/Next") else "/Launch"),
+                                           NameObject("/F"): TextStringObject("https://hidden.example.test/remote.pdf"),
+                                           NameObject("/D"): TextStringObject("section"),
+                                           NameObject("/JS"): TextStringObject("app.alert('extra action')")})
+                if kind.startswith("/Next"):
+                    first = page["/Annots"][0].get_object()["/A"]
+                    next_action = writer._add_object(action)
+                    first[NameObject("/Next")] = ArrayObject([next_action]) if kind == "/Next-array" else next_action
+                else:
+                    page["/Annots"].append(writer._add_object(DictionaryObject({
+                        NameObject("/Subtype"): NameObject("/Link"), NameObject("/A"): action,
+                        NameObject("/Rect"): ArrayObject([FloatObject(n) for n in [50, 50, 90, 80]])})))
+                with path.open("wb") as file:
+                    writer.write(file)
+                before = path.read_bytes()
+                result = links.inspect_links(path, expected)
+                self.assertTrue(result["comparison"]["ordered_lists_equal"])
+                self.assertTrue(any(("/Next" if kind.startswith("/Next") else kind) in warning for warning in result["warnings"]))
+                report = self.base / "action-links.json"
+                report.write_text(json.dumps(result), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "resolution.result=accepted"):
+                    handoff.check_link_comparison(report, {}, expected)
+                self.assertEqual(path.read_bytes(), before)
 
 
 if __name__ == "__main__":
