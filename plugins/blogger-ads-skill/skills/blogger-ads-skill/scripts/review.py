@@ -341,7 +341,7 @@ def source_page(document, page_number, readers, *, extraction_mode="plain"):
     return page_text
 
 
-def verify_citation(item, document, readers):
+def verify_citation(item, document, readers, *, allow_layout=False):
     source = item["source"]
     page_number = source["page"]
     page_text = source_page(document, page_number, readers)
@@ -355,12 +355,13 @@ def verify_citation(item, document, readers):
             raise ValueError(f"{item['id']}: страница содержит извлекаемый текст; визуальный режим не заменяет автоматическую сверку")
         if normalized(source["quote"]) not in normalized(page_text):
             # Раздельно позиционированные буквы иногда дают ложный пробел в plain.
-            # Сверяем ту же полную цитату со вторым стандартным извлечением,
-            # сохраняя реальные пробелы, знаки и порядок слов.
-            layout_text = source_page(document, page_number, readers, extraction_mode="layout")
-            if normalized(source["quote"]) not in normalized(layout_text):
-                raise ValueError(f"{item['id']}: цитата не найдена на странице {page_number} PDF. Проверьте страницу и дословность по оригиналу")
-            return dict(result, method="pdf_text", extraction_mode="layout")
+            # Запасное извлечение разрешено для сверки поста без замен.
+            # Координаты правок договора рассчитываются только в plain.
+            if allow_layout:
+                layout_text = source_page(document, page_number, readers, extraction_mode="layout")
+                if normalized(source["quote"]) in normalized(layout_text):
+                    return dict(result, method="pdf_text", extraction_mode="layout")
+            raise ValueError(f"{item['id']}: цитата не найдена на странице {page_number} PDF. Проверьте страницу и дословность по оригиналу")
         return dict(result, method="pdf_text")
     verification = source.get("verification")
     fields(verification, ("method", "basis"), (), f"{item['id']}.source.verification")

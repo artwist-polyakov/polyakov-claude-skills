@@ -457,7 +457,7 @@ def check_creative_document(path, report_path, documents, state, state_path):
         readers = {}
         for index, citation in enumerate(citations, 1):
             review.verify_citation({'id': f'creative-{index}', 'source': dict(citation, document='creative')},
-                                   {'path': str(path)}, readers)
+                                   {'path': str(path)}, readers, allow_layout=True)
         actual = ''.join(row['quote'] for row in citations)
     else:
         import render_contract

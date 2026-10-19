@@ -493,13 +493,24 @@ class ReviewTests(unittest.TestCase):
         item = {"id": "positioned", "source": {
             "document": "contract", "page": 1, "quote": "Where is the word."}}
         document = {"path": str(self.source)}
-        result = review.verify_citation(item, document, {})
+        with self.assertRaisesRegex(ValueError, "цитата не найдена"):
+            review.verify_citation(item, document, {})
+        # Обычная сверка договора не подтверждает цитату во втором режиме:
+        # последующая замена должна использовать те же координаты текста.
+        decision = self.data["decisions"][0]
+        decision["source"].update(page=1, quote="Where is the word.")
+        decision["decision"]["original"] = "Where is the word."
+        with self.assertRaisesRegex(ValueError, "цитата не найдена"):
+            self.build()
+        self.assertFalse(self.output.exists())
+
+        result = review.verify_citation(item, document, {}, allow_layout=True)
         self.assertEqual(result["method"], "pdf_text")
         self.assertEqual(result["extraction_mode"], "layout")
         for quote in ("Whereistheword.", "Where is theword.", "Where is the word!", "Where is word."):
             item["source"]["quote"] = quote
             with self.subTest(quote=quote), self.assertRaisesRegex(ValueError, "цитата не найдена"):
-                review.verify_citation(item, document, {})
+                review.verify_citation(item, document, {}, allow_layout=True)
 
     def test_visual_claim_cannot_override_wrong_quote_on_searchable_pdf_page(self):
         source = self.data["decisions"][0]["source"]
