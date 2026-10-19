@@ -1683,6 +1683,15 @@ class HandoffLinkCheckTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(data['local_links'], [str(spaced.resolve())])
 
+    def test_native_citation_preserves_markdown_characters_in_path(self):
+        path = self.root / '_черновик_' / '[счёт] `итог`.pdf'
+        path.parent.mkdir()
+        path.write_text('Счёт')
+        self.response.write_text(f'Готово: :codex-file-citation{{path="{path}" purpose="source"}}')
+        result, data = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(data['local_links'], [str(path.resolve())])
+
     def test_directory_links_are_rejected_in_all_supported_forms(self):
         folder = self.artifact.parent
         alias = self.root / 'alias'

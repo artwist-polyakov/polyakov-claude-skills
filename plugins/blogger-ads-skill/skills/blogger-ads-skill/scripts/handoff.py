@@ -158,13 +158,26 @@ def local_response_links(text):
     # Только читаем адреса: file:// должен дойти до нашей явной диагностики.
     parser.validateLink = lambda url: url.lower().startswith('file:') or validate_link(url)
     parser.normalizeLink = lambda url: url  # Не смешивать пробел с буквальным %20 в имени файла.
+
+    def file_citation(state, silent):
+        match = re.match(r':codex-file-citation\{[^}\n]*\bpath="([^"]+)"[^}\n]*\}', state.src[state.pos:])
+        if match is None:
+            return False
+        if not silent:
+            state.push('file_citation', '', 0).attrSet('path', match[1])
+        state.pos += match.end()
+        return True
+
+    # Путь цитаты читается целиком, даже если в имени есть Markdown-символы.
+    parser.inline.ruler.before('text', 'file_citation', file_citation)
     hrefs = []
     for block in parser.parse(text):
         for token in block.children or ():
             if token.type in {'link_open', 'image'}:
                 hrefs.append(token.attrGet('href' if token.type == 'link_open' else 'src'))
+            elif token.type == 'file_citation':
+                hrefs.append(token.attrGet('path'))
             elif token.type == 'text':
-                hrefs += re.findall(r':codex-file-citation\{[^}\n]*\bpath="([^"]+)"[^}\n]*\}', token.content)
                 # Прежняя диагностика ошибочных inline-ссылок с пробелами без <…>.
                 hrefs += re.findall(r'\]\((/[^)\n]*\s[^)\n]*)\)', token.content)
     for href in hrefs:
