@@ -531,6 +531,9 @@ def validate(state, state_path=None):
     validate_scene_clock(state)
     if state.get("schema_version") != 1:
         raise ValueError("Поддерживается schema_version: 1")
+    stages = ("inquiry", "terms", "creative", "ready", "published", "closing", "closed", "paused", "cancelled")
+    if state.get("stage") not in stages:
+        raise ValueError("stage: выберите один из этапов " + ", ".join(stages))
     deal_id = state.get("deal_id", "")
     if not isinstance(deal_id, str) or not deal_id or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for c in deal_id):
         raise ValueError("deal_id: используйте буквы латиницы, цифры, дефис и подчёркивание")

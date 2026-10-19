@@ -45,7 +45,21 @@ def pdf_links(raw):
     if reader.is_encrypted and reader.decrypt("") == 0:
         raise ValueError("PDF защищён паролем: адреса не прочитаны")
     links, warnings = [], []
+    catalog = reader.root_object
+    for key in ("/OpenAction", "/AA"):
+        if key in catalog:
+            warnings.append(f"Каталог PDF содержит {key}; действия не разобраны. "
+                            "Сверьте их отдельно и сохраните разбор в resolution")
+    names = catalog.get("/Names", {})
+    if hasattr(names, "get_object"):
+        names = names.get_object()
+    if isinstance(names, dict) and "/JavaScript" in names:
+        warnings.append("Каталог PDF содержит /Names/JavaScript; действия не разобраны. "
+                        "Сверьте их отдельно и сохраните разбор в resolution")
     for page_index, page in enumerate(reader.pages, 1):
+        if "/AA" in page:
+            warnings.append(f"Страница {page_index}: дополнительные действия /AA не разобраны; "
+                            "сверьте их отдельно и сохраните разбор в resolution")
         annotations = page.get("/Annots", [])
         if hasattr(annotations, "get_object"):
             annotations = annotations.get_object()
@@ -250,7 +264,7 @@ def inspect_links(path, expected=None):
     result = {"kind": "link_inspection", "source": {"path": str(path), "sha256": hashlib.sha256(raw).hexdigest()},
               "format": kind, "links": links, "warnings": warnings,
               "limitations": [COMPARISON_NOTE,
-                  "PDF: извлечены /Link с действием /URI; прочие действия, /A у других типов аннотаций, цепочки /Next и дополнительные действия аннотаций /AA вызывают предупреждение. anchor_hint — текст из области той же аннотации, он может захватить соседнюю строку или отсутствовать у скана; видимый якорь сверяйте по странице и прямоугольнику. Это не OCR и не автоматическое подтверждение соответствия якоря адресу.",
+                  "PDF: извлечены /Link с действием /URI; прочие действия, /A у других типов аннотаций, цепочки /Next, /AA аннотаций и страниц, /OpenAction, /AA и /Names/JavaScript каталога вызывают предупреждение. anchor_hint — текст из области той же аннотации, он может захватить соседнюю строку или отсутствовать у скана; видимый якорь сверяйте по странице и прямоугольнику. Это не OCR и не автоматическое подтверждение соответствия якоря адресу.",
                   "DOCX: внешние адреса w:hyperlink учтены только при Type гиперссылки и TargetMode=External; внутренние w:anchor показаны отдельно. Обычный текст URL не извлекается; поля HYPERLINK и ссылки DrawingML (hlinkClick/hlinkHover) вызывают предупреждение и требуют отдельной сверки адресов и связанных текста или объектов. Номера абзацев относятся к каждой XML-части отдельно.",
                   "Адреса не открывались. Для DOCX порядок между XML-частями не определяет порядок страниц."]}
     if expected is not None:

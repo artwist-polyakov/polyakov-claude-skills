@@ -64,6 +64,48 @@ class DealTests(unittest.TestCase):
                 item["context_review"] = deal.action_review(
                     self.state, item, "Общее учебное действие остаётся применимым после изменения доказательства", self.now)
 
+    def test_documented_stages_are_valid_and_preserve_inactive_readiness_block(self):
+        self.confirm_readiness()
+        for stage in ("inquiry", "terms", "creative", "ready", "published", "closing", "closed", "paused", "cancelled"):
+            with self.subTest(stage=stage):
+                self.state["stage"] = stage
+                before = copy.deepcopy(self.state)
+                deal.validate(self.state)
+                blockers = deal.readiness_issues(self.state, self.now)
+                self.assertEqual("stage" in blockers, stage in ("closed", "paused", "cancelled"))
+                self.assertEqual(self.state, before)
+
+    def test_missing_unsupported_or_nonstring_stage_is_rejected_without_mutation(self):
+        for stage in ("cancelld", "unknown", "", " ", None, True, 1, [], {}):
+            with self.subTest(stage=stage):
+                self.state["stage"] = stage
+                before = copy.deepcopy(self.state)
+                with self.assertRaisesRegex(ValueError, "stage:"):
+                    deal.validate(self.state)
+                self.assertEqual(self.state, before)
+        del self.state["stage"]
+        before = copy.deepcopy(self.state)
+        with self.assertRaisesRegex(ValueError, "stage:"):
+            deal.validate(self.state)
+        self.assertEqual(self.state, before)
+
+    def test_check_cli_rejects_stage_typo_in_otherwise_ready_deal_without_writing(self):
+        self.confirm_readiness()
+        self.assertTrue(deal.check(self.state, self.now)["ready"])
+        self.state["stage"] = "cancelld"
+        with tempfile.TemporaryDirectory() as folder:
+            state_path = Path(folder) / "deal-state.json"
+            state_path.write_text(json.dumps(self.state, ensure_ascii=False))
+            before = state_path.read_bytes()
+            result = subprocess.run(
+                [sys.executable, str(ROOT / "scripts/deal.py"), "check", "--state", str(state_path),
+                 "--now", self.now.isoformat()], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("stage:", result.stderr)
+            self.assertEqual(result.stdout, "")
+            self.assertEqual(state_path.read_bytes(), before)
+            self.assertEqual(list(Path(folder).iterdir()), [state_path])
+
     def test_business_deadline_and_holiday(self):
         self.state["schedule"]["holidays"] = ["2026-11-06"]
         events = {e["id"]: e for e in deal.plan(self.state, self.now)["events"]}

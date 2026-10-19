@@ -452,6 +452,71 @@ class LinkInspectionTests(unittest.TestCase):
                         self.assertEqual(result["warnings"], [])
                     self.assertEqual(path.read_bytes(), before)
 
+    def test_pdf_document_and_page_actions_require_resolution(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import handoff
+
+        for kind in ("/OpenAction", "catalog /AA", "page /AA", "/Names/JavaScript"):
+            for with_links in (False, True):
+                with self.subTest(kind=kind, with_links=with_links):
+                    writer = PdfWriter()
+                    if with_links:
+                        path = self.pdf()
+                        writer.clone_document_from_reader(PdfReader(path))
+                        expected = ["https://example.test/?a=1&b=2"] * 2 + ["https://example.test/?b=2&a=1"]
+                    else:
+                        path = self.base / "empty.pdf"
+                        writer.add_blank_page(300, 300)
+                        expected = []
+                    action = DictionaryObject({NameObject("/S"): NameObject("/URI"),
+                        NameObject("/URI"): TextStringObject("https://hidden.example.test/")})
+                    if kind in ("catalog /AA", "/Names/JavaScript"):
+                        action = DictionaryObject({NameObject("/S"): NameObject("/JavaScript"),
+                            NameObject("/JS"): TextStringObject("app.alert('extra action')")})
+                    if kind == "/OpenAction":
+                        writer.root_object[NameObject(kind)] = action
+                    elif kind in ("catalog /AA", "page /AA"):
+                        owner = writer.root_object if kind.startswith("catalog") else writer.pages[0]
+                        event = "/WC" if kind.startswith("catalog") else "/O"
+                        owner[NameObject("/AA")] = writer._add_object(DictionaryObject({NameObject(event): action}))
+                    else:
+                        scripts = DictionaryObject({NameObject("/Names"): ArrayObject([
+                            TextStringObject("extra-action"), action])})
+                        names = DictionaryObject({NameObject("/JavaScript"): writer._add_object(scripts)})
+                        writer.root_object[NameObject("/Names")] = writer._add_object(names)
+                    with path.open("wb") as file:
+                        writer.write(file)
+                    before = path.read_bytes()
+                    result = links.inspect_links(path, expected)
+                    self.assertEqual([row["target"] for row in result["links"]], expected)
+                    self.assertTrue(result["comparison"]["ordered_lists_equal"])
+                    self.assertEqual(len(result["warnings"]), 1)
+                    self.assertIn("/AA" if kind.endswith("/AA") else kind, result["warnings"][0])
+                    report = self.base / "document-action-links.json"
+                    report.write_text(json.dumps(result), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "resolution.result=accepted"):
+                        handoff.check_link_comparison(report, {}, expected)
+                    self.assertEqual(path.read_bytes(), before)
+
+    def test_empty_pdf_without_actions_needs_no_resolution(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import handoff
+
+        path = self.base / "empty.pdf"
+        writer = PdfWriter()
+        writer.add_blank_page(300, 300)
+        with path.open("wb") as file:
+            writer.write(file)
+        before = path.read_bytes()
+        result = links.inspect_links(path, [])
+        self.assertEqual(result["links"], [])
+        self.assertEqual(result["warnings"], [])
+        self.assertTrue(result["comparison"]["ordered_lists_equal"])
+        report = self.base / "empty-links.json"
+        report.write_text(json.dumps(result), encoding="utf-8")
+        handoff.check_link_comparison(report, {}, [])
+        self.assertEqual(path.read_bytes(), before)
+
 
 if __name__ == "__main__":
     unittest.main()
