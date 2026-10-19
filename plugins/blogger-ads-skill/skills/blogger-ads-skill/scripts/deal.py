@@ -1027,8 +1027,20 @@ def readiness_issues(state, now):
             return False
         return True
 
-    for key in ("legality", "contract", "creative_approval", "marking", "erid", "ord_creative", "scheduled_message"):
+    for key in ("legality", "contract", "creative_approval", "marking", "erid", "ord_creative"):
         evidence(key, CHECK_LABELS[key])
+    if evidence("scheduled_message", CHECK_LABELS["scheduled_message"]):
+        queue = checks["scheduled_message"]
+        try:
+            same_time = stamp(queue.get("publication_at")) == stamp(state.get("schedule", {}).get("publication_at"))
+        except ValueError:
+            same_time = False
+        message_id = state.get("publication", {}).get("scheduled_message_id")
+        if (not same_time or "scheduled_message_id" not in queue
+                or type(queue["scheduled_message_id"]) is not type(message_id)
+                or queue["scheduled_message_id"] != message_id):
+            missing("scheduled_message", "Заново проверьте очередь для текущего размещения: сохраните в подтверждении "
+                    "publication_at и scheduled_message_id, включая явный null при отсутствии ID")
     creative = state.get("creative", {})
     if not isinstance(creative.get("text"), str) or not creative["text"].strip():
         missing("creative_approval", "Окончательный текст рекламы")

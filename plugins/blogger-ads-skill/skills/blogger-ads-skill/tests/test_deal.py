@@ -53,7 +53,9 @@ class DealTests(unittest.TestCase):
             source="evidence/ord-card.txt: полный текст, все ссылки, отсутствие медиа")
         self.state["checks"]["scheduled_message"] = {
             "status": "confirmed", "source": "evidence/current-scheduled-queue.png: отложенных записей нет",
-            "checked_at": "2026-11-01T11:50:00+03:00"}
+            "checked_at": "2026-11-01T11:50:00+03:00",
+            "publication_at": self.state["schedule"]["publication_at"],
+            "scheduled_message_id": self.state["publication"]["scheduled_message_id"]}
 
     def review_current_actions(self):
         # Эти сценарии проверяют доказательства и завершение; общие учебные формулировки сохраняют смысл.
@@ -1791,6 +1793,79 @@ class DealTests(unittest.TestCase):
         self.state["checks"]["scheduled_message"] = queue_proof
         self.assertTrue(deal.check(self.state, self.now)["ready"])
 
+    def test_queue_confirmation_is_bound_to_publication_time_and_message_id(self):
+        for original_id, section, field, value in (
+                (None, "schedule", "publication_at", "2026-11-10T09:00:00+03:00"),
+                ("message-1", "schedule", "publication_at", "2026-11-09T10:00:00+03:00"),
+                (None, "publication", "scheduled_message_id", "message-1"),
+                ("message-1", "publication", "scheduled_message_id", "message-2"),
+                ("message-1", "publication", "scheduled_message_id", None),
+                (1, "publication", "scheduled_message_id", "1"),
+                (1, "publication", "scheduled_message_id", True)):
+            with self.subTest(original_id=original_id, field=field, value=value):
+                self.state["publication"]["scheduled_message_id"] = original_id
+                self.state["schedule"]["publication_at"] = "2026-11-09T09:00:00+03:00"
+                self.confirm_readiness()
+                self.assertTrue(deal.check(self.state, self.now)["ready"])
+                self.state[section][field] = value
+                before = copy.deepcopy(self.state)
+                result = deal.check(self.state, self.now)
+                self.assertFalse(result["ready"])
+                self.assertEqual(set(result["blockers"]), {"scheduled_message"})
+                self.assertIn("scheduled_message", deal.unfinished_checks(self.state, self.now))
+                self.assertEqual(deal.plan(self.state, self.now)["action_coverage"]["scheduled_message"], ["report-queue"])
+                self.assertEqual(self.state, before)
+                self.state["checks"]["scheduled_message"].update(
+                    publication_at=self.state["schedule"]["publication_at"],
+                    scheduled_message_id=self.state["publication"]["scheduled_message_id"],
+                    source="Новый просмотр очереди после изменения размещения", checked_at=self.now.isoformat())
+                self.assertTrue(deal.check(self.state, self.now)["ready"])
+
+    def test_queue_confirmation_accepts_unchanged_instant_with_another_offset(self):
+        self.confirm_readiness()
+        self.state["schedule"].update(publication_at="2026-11-09T06:00:00Z", timezone="UTC")
+        before = copy.deepcopy(self.state)
+        for now in (self.now, deal.hours(self.now, 1)):
+            self.assertTrue(deal.check(self.state, now)["ready"])
+        self.assertEqual(self.state, before)
+
+    def test_queue_confirmation_without_complete_snapshot_requires_recheck(self):
+        self.confirm_readiness()
+        original = self.state["checks"]["scheduled_message"]
+        for changes, removed in (({}, ("publication_at",)), ({}, ("scheduled_message_id",)),
+                                 ({}, ("publication_at", "scheduled_message_id")),
+                                 ({"publication_at": None}, ()), ({"publication_at": True}, ()),
+                                 ({"publication_at": "2026-11-09T09:00:00"}, ())):
+            with self.subTest(changes=changes, removed=removed):
+                proof = dict(original, **changes)
+                for field in removed:
+                    proof.pop(field)
+                self.state["checks"]["scheduled_message"] = proof
+                result = deal.check(self.state, self.now)
+                self.assertFalse(result["ready"])
+                self.assertEqual(set(result["blockers"]), {"scheduled_message"})
+                self.assertIn("publication_at", result["blockers"]["scheduled_message"][0])
+                self.assertIn("scheduled_message_id", result["blockers"]["scheduled_message"][0])
+
+    def test_old_queue_action_completion_does_not_cover_changed_placement(self):
+        self.confirm_readiness()
+        issued = deal.plan(self.state, self.now)
+        action = next(item for item in self.state["schedule"]["reporting_deadlines"] if item["id"] == "queue")
+        self.state["completed_events"]["report-queue"] = dict(self.state["checks"]["scheduled_message"])
+        self.state["schedule"]["publication_at"] = "2026-11-10T09:00:00+03:00"
+        self.assertFalse(deal.check(self.state, self.now)["ready"])
+        self.assertIn("scheduled_message", deal.unfinished_checks(self.state, self.now))
+        for removed in (False, True):
+            with self.subTest(removed=removed):
+                if removed:
+                    self.state["schedule"]["reporting_deadlines"].remove(action)
+                with self.assertRaisesRegex(ValueError, "План неполон:.*scheduled_message"):
+                    deal.plan(self.state, self.now, previous=issued)
+                if removed:
+                    current = deal._plan(self.state, self.now)
+                    deal.retain_completed_actions(self.state, self.now, issued, current)
+                    self.assertNotIn("report-queue", {event["id"] for event in current["completed"]})
+
     def test_readiness_requires_nonblank_text_source_for_each_confirmation(self):
         self.confirm_readiness()
         self.state["policy"]["require_erir_visibility"] = True
@@ -2138,7 +2213,9 @@ class CreativeImportTests(unittest.TestCase):
             source="Полная зарегистрированная карточка ОРД: текст, ссылки, отсутствие медиа")
         self.state["checks"]["scheduled_message"] = {
             "status": "confirmed", "source": "evidence/current-scheduled-queue.png: отложенных записей нет",
-            "checked_at": self.now.isoformat()}
+            "checked_at": self.now.isoformat(),
+            "publication_at": self.state["schedule"]["publication_at"],
+            "scheduled_message_id": self.state["publication"]["scheduled_message_id"]}
         self.save_state()
 
     def approval_message(self):
@@ -2483,6 +2560,9 @@ class CreativeImportTests(unittest.TestCase):
                 for key in ("legality", "scheduled_message"):
                     self.state["checks"][key].update(status="confirmed", source="Повторно проверена новая версия",
                                                      checked_at=self.now.isoformat())
+                    if key == "scheduled_message":
+                        self.state["checks"][key].update(publication_at=self.state["schedule"]["publication_at"],
+                                                         scheduled_message_id=scheduled_message_id)
                     result = deal.check(self.state, self.now, self.state_path)
                     self.assertEqual(set(result["blockers"]), {"scheduled_message"} if key == "legality" else set())
                 self.assertTrue(result["ready"])

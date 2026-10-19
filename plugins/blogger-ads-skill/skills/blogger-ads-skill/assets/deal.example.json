@@ -105,7 +105,11 @@
       }
     },
     "scheduled_message": {
-      "status": "pending"
+      "status": "pending",
+      "source": null,
+      "checked_at": null,
+      "publication_at": null,
+      "scheduled_message_id": null
     }
   },
   "completed_events": {},
