@@ -458,6 +458,11 @@ def check_creative_document(path, report_path, documents, state, state_path):
         for index, citation in enumerate(citations, 1):
             review.verify_citation({'id': f'creative-{index}', 'source': dict(citation, document='creative')},
                                    {'path': str(path)}, readers, allow_layout=True)
+        viewed_pages = proof.get('viewed_pages')
+        if (not isinstance(viewed_pages, list) or any(type(page) is not int for page in viewed_pages)
+                or viewed_pages != list(range(1, len(readers[path].pages) + 1))):
+            raise ValueError(f'{path}: creative_review.viewed_pages должен подтверждать просмотр всех страниц PDF '
+                             'по порядку, включая страницы без текста поста')
         actual = ''.join(row['quote'] for row in citations)
     else:
         import render_contract

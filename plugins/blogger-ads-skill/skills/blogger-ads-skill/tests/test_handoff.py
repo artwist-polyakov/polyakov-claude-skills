@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from zipfile import ZipFile
 
-from pypdf import PdfWriter
+from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -102,6 +102,9 @@ class HandoffTests(unittest.TestCase):
         data = json.loads(report.read_text())
         data['creative_review'] = {'creative_sha256': handoff.deal.fingerprint(self.data(), self.state),
                                    'source': note.name, 'citations': citations}
+        if data['format'] == 'pdf':
+            original = handoff.resolve(report.parent, data['source']['path'])
+            data['creative_review']['viewed_pages'] = list(range(1, len(PdfReader(original).pages) + 1))
         report.write_text(json.dumps(data))
         return note
 
@@ -2194,6 +2197,59 @@ class CreativeDocumentBindingTests(unittest.TestCase):
         report.write_text(json.dumps(data))
         with self.assertRaisesRegex(ValueError, 'не совпадает с указанным абзацем'):
             handoff.check_creative_document(path.resolve(), report, self.registered(), self.data(), self.state)
+
+    def pdf_with_pages(self, texts, name='creative'):
+        writer = PdfWriter()
+        for index, text in enumerate(texts, 1):
+            source = self.received_pdf(f'{name}-page-{index}.pdf', text)
+            writer.add_page(PdfReader(source).pages[0])
+        path = self.root / f'{name}.pdf'
+        writer.write(path)
+        handoff.register(self.state, [path], 'draft', 'v1', self.at, group='creative', document_kind='creative')
+        return path, self.link_report(path, f'{name}-links.json')
+
+    def test_pdf_uncited_leading_and_trailing_pages_require_explicit_review(self):
+        text = 'The agreed text.'
+        self.import_post(text)
+        cases = ((['An unapproved advertisement.', text], 2),
+                 ([text, 'An unapproved advertisement.'], 1),
+                 (['Another advertisement.', text, 'An extra offer.'], 2))
+        for index, (texts, cited_page) in enumerate(cases, 1):
+            with self.subTest(texts=texts):
+                path, report = self.pdf_with_pages(texts, f'creative-{index}')
+                self.creative_review(report, [{'page': cited_page, 'quote': text}])
+                original = report.read_bytes()
+                for viewed in (None, [cited_page]):
+                    data = json.loads(original)
+                    if viewed is None:
+                        del data['creative_review']['viewed_pages']
+                    else:
+                        data['creative_review']['viewed_pages'] = viewed
+                    report.write_text(json.dumps(data))
+                    with self.subTest(viewed=viewed), self.assertRaisesRegex(ValueError, 'просмотр всех страниц PDF'):
+                        handoff.check_creative_document(path.resolve(), report, self.registered(), self.data(), self.state)
+
+    def test_pdf_all_pages_review_allows_pages_without_post_fragments(self):
+        self.import_post('First part. Second part.')
+        path, report = self.pdf_with_pages(['Appendix title and parties.', 'First part.',
+                                           ' Second part.', 'Signature lines.'])
+        self.creative_review(report, [{'page': 2, 'quote': 'First part.'}, {'page': 3, 'quote': ' Second part.'}])
+        self.register_link_report(report)
+        self.assert_audit_readonly(True)
+
+    def test_pdf_viewed_pages_must_match_actual_count_in_order(self):
+        text = 'The agreed text.'
+        self.import_post(text)
+        path, report = self.pdf_with_pages(['Appendix title.', text, 'Signature lines.'])
+        self.creative_review(report, [{'page': 2, 'quote': text}])
+        original = report.read_bytes()
+        for viewed in ([], [1, 2], [2, 3], [1, 2, 3, 4], [3, 2, 1], [1, 2, 2, 3], [True, 2, 3], '1, 2, 3'):
+            with self.subTest(viewed=viewed):
+                data = json.loads(original)
+                data['creative_review']['viewed_pages'] = viewed
+                report.write_text(json.dumps(data))
+                with self.assertRaisesRegex(ValueError, 'просмотр всех страниц PDF'):
+                    handoff.check_creative_document(path.resolve(), report, self.registered(), self.data(), self.state)
 
     def test_manual_docx_can_preserve_old_fields_with_explicit_text_review(self):
         text = 'The agreed text.'
