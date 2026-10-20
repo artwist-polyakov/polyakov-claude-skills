@@ -7,6 +7,8 @@ import sys
 import tempfile
 import unittest
 
+from markdown_it import MarkdownIt
+
 import test_deal as fixtures
 
 deal = fixtures.deal
@@ -88,8 +90,12 @@ class ErirPolicyTests(unittest.TestCase):
                     self.assertEqual(policy, deal.check(self.state, self.now)["readiness_policy"])
                     self.assertEqual(policy["erir_visibility"]["required"], required)
                     markdown = (folder / "plan.md").read_text()
-                    self.assertIn(policy["ord"]["note"], markdown)
-                    self.assertIn(policy["erir_visibility"]["note"], markdown)
+                    visible_text = "\n".join(
+                        "".join(child.content for child in token.children or [] if child.type == "text")
+                        for token in MarkdownIt().parse(markdown) if token.type == "inline"
+                    )
+                    self.assertIn(policy["ord"]["note"], visible_text)
+                    self.assertIn(policy["erir_visibility"]["note"], visible_text)
                     self.assertIs(deal.validate_plan(self.state, plan, state_path), plan)
 
     def test_saved_plan_rejects_missing_tampered_or_stale_policy(self):

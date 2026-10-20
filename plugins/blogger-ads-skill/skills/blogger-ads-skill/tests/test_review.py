@@ -77,10 +77,11 @@ class ReviewTests(unittest.TestCase):
     def check(self):
         return review.check_state(self.output, self.state_path, self.plan_path)
 
-    def prior_document(self, quote="Report within 24 hours after publication."):
+    def prior_document(self, quote="Report within 24 hours after publication.",
+                       namespace="http://schemas.openxmlformats.org/wordprocessingml/2006/main"):
         path = self.base / "issued-v1.docx"
         with ZipFile(path, "w") as archive:
-            archive.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            archive.writestr("word/document.xml", f'<w:document xmlns:w="{namespace}">'
                              '<w:body><w:p><w:r><w:t>Report within 24 hours </w:t></w:r>'
                              '<w:r><w:t>after publication.</w:t></w:r></w:p></w:body></w:document>')
         self.data["decisions"][0]["previous"] = {
@@ -692,6 +693,56 @@ class ReviewTests(unittest.TestCase):
             self.state_path.write_text(json.dumps(state))
             with self.subTest(change=change), self.assertRaisesRegex(ValueError, "реестр"):
                 self.check()
+
+    def test_previous_strict_docx_quote_builds_and_audits_with_original_hash(self):
+        path = self.prior_document(namespace="http://purl.oclc.org/ooxml/wordprocessingml/main")
+        original = path.read_bytes()
+        digest = hashlib.sha256(original).hexdigest()
+        self.build()
+        self.assertTrue(review.audit(self.output)["valid"])
+        self.save_state_plan()
+        self.assertTrue(self.check()["state_checked"])
+        manifest = json.loads((self.output / "manifest.json").read_text())
+        self.assertEqual(manifest["verification"]["previous"][0]["sha256"], digest)
+        table = (self.output / "terms-review.md").read_text()
+        self.assertIn("Report within 24 hours after publication.", table)
+        self.assertIn(digest, table)
+        self.assertEqual(path.read_bytes(), original)
+
+    def test_missing_strict_docx_quote_is_rejected_by_build_and_audit(self):
+        absent = "Report within 1 hour after publication."
+        path = self.prior_document(absent, namespace="http://purl.oclc.org/ooxml/wordprocessingml/main")
+        original = path.read_bytes()
+        with self.assertRaisesRegex(ValueError, "цитата не найдена.*прежнем источнике"):
+            self.build()
+        self.assertFalse(self.output.exists())
+        self.data["decisions"][0]["previous"]["source"]["quote"] = "Report within 24 hours after publication."
+        self.build()
+        saved_input = self.output / "review-input.json"
+        changed = json.loads(saved_input.read_text())
+        changed["decisions"][0]["previous"]["source"]["quote"] = absent
+        saved_input.write_text(json.dumps(changed))
+        manifest_path = self.output / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["outputs"]["review-input.json"] = hashlib.sha256(saved_input.read_bytes()).hexdigest()
+        manifest_path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, "цитата не найдена.*прежнем источнике"):
+            review.audit(self.output)
+        self.assertEqual(path.read_bytes(), original)
+
+    def test_mixed_docx_paragraph_namespaces_preserve_source_order(self):
+        path = self.prior_document("First condition. Second condition. Third condition.")
+        with ZipFile(path, "w") as archive:
+            archive.writestr("word/document.xml",
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+                'xmlns:s="http://purl.oclc.org/ooxml/wordprocessingml/main"><w:body>'
+                '<w:p><w:r><w:t>First condition.</w:t></w:r></w:p>'
+                '<s:p><s:r><s:t>Second </s:t></s:r><s:r><s:t>condition.</s:t></s:r></s:p>'
+                '<w:p><w:r><w:t>Third condition.</w:t></w:r></w:p></w:body></w:document>')
+        original = path.read_bytes()
+        self.build()
+        self.assertTrue(review.audit(self.output)["valid"])
+        self.assertEqual(path.read_bytes(), original)
 
     def test_registering_next_version_does_not_invalidate_previous_comparison(self):
         self.prior_document()

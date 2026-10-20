@@ -77,10 +77,11 @@ def previous_source(previous, base):
         if "not_found_reason" in source:
             raise ValueError("previous.source.not_found_reason допустим только при quote: null")
         if path.suffix.lower() == ".docx":
-            with ZipFile(path) as archive:
+            with ZipFile(BytesIO(raw)) as archive:
                 root = ElementTree.fromstring(archive.read("word/document.xml"))
-            ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-            text = "\n".join("".join(p.itertext()) for p in root.findall(".//w:p", ns))
+            paragraph_tags = {"{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p",
+                              "{http://purl.oclc.org/ooxml/wordprocessingml/main}p"}
+            text = "\n".join("".join(p.itertext()) for p in root.iter() if p.tag in paragraph_tags)
         elif path.suffix.lower() == ".pdf":
             text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(raw)).pages)
         else:

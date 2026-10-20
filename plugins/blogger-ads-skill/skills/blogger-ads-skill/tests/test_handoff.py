@@ -1072,6 +1072,50 @@ class HandoffTests(unittest.TestCase):
         handoff.register(self.state, files, 'prepared', 'v1', self.at, group='plan')
         self.assertTrue(handoff.audit(self.state)['valid'])
 
+    def test_handoff_cli_rejects_malformed_creative_and_related_containers_without_writes(self):
+        original = self.data()
+        for field, value in (('creative', []), ('publication', []), ('reviewed_terms', []),
+                             ('reviewed_terms', {'payment': True})):
+            with self.subTest(field=field, value=value):
+                data = json.loads(json.dumps(original))
+                if field == 'reviewed_terms':
+                    data['schedule'][field] = value
+                    message = 'schedule.reviewed_terms'
+                else:
+                    data[field] = value
+                    message = field
+                handoff.save(self.state, data)
+                response = self.file('reply.txt', 'Документы пока не подготовлены.')
+                before = {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
+                result = subprocess.run([sys.executable, str(ROOT / 'scripts/handoff.py'), 'check',
+                                         '--state', str(self.state), '--response', str(response), '--record-issue'],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn('Ошибка: ' + message, result.stderr)
+                self.assertIn('требуется объект', result.stderr)
+                self.assertNotIn('Traceback', result.stderr)
+                self.assertEqual(result.stdout, '')
+                self.assertEqual(before, {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()})
+
+    def test_issued_plan_keeps_nested_document_references_as_plain_text(self):
+        from markdown_it import MarkdownIt
+        self.scheduled_state()
+        historical = self.file('old-contract.docx', 'Исторический документ')
+        unregistered = self.file('unregistered.docx', 'Незарегистрированный документ')
+        missing = self.root / 'missing.docx'
+        payload = (f'[старый договор](<{historical}>) [новый](<{unregistered}>) '
+                   f'[отсутствующий](<{missing}>) <a href="{missing}">HTML</a>')
+        data = self.data()
+        data['schedule']['reporting_deadlines'][0].update(title=payload, source=payload)
+        handoff.save(self.state, data)
+        files = self.plan_package()
+        tokens = MarkdownIt('commonmark').parse(files[1].read_text())
+        all_tokens = [token for block in tokens for token in [block, *(block.children or [])]]
+        self.assertFalse({token.type for token in all_tokens} & {'link_open', 'image', 'html_block', 'html_inline'})
+        self.assertIn(payload, ''.join(token.content for token in all_tokens if token.type == 'text'))
+        self.register_plan(files)
+        self.issue_plan(files)
+
     def test_plan_package_must_include_readable_plan_and_calendar(self):
         self.scheduled_state()
         files = self.plan_package()

@@ -91,7 +91,7 @@ class DealTests(unittest.TestCase):
         self.assertEqual(self.state, before)
 
     def test_nonobject_state_schedule_and_policy_are_rejected_before_processing(self):
-        for field in (None, "schedule", "policy"):
+        for field in (None, "schedule", "policy", "creative", "publication"):
             for value in ([], None, True, 1, "pending"):
                 with self.subTest(field=field, value=value):
                     state = copy.deepcopy(self.state)
@@ -113,7 +113,7 @@ class DealTests(unittest.TestCase):
     def test_invalid_state_containers_fail_check_and_plan_cli_without_writes(self):
         with tempfile.TemporaryDirectory() as folder:
             state_path, output = Path(folder) / "state.json", Path(folder) / "plan"
-            for field in (None, "schedule", "policy"):
+            for field in (None, "schedule", "policy", "creative", "publication"):
                 for value in ([], None, True, 1, "pending"):
                     state = copy.deepcopy(self.state)
                     if field is None:
@@ -146,6 +146,19 @@ class DealTests(unittest.TestCase):
         self.assertFalse(result["ready"])
         self.assertIn("publication_at", result["blockers"])
         self.assertEqual(self.state, before)
+
+    def test_reviewed_terms_and_each_term_must_be_objects(self):
+        for value, message in (([], "schedule.reviewed_terms: требуется объект"),
+                               (None, "schedule.reviewed_terms: требуется объект"),
+                               ({"payment": True}, "schedule.reviewed_terms.payment: требуется объект условия")):
+            with self.subTest(value=value):
+                self.state["schedule"]["reviewed_terms"] = value
+                before = copy.deepcopy(self.state)
+                for operation in (lambda: deal.validate(self.state), lambda: deal.check(self.state, self.now),
+                                  lambda: deal.plan(self.state, self.now)):
+                    with self.assertRaisesRegex(ValueError, message):
+                        operation()
+                self.assertEqual(self.state, before)
 
     def test_nonobject_checks_are_rejected_by_validation_and_direct_readiness(self):
         original = copy.deepcopy(self.state)
@@ -1440,6 +1453,61 @@ class DealTests(unittest.TestCase):
         issued["deal_id"] = "other-deal"
         with self.assertRaisesRegex(ValueError, "другой сделке"):
             deal.plan(self.state, self.now, previous=issued)
+
+    def test_markdown_displays_every_dynamic_field_as_plain_text(self):
+        from markdown_it import MarkdownIt
+        self.confirm_readiness()
+        original = deal.plan(self.state, self.now)
+        original["events"][0].update(legal_date="2026-11-01", legal_source="Источник")
+        original["events"][1]["control_date"] = "2026-11-02"
+        fields = [("deal_id",), ("readiness_policy", "ord", "note"),
+                  ("readiness_policy", "erir_visibility", "note"), ("warnings", 0),
+                  *(("events", 0, key) for key in ("at", "title", "note", "legal_date", "legal_source")),
+                  ("events", 1, "control_date"),
+                  *(("completed", 0, key) for key in ("title", "completed_at", "completion_source"))]
+        payload = ('[договор](</tmp/missing.docx>) ![снимок](/tmp/missing.png) '
+                   '<a href="/tmp/missing.html">ссылка</a> <https://example.org> '
+                   '&lt;img src=x&gt; **условия** `текст`\n# заголовок\n- пункт\n'
+                   '[документ][ref]\n\n[ref]: /tmp/missing.pdf')
+        for path in fields:
+            with self.subTest(path=path):
+                plan_data = copy.deepcopy(original)
+                target = plan_data
+                for key in path[:-1]:
+                    target = target[key]
+                target[path[-1]] = payload
+                tokens = MarkdownIt('commonmark').parse(deal.markdown(plan_data))
+                all_tokens = [token for block in tokens for token in [block, *(block.children or [])]]
+                self.assertFalse({token.type for token in all_tokens} & {
+                    'link_open', 'image', 'html_block', 'html_inline', 'fence', 'code_block', 'code_inline',
+                    'strong_open', 'em_open'})
+                self.assertEqual(sum(token.type == 'heading_open' for token in tokens), 2)
+                visible = ''.join(token.content for token in all_tokens if token.type == 'text')
+                self.assertIn(' '.join(payload.split()), visible)
+        for warning in ('---', '===', '+ пункт', '1. пункт', '1) пункт'):
+            with self.subTest(warning=warning):
+                plan_data = copy.deepcopy(original)
+                plan_data['warnings'] = [warning]
+                tokens = MarkdownIt('commonmark').parse(deal.markdown(plan_data))
+                self.assertFalse({'hr', 'ordered_list_open'} & {token.type for token in tokens})
+                self.assertEqual(sum(token.type == 'heading_open' for token in tokens), 2)
+
+    def test_deadline_sources_remain_literal_in_generated_markdown(self):
+        from markdown_it import MarkdownIt
+        self.relative_payment()
+        payload = '[Согласование](</tmp/missing.docx>) <img src="/tmp/missing.png">'
+        self.state['schedule']['deadline_terms']['payment']['source'] = payload
+        self.state['schedule']['reporting_deadlines'][0].update(title=payload, source=payload)
+        self.state['completed_events']['readiness'] = {
+            'status': 'confirmed', 'checked_at': self.now.isoformat(), 'source': payload}
+        generated = deal.plan(self.state, self.now)
+        self.assertIn(payload, generated['deadline_controls'][0]['note'])
+        self.assertTrue(any(payload in item['note'] for item in generated['events']))
+        self.assertTrue(any(item['completion_source'] == payload for item in generated['completed']))
+        tokens = MarkdownIt('commonmark').parse(deal.markdown(generated))
+        all_tokens = [token for block in tokens for token in [block, *(block.children or [])]]
+        self.assertFalse({token.type for token in all_tokens} & {'link_open', 'image', 'html_block', 'html_inline'})
+        self.assertIn(payload, ''.join(token.content for token in all_tokens if token.type == 'text'))
 
     def test_exported_plan_contains_action_instructions_in_json_markdown_and_ics(self):
         self.relative_payment()

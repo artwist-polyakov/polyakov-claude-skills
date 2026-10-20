@@ -76,7 +76,7 @@ def local_datetime(day, clock, zone, field):
 def validate_state_objects(state):
     if not isinstance(state, dict):
         raise ValueError("Состояние сделки: требуется объект JSON")
-    for key in ("schedule", "policy"):
+    for key in ("schedule", "policy", "creative", "publication"):
         if not isinstance(state.get(key, {}), dict):
             raise ValueError(f"{key}: требуется объект")
 
@@ -602,6 +602,12 @@ def validate(state, state_path=None):
         if not isinstance(policy.get(key), bool):
             raise ValueError(f"policy.{key}: требуется true или false")
     schedule = state.get("schedule", {})
+    reviewed = schedule.get("reviewed_terms", {})
+    if not isinstance(reviewed, dict):
+        raise ValueError("schedule.reviewed_terms: требуется объект")
+    for key, term in reviewed.items():
+        if not isinstance(term, dict):
+            raise ValueError(f"schedule.reviewed_terms.{key}: требуется объект условия")
     if isinstance(state.get("commercial"), dict) and "payment_received" in state["commercial"]:
         raise ValueError("commercial.payment_received дублирует статус оплаты: удалите этот флаг и используйте только checks.payment. "
                          "Сумму, дату поступления и источник подтверждения можно сохранить отдельно; не создавайте второй статус оплаты")
@@ -1388,21 +1394,29 @@ def changes(previous, current):
     return result
 
 
+def escape_markdown(value):
+    """Показать значение одной строкой текста, без ссылок, HTML и новых блоков."""
+    text = " ".join(str(value).split())
+    text = re.sub(r"([\\`*_{}\[\]<>~|&#])", r"\\\1", text)
+    # Маркеры блока опасны только в начале отдельной строки предупреждения.
+    return re.sub(r"^([-+=]|\d+[.)](?=\s))", lambda match: match[0][:-1] + "\\" + match[0][-1], text)
+
+
 def markdown(plan_data):
     """Читаемый план из того же JSON, по которому строится календарь."""
-    lines = [f"# Сделка {plan_data['deal_id']}", "", "Напоминания подготовлены, но ещё не установлены в календарь или расписание агента.", ""]
+    lines = [f"# Сделка {escape_markdown(plan_data['deal_id'])}", "", "Напоминания подготовлены, но ещё не установлены в календарь или расписание агента.", ""]
     lines += ["Условия готовности по ОРД и ЕРИР:",
-              "- " + plan_data["readiness_policy"]["ord"]["note"],
-              "- " + plan_data["readiness_policy"]["erir_visibility"]["note"], ""]
-    lines += [f"- {e['at']}: {e['title']}" + (" — время напоминания прошло" if e["overdue"] else "")
-              + (f". Дата по норме: {e['legal_date']}; час организационный, источник: {e['legal_source']}." if e.get("legal_date") else
-                 f". Предварительная дата контроля: {e['control_date']}; применимость срока не установлена, час организационный." if e.get("control_date") else "")
-              + f"\n  {e['note']}"
+              "- " + escape_markdown(plan_data["readiness_policy"]["ord"]["note"]),
+              "- " + escape_markdown(plan_data["readiness_policy"]["erir_visibility"]["note"]), ""]
+    lines += [f"- {escape_markdown(e['at'])}: {escape_markdown(e['title'])}" + (" — время напоминания прошло" if e["overdue"] else "")
+              + (f". Дата по норме: {escape_markdown(e['legal_date'])}; час организационный, источник: {escape_markdown(e['legal_source'])}." if e.get("legal_date") else
+                 f". Предварительная дата контроля: {escape_markdown(e['control_date'])}; применимость срока не установлена, час организационный." if e.get("control_date") else "")
+              + f"\n  {escape_markdown(e['note'])}"
               for e in plan_data["events"]]
     if plan_data["completed"]:
         lines += ["", "## Выполнено — напоминание больше не требуется", ""]
-        lines += [f"- {e['title']}: {e['completed_at']}; основание: {e['completion_source']}" for e in plan_data["completed"]]
-    lines += ["", *plan_data["warnings"]]
+        lines += [f"- {escape_markdown(e['title'])}: {escape_markdown(e['completed_at'])}; основание: {escape_markdown(e['completion_source'])}" for e in plan_data["completed"]]
+    lines += ["", *(escape_markdown(warning) for warning in plan_data["warnings"])]
     return "\n".join(lines) + "\n"
 
 
