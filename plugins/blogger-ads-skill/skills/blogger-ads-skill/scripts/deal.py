@@ -145,25 +145,47 @@ def validate_creative_links(links):
         raise ValueError("creative.links: нужен упорядоченный список абсолютных http/https URL без пробелов")
 
 
+def read_creative_source(source, key, state_path=None):
+    if (not isinstance(source, dict) or not isinstance(source.get("path"), str) or not source["path"].strip()
+            or not isinstance(source.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", source["sha256"])):
+        raise ValueError(f"creative.provenance.{key}: нужны path и SHA256 из 64 строчных шестнадцатеричных символов")
+    path = Path(source["path"])
+    if not path.is_absolute():
+        if state_path is None:
+            raise ValueError("Для относительного пути исходника нужен путь файла состояния")
+        path = Path(state_path).resolve().parent / path
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != source["sha256"]:
+        raise ValueError(f"Исходник креатива {key} изменён: {path}. Новую версию импортируйте отдельно")
+    return path, raw
+
+
+def verify_creative_media(creative, state_path=None):
+    hashes = creative.get("media_sha256")
+    if not isinstance(hashes, list) or not all(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) for value in hashes):
+        raise ValueError("creative.media_sha256: нужен список SHA256 из 64 строчных шестнадцатеричных символов; без медиа — []")
+    provenance = creative.get("provenance")
+    if provenance is not None and not isinstance(provenance, dict):
+        raise ValueError("creative.provenance: требуется объект источников text, links и media")
+    sources = (provenance or {}).get("media", [])
+    if not isinstance(sources, list) or len(sources) != len(hashes):
+        raise ValueError("creative.provenance.media: каждому SHA256 нужен сохранённый исходник в том же порядке; используйте import-creative --media")
+    for index, (source, expected) in enumerate(zip(sources, hashes)):
+        read_creative_source(source, f"media[{index}]", state_path)
+        if source["sha256"] != expected:
+            raise ValueError(f"creative.media_sha256[{index}] не совпадает с сохранённым исходником; используйте import-creative --media")
+    return sources
+
+
 def verify_creative_source(creative, state_path=None):
     """Сверить рабочий креатив с отдельными дословными копиями исходников."""
+    verify_creative_media(creative, state_path)
     provenance = creative.get("provenance")
     if provenance is None:  # Совместимость с состояниями, созданными до импорта.
         return
-    if not isinstance(provenance, dict):
-        raise ValueError("creative.provenance: требуется объект источников text и links")
     for key in ("text", "links"):
         source = provenance.get(key)
-        if not isinstance(source, dict) or not source.get("path") or not source.get("sha256"):
-            raise ValueError(f"creative.provenance.{key}: нужны path и sha256")
-        path = Path(source["path"])
-        if not path.is_absolute():
-            if state_path is None:
-                raise ValueError("Для относительного пути исходника нужен путь файла состояния")
-            path = Path(state_path).resolve().parent / path
-        raw = path.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != source["sha256"]:
-            raise ValueError(f"Исходник креатива {key} изменён: {path}. Новую версию импортируйте отдельно")
+        path, raw = read_creative_source(source, key, state_path)
         value = raw.decode("utf-8") if key == "text" else json.loads(raw.decode("utf-8"))
         if key == "links":
             link_map = creative_links.parse_links(value)
@@ -258,7 +280,7 @@ def approve_creative(state_path, source_path, quote, now=None):
     return {"state": str(state_path), "creative_approval": proof, "changed": True}
 
 
-def import_creative(state_path, text_path, links_path, now=None):
+def import_creative(state_path, text_path, links_path, now=None, media_paths=None):
     """Импортировать исходники без правки текста и без подтверждения согласования."""
     state_path = Path(state_path).resolve()
     state = read_json(state_path)
@@ -274,8 +296,16 @@ def import_creative(state_path, text_path, links_path, now=None):
     text = raw_sources["text"].decode("utf-8")
     link_map = creative_links.parse_links(json.loads(raw_sources["links"].decode("utf-8")))
     links = [row["url"] for row in link_map]
+    # Без --media сохраняем только проверяемые копии; пустой список явно удаляет медиа.
+    if media_paths is None:
+        media_sources = verify_creative_media(previous, state_path)
+    else:
+        raw_media = [(Path(path), Path(path).read_bytes()) for path in media_paths]
+        media_sources = [save_source_copy(state_path, raw, "media", path.suffix or ".bin", path)
+                         for path, raw in raw_media]
     creative = dict(previous, text=text, links=links, link_map=link_map)
-    provenance = {}
+    creative["media_sha256"] = [source["sha256"] for source in media_sources]
+    provenance = {"media": media_sources}
     for key, original in (("text", text_path), ("links", links_path)):
         provenance[key] = save_source_copy(state_path, raw_sources[key], "sources",
                                            ".txt" if key == "text" else ".json", original)
@@ -287,6 +317,10 @@ def import_creative(state_path, text_path, links_path, now=None):
             not isinstance(previous_sources.get(key), dict)
             or previous_sources[key].get("sha256") != provenance[key]["sha256"]
             for key in ("text", "links")))
+    previous_media_sources = previous_sources.get("media", []) if isinstance(previous_sources, dict) else []
+    source_changed = source_changed or not isinstance(previous_media_sources, list) or (
+        [source.get("sha256") if isinstance(source, dict) else None for source in previous_media_sources]
+        != creative["media_sha256"])
     # Рабочие текст/медиа могли изменить до импорта; учитываем прежнюю полную версию и исходники.
     changed = current_digest != previous_digest or current_digest != previous_import_digest or source_changed
     invalidated = {}
@@ -1055,8 +1089,9 @@ def readiness_issues(state, now):
     if not isinstance(creative.get("text"), str) or not creative["text"].strip():
         missing("creative_approval", "Окончательный текст рекламы")
     current_digest = digest(creative)
-    for key in ("creative_approval", "erid", "marking"):
-        if checks.get(key, {}).get("creative_sha256") != current_digest:
+    for key in ("creative_approval", "erid", "marking", "legality", "scheduled_message"):
+        proof_digest = checks.get(key, {}).get("creative_sha256")
+        if proof_digest != current_digest and (key not in ("legality", "scheduled_message") or proof_digest is not None):
             missing(key, f"{key}: подтверждение относится к другой версии текста, ссылок или медиа")
     if not valid_token(token):
         missing("erid", "Отдельное поле token из ОРД; внутренний ID креатива его не заменяет")
@@ -1363,6 +1398,8 @@ def main():
     importer.add_argument("--state", required=True, type=Path)
     importer.add_argument("--text", required=True, type=Path)
     importer.add_argument("--links", required=True, type=Path)
+    importer.add_argument("--media", nargs="*", type=Path,
+                          help="Полный список медиа в порядке публикации; без путей — удалить медиа; без аргумента — сохранить прежние копии")
     importer.add_argument("--now", help="Время импорта с часовым поясом; в сцене должно совпадать с clock")
     approver = sub.add_parser("approve-creative", help="Согласовать текущий импортированный креатив по дословной реплике пользователя; ОРД и публикация не подтверждаются")
     approver.add_argument("--state", required=True, type=Path)
@@ -1402,7 +1439,7 @@ def main():
             print(json.dumps(set_scene_time(args.state, args.at, args.source), ensure_ascii=False, indent=2))
             return
         if args.command == "import-creative":
-            print(json.dumps(import_creative(args.state, args.text, args.links, args.now), ensure_ascii=False, indent=2))
+            print(json.dumps(import_creative(args.state, args.text, args.links, args.now, args.media), ensure_ascii=False, indent=2))
             return
         if args.command == "approve-creative":
             print(json.dumps(approve_creative(args.state, args.source, args.quote, args.now), ensure_ascii=False, indent=2))

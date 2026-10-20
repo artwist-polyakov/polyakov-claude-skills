@@ -2244,10 +2244,15 @@ class CreativeImportTests(unittest.TestCase):
     def save_state(self):
         self.state_path.write_text(json.dumps(self.state, ensure_ascii=False), encoding="utf-8")
 
-    def import_source(self):
-        result = deal.import_creative(self.state_path, self.text_path, self.links_path, self.now)
+    def import_source(self, media_paths=None):
+        result = deal.import_creative(self.state_path, self.text_path, self.links_path, self.now, media_paths)
         self.state = deal.read_json(self.state_path)
         return result
+
+    def media_file(self, name="image.jpg", content=b"image bytes"):
+        path = self.folder / name
+        path.write_bytes(content)
+        return path
 
     def inspect_text(self, text):
         self.text_path.write_bytes(text.encode("utf-8"))
@@ -2336,8 +2341,7 @@ class CreativeImportTests(unittest.TestCase):
 
     def test_inspect_full_hash_includes_media_and_links_but_text_hash_is_only_text(self):
         first = self.inspect_text("erid: actual")
-        self.state["creative"]["media_sha256"] = [hashlib.sha256(b"media").hexdigest()]
-        second = deal.inspect_creative(self.state, self.state_path)
+        second = self.import_source([self.media_file()])["inspection"]
         self.assertNotEqual(first["creative_sha256"], second["creative_sha256"])
         self.assertEqual(first["text_sha256"], second["text_sha256"])
         self.save_state()
@@ -2392,8 +2396,7 @@ class CreativeImportTests(unittest.TestCase):
         return source
 
     def test_approve_records_full_version_and_does_not_confirm_erid_or_publication(self):
-        self.import_source()
-        self.state["creative"]["media_sha256"] = [hashlib.sha256(b"image").hexdigest()]
+        self.import_source([self.media_file()])
         self.state["checks"]["erid"] = {"status": "pending", "token": "one", "reason": "Получены разные токены"}
         self.state["checks"]["ord_creative"] = {"status": "pending", "token": "another"}
         self.save_state()
@@ -2569,10 +2572,8 @@ class CreativeImportTests(unittest.TestCase):
                 self.state = copy.deepcopy(approved)
                 self.text_path.write_bytes(self.raw_text + (b"new" if key == "text" else b""))
                 self.links_path.write_text(json.dumps(self.links + (["https://example.org/new"] if key == "links" else [])), encoding="utf-8")
-                if key == "media_sha256":
-                    self.state["creative"][key] = [hashlib.sha256(b"new image").hexdigest()]
                 self.save_state()
-                self.import_source()
+                self.import_source([self.media_file()] if key == "media_sha256" else None)
                 self.assertEqual(self.state["checks"]["creative_approval"]["status"], "pending")
                 self.assertEqual(self.state["checks"]["creative_approval"]["source_sha256"], result["creative_approval"]["source_sha256"])
                 self.assertIn("creative_approval", deal.readiness_issues(self.state, self.now))
@@ -2639,6 +2640,152 @@ class CreativeImportTests(unittest.TestCase):
             cwd=self.folder.parent, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), imported["creative_sha256"])
+
+    def test_invalid_media_list_cannot_be_made_ready_by_rehashing_proofs(self):
+        self.import_source()
+        self.confirm()
+        ready = copy.deepcopy(self.state)
+        for hashes in (None, True, "not-a-hash", {}, [True], [None], ["not-a-hash"], ["g" * 64], ["A" * 64]):
+            with self.subTest(media_sha256=hashes):
+                self.state = copy.deepcopy(ready)
+                self.state["creative"]["media_sha256"] = hashes
+                for key in ("creative_approval", "erid", "ord_creative", "marking"):
+                    self.state["checks"][key]["creative_sha256"] = deal.digest(self.state["creative"])
+                self.save_state()
+                before = self.state_path.read_bytes()
+                for operation in (lambda: deal.fingerprint(self.state, self.state_path),
+                                  lambda: deal.check(self.state, self.now, self.state_path),
+                                  lambda: deal.plan(self.state, self.now, self.state_path)):
+                    with self.assertRaisesRegex(ValueError, "creative.media_sha256"):
+                        operation()
+                self.assertEqual(self.state_path.read_bytes(), before)
+
+    def test_media_requires_matching_saved_sources_even_without_text_provenance(self):
+        self.import_source([self.media_file()])
+        self.confirm()
+        ready = copy.deepcopy(self.state)
+        for provenance in (None, {}, {"media": None}, {"media": []}, {"media": [True]},
+                           {"media": [{"path": "image.jpg", "sha256": "not-a-hash"}]}):
+            with self.subTest(provenance=provenance):
+                self.state = copy.deepcopy(ready)
+                self.state["creative"]["provenance"] = provenance
+                with self.assertRaisesRegex(ValueError, "creative.provenance.media"):
+                    deal.fingerprint(self.state, self.state_path)
+                with self.assertRaisesRegex(ValueError, "creative.provenance.media"):
+                    deal.check(self.state, self.now, self.state_path)
+
+    def test_media_import_cli_saves_bytes_order_duplicates_and_ready_version(self):
+        first = self.media_file("first.jpg", b"first media")
+        second = self.media_file("second.mp4", b"second media")
+        originals = [second, first, second]
+        command = [sys.executable, str(ROOT / "scripts/deal.py"), "import-creative", "--state", str(self.state_path),
+                   "--text", str(self.text_path), "--links", str(self.links_path), "--now", self.now.isoformat(),
+                   "--media", *map(str, originals)]
+        result = subprocess.run(command, cwd=self.folder.parent, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        imported = json.loads(result.stdout)
+        self.state = deal.read_json(self.state_path)
+        sources = self.state["creative"]["provenance"]["media"]
+        for original, source in zip(originals, sources):
+            self.assertEqual((self.folder / source["path"]).read_bytes(), original.read_bytes())
+            self.assertEqual(source["sha256"], hashlib.sha256(original.read_bytes()).hexdigest())
+            self.assertEqual(source["original_path"], str(original.resolve()))
+        self.assertEqual(self.state["creative"]["media_sha256"], [source["sha256"] for source in sources])
+        first.unlink()
+        second.write_bytes(b"changed original")
+        self.assertEqual(deal.fingerprint(self.state, self.state_path), imported["creative_sha256"])
+        self.confirm()
+        self.assertTrue(deal.check(self.state, self.now, self.state_path)["ready"])
+        before = copy.deepcopy(self.state)
+        self.assertFalse(self.import_source()["changed"])
+        self.assertEqual(self.state, before)
+        self.text_path.write_bytes(self.raw_text + b"changed text")
+        self.import_source()
+        self.assertEqual(self.state["creative"]["provenance"]["media"], sources)
+
+    def test_media_tampering_or_missing_file_refuses_cli_without_writes(self):
+        self.import_source([self.media_file()])
+        self.confirm()
+        ready = copy.deepcopy(self.state)
+        source = ready["creative"]["provenance"]["media"][0]
+        saved = self.folder / source["path"]
+        original = saved.read_bytes()
+        for damage in ("missing", "changed_file", "changed_source_hash", "changed_working_hash"):
+            with self.subTest(damage=damage):
+                self.state = copy.deepcopy(ready)
+                saved.write_bytes(original)
+                if damage == "missing":
+                    saved.unlink()
+                elif damage == "changed_file":
+                    saved.write_bytes(b"different image")
+                elif damage == "changed_source_hash":
+                    self.state["creative"]["provenance"]["media"][0]["sha256"] = "0" * 64
+                else:
+                    self.state["creative"]["media_sha256"] = ["0" * 64]
+                for key in ("creative_approval", "erid", "ord_creative", "marking"):
+                    self.state["checks"][key]["creative_sha256"] = deal.digest(self.state["creative"])
+                self.save_state()
+                before = self.state_path.read_bytes()
+                for command in ("fingerprint", "check", "plan"):
+                    args = [sys.executable, str(ROOT / "scripts/deal.py"), command, "--state", str(self.state_path)]
+                    if command != "fingerprint":
+                        args += ["--now", self.now.isoformat()]
+                    if command == "plan":
+                        args += ["--output-dir", str(self.folder / "plan")]
+                    result = subprocess.run(args, cwd=self.folder.parent, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertEqual(result.stdout, "")
+                    self.assertEqual(self.state_path.read_bytes(), before)
+                with self.assertRaises((ValueError, OSError)):
+                    self.import_source()
+                self.assertEqual(self.state_path.read_bytes(), before)
+                self.assertFalse((self.folder / "plan").exists())
+
+    def test_missing_media_provenance_requires_explicit_restore_and_new_confirmation(self):
+        image = self.media_file()
+        self.import_source([image])
+        self.confirm()
+        del self.state["creative"]["provenance"]["media"]
+        self.save_state()
+        before = self.state_path.read_bytes()
+        with self.assertRaisesRegex(ValueError, "creative.provenance.media"):
+            self.import_source()
+        self.assertEqual(self.state_path.read_bytes(), before)
+        result = self.import_source([image])
+        self.assertTrue(result["changed"])
+        self.assertIn("creative_approval", result["invalidated_checks"])
+        self.assertFalse(deal.check(self.state, self.now, self.state_path)["ready"])
+
+    def test_explicit_empty_media_removes_files_from_current_version_but_keeps_copies(self):
+        self.import_source([self.media_file()])
+        self.confirm()
+        source = self.state["creative"]["provenance"]["media"][0]
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/deal.py"), "import-creative", "--state", str(self.state_path),
+             "--text", str(self.text_path), "--links", str(self.links_path), "--media", "--now", self.now.isoformat()],
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.state = deal.read_json(self.state_path)
+        self.assertEqual(self.state["creative"]["media_sha256"], [])
+        self.assertEqual(self.state["creative"]["provenance"]["media"], [])
+        self.assertTrue((self.folder / source["path"]).is_file())
+        self.assertEqual(self.state["checks"]["creative_approval"]["status"], "pending")
+
+    def test_new_media_does_not_accept_explicitly_old_legality_or_queue_confirmation(self):
+        self.import_source([self.media_file()])
+        self.confirm()
+        previous_digest = deal.fingerprint(self.state, self.state_path)
+        self.import_source([self.media_file("next.jpg", b"new media")])
+        self.confirm()
+        self.assertTrue(deal.check(self.state, self.now, self.state_path)["ready"])
+        for key in ("legality", "scheduled_message"):
+            with self.subTest(check=key):
+                self.state["checks"][key]["creative_sha256"] = previous_digest
+                result = deal.check(self.state, self.now, self.state_path)
+                self.assertFalse(result["ready"])
+                self.assertEqual(set(result["blockers"]), {key})
+                self.state["checks"][key]["creative_sha256"] = deal.fingerprint(self.state, self.state_path)
+                self.assertTrue(deal.check(self.state, self.now, self.state_path)["ready"])
 
     def test_import_preserves_url_order_duplicates_and_query(self):
         self.import_source()
@@ -2720,10 +2867,8 @@ class CreativeImportTests(unittest.TestCase):
                     link_map = copy.deepcopy(before["creative"]["link_map"])
                     link_map[0]["anchor"] = "Новый якорь при прежнем адресе"
                     self.links_path.write_text(json.dumps(link_map, ensure_ascii=False), encoding="utf-8")
-                elif changed == "media_sha256":
-                    self.state["creative"][changed] = [hashlib.sha256(b"new image").hexdigest()]
                 self.save_state()
-                result = self.import_source()
+                result = self.import_source([self.media_file()] if changed == "media_sha256" else None)
                 self.assertTrue(result["changed"])
                 self.assertEqual(set(result["invalidated_checks"]), dependent)
                 for key, proof in before["checks"].items():
@@ -2818,7 +2963,8 @@ class CreativeImportTests(unittest.TestCase):
         self.import_source()
         with self.assertRaisesRegex(ValueError, "нужен путь файла состояния"):
             deal.fingerprint(self.state)
-        for source in self.state["creative"]["provenance"].values():
+        for key in ("text", "links"):
+            source = self.state["creative"]["provenance"][key]
             source["path"] = str(self.folder / source["path"])
         self.assertEqual(deal.fingerprint(self.state), deal.digest(self.state["creative"]))
 
