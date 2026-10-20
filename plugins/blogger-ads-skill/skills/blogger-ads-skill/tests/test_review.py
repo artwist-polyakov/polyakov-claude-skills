@@ -30,6 +30,16 @@ class ReviewTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.base = Path(self.tmp.name)
+        def convert_docx(source, destination, soffice=None):
+            # Минимальные учебные DOCX; настоящую отрисовку отдельно проверяет LibreOffice.
+            with ZipFile(source) as archive:
+                root = review.ElementTree.fromstring(archive.read("word/document.xml"))
+            pdf = destination / (source.stem + ".pdf")
+            self.pdf(pdf, [review.word_text(root)])
+            return pdf
+        conversion = patch.object(review.render_docx, "convert_to_pdf", side_effect=convert_docx)
+        self.docx_converter = conversion.start()
+        self.addCleanup(conversion.stop)
         self.source = self.base / "received.pdf"
         self.pdf(self.source, ["Page one.", "Page two.", "The customer pays for the services in advance."])
         self.user_source = self.base / "user.txt"

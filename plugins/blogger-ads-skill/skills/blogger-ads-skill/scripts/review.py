@@ -10,6 +10,7 @@ import importlib.util
 import json
 import math
 import re
+import tempfile
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -53,17 +54,17 @@ CATEGORIES = {
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".tif", ".tiff"}
 TIMED_CATEGORIES = {"placement", "payment", "signing", "creative_delivery", "erid",
                     "ord_reporting", "client_reporting", "acceptance", "closing"}
+WORD_NAMESPACES = {"http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+                   "http://purl.oclc.org/ooxml/wordprocessingml/main"}
 
 
 def word_text(root):
     """Текст текущей редакции Word без удалений и служебных инструкций полей."""
-    namespaces = {"http://schemas.openxmlformats.org/wordprocessingml/2006/main",
-                  "http://purl.oclc.org/ooxml/wordprocessingml/main"}
     parts = []
 
     def walk(node):
         namespace, _, name = node.tag.removeprefix("{").partition("}")
-        if namespace in namespaces:
+        if namespace in WORD_NAMESPACES:
             if name in {"del", "moveFrom", "delText", "instrText", "delInstrText"}:
                 return
             if name == "r":
@@ -77,14 +78,14 @@ def word_text(root):
                 parts.append("\t" if name == "tab" else "\n")
         for child in node:
             walk(child)
-        if namespace in namespaces and name == "p":
+        if namespace in WORD_NAMESPACES and name == "p":
             parts.append("\n")
 
     walk(root)
     return "".join(parts)
 
 
-def previous_source(previous, base):
+def previous_source(previous, base, soffice=None):
     """Дословный прежний пункт; факт выдачи отдельно сверяется с состоянием сделки."""
     fields(previous, ("source",), ("value",), "previous")
     source = previous["source"]
@@ -118,6 +119,20 @@ def previous_source(previous, base):
         if path.suffix.lower() == ".docx":
             with ZipFile(BytesIO(raw)) as archive:
                 root = ElementTree.fromstring(archive.read("word/document.xml"))
+                for name in archive.namelist():
+                    try:
+                        part = ElementTree.fromstring(archive.read(name))
+                    except ElementTree.ParseError:  # Изображения, шрифты и другие не-XML части.
+                        continue
+                    for namespace in WORD_NAMESPACES:
+                        if part.tag != f"{{{namespace}}}styles":
+                            continue
+                        hidden = part.find(f"{{{namespace}}}docDefaults/{{{namespace}}}rPrDefault/"
+                                           f"{{{namespace}}}rPr/{{{namespace}}}vanish")
+                        if hidden is not None and hidden.get(f"{{{namespace}}}val", "true") not in {"0", "false", "off"}:
+                            raise ValueError("previous.source.quote: DOCX содержит активное скрытие текста в docDefaults. "
+                                             "LibreOffice не воспроизводит его надёжно, в том числе при переопределениях. "
+                                             "Используйте уже выданную PDF-копию как прежний источник; DOCX не изменяйте")
             text = word_text(root)
         elif path.suffix.lower() == ".pdf":
             text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(raw)).pages)
@@ -125,6 +140,16 @@ def previous_source(previous, base):
             text = raw.decode("utf-8")
         if normalized(quote) not in normalized(text):
             raise ValueError(f"previous.source.quote: дословная цитата не найдена в прежнем источнике {path}")
+        if path.suffix.lower() == ".docx":
+            # Скрытие через rStyle/pStyle проверяет преобразователь; неподдерживаемые docDefaults отклонены выше.
+            with tempfile.TemporaryDirectory(prefix="review-previous-docx-") as directory:
+                pdf = render_docx.convert_to_pdf(path, Path(directory), soffice=soffice)
+                visible = "\n".join(page.extract_text() or "" for page in PdfReader(pdf).pages)
+            if sha256(path.read_bytes()) != sha256(raw):
+                raise ValueError("Прежний DOCX изменён во время проверки отображения; повторите сверку")
+            if normalized(quote) not in normalized(visible):
+                raise ValueError(f"previous.source.quote: дословная цитата не найдена в видимом тексте прежнего DOCX {path}. "
+                                 "Проверьте скрытие текста в стилях и цитируйте отображаемое условие")
     return dict(source, path=str(path), sha256=sha256(raw))
 
 
@@ -577,7 +602,7 @@ def load_review(raw, base, soffice=None):
             string(source["quote"], "source.quote")
             if "not_found_reason" in source:
                 raise ValueError("source.not_found_reason допустим только при quote: null")
-        proof = previous_source(item["previous"], base)
+        proof = previous_source(item["previous"], base, soffice=soffice)
         if proof["kind"] != "document" and not data.get("comparison_at"):
             raise ValueError("comparison_at: при previous.source.kind=none/message укажите время начала сравнения с часовым поясом. "
                              "Оно отделяет ранее выданные документы от появившихся после сверки")
@@ -992,7 +1017,7 @@ def main():
     checker.add_argument("--state", required=True)
     checker.add_argument("--plan", help="Обязателен при известной дате публикации или плановых связях в сверке")
     for command in (builder, auditor, checker):
-        command.add_argument("--soffice", help="LibreOffice для проверки original_path; иначе поиск в PATH")
+        command.add_argument("--soffice", help="LibreOffice для проверки исходных DOCX и скрытия текста стилями; иначе поиск в PATH")
     args = parser.parse_args()
     try:
         if args.command == "build":

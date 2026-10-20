@@ -20,6 +20,136 @@ class ReviewProvenanceTests(unittest.TestCase):
     save_state_plan = test_review.ReviewTests.save_state_plan
     check = test_review.ReviewTests.check
 
+    def styled_prior_document(self, namespace, origin, override=False, default_value=None, styles_path="word/styles.xml"):
+        path = self.prior_document("Styled clause.")
+        properties = '<w:rStyle w:val="HiddenChild"/>' if origin == "character" else ""
+        paragraph = '<w:pPr><w:pStyle w:val="HiddenChild"/></w:pPr>' if origin == "paragraph" else ""
+        if override:
+            properties += '<w:vanish w:val="0"/>'
+        if origin == "defaults":
+            value = f' w:val="{default_value}"' if default_value is not None else ""
+            styles = f'<w:docDefaults><w:rPrDefault><w:rPr><w:vanish{value}/></w:rPr></w:rPrDefault></w:docDefaults>'
+        else:
+            styles = (f'<w:style w:type="{origin}" w:styleId="HiddenBase"><w:rPr><w:vanish/></w:rPr></w:style>'
+                      f'<w:style w:type="{origin}" w:styleId="HiddenChild"><w:basedOn w:val="HiddenBase"/></w:style>')
+        with ZipFile(path, "w") as archive:
+            archive.writestr("word/document.xml", f'<w:document xmlns:w="{namespace}"><w:body><w:p>{paragraph}'
+                             f'<w:r><w:rPr>{properties}</w:rPr><w:t>Styled clause.</w:t></w:r>'
+                             '</w:p></w:body></w:document>')
+            archive.writestr(styles_path, f'<w:styles xmlns:w="{namespace}">{styles}</w:styles>')
+            archive.writestr("word/_rels/document.xml.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                             '<Relationship Id="styles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" '
+                             f'Target="{styles_path.removeprefix("word/")}"/></Relationships>')
+            archive.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                             f'<Override PartName="/{styles_path}" '
+                             'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>')
+        return path
+
+    def test_hidden_inherited_styles_require_the_quote_in_fresh_pdf(self):
+        for namespace in sorted(review.WORD_NAMESPACES):
+            for origin in ("character", "paragraph"):
+                with self.subTest(namespace=namespace, origin=origin):
+                    path = self.styled_prior_document(namespace, origin)
+                    before = path.read_bytes()
+                    def convert(source, destination, soffice=None):
+                        pdf = destination / "visible.pdf"
+                        self.pdf(pdf, ["Only the visible condition."])
+                        return pdf
+                    self.docx_converter.side_effect = convert
+                    with self.assertRaisesRegex(ValueError, "цитата не найдена в видимом тексте.*скрытие текста"):
+                        self.build()
+                    self.assertFalse(self.output.exists())
+                    self.assertEqual(before, path.read_bytes())
+                    self.assertFalse(self.docx_converter.call_args.args[1].exists())
+
+    def test_visible_overrides_pass_and_audit_repeats_conversion(self):
+        for index, namespace in enumerate(sorted(review.WORD_NAMESPACES)):
+            for origin in ("character", "paragraph"):
+                with self.subTest(namespace=namespace, origin=origin):
+                    path = self.styled_prior_document(namespace, origin, override=True)
+                    before = path.read_bytes()
+                    self.output = self.base / f"visible-{index}-{origin}"
+                    visible = "Styled clause."
+                    def convert(source, destination, soffice=None):
+                        pdf = destination / "visible.pdf"
+                        self.pdf(pdf, [visible])
+                        return pdf
+                    self.docx_converter.side_effect = convert
+                    self.docx_converter.reset_mock()
+                    self.save()
+                    review.build(self.input, self.output, soffice="/chosen/soffice")
+                    self.assertTrue(review.audit(self.output, soffice="/chosen/soffice")["valid"])
+                    self.assertEqual(self.docx_converter.call_count, 2)
+                    self.assertTrue(all(call.kwargs["soffice"] == "/chosen/soffice"
+                                        for call in self.docx_converter.call_args_list))
+                    manifest = json.loads((self.output / "manifest.json").read_text())
+                    self.assertEqual(manifest["verification"]["previous"][0]["sha256"], review.sha256(before))
+                    visible = "The converter no longer shows this condition."
+                    with self.assertRaisesRegex(ValueError, "цитата не найдена в видимом тексте"):
+                        review.audit(self.output, soffice="/chosen/soffice")
+                    self.assertEqual(self.docx_converter.call_count, 3)
+                    self.assertEqual(path.read_bytes(), before)
+                    self.assertTrue(all(not call.args[1].exists() for call in self.docx_converter.call_args_list))
+
+    def test_active_hidden_docdefaults_fail_even_with_direct_override_and_relocated_styles(self):
+        for namespace in sorted(review.WORD_NAMESPACES):
+            for override in (False, True):
+                for style_path in ("word/styles.xml", "word/custom/relocated.xml", "word/custom/styles.dat"):
+                    with self.subTest(namespace=namespace, override=override, style_path=style_path):
+                        path = self.styled_prior_document(namespace, "defaults", override, styles_path=style_path)
+                        before = path.read_bytes()
+                        self.docx_converter.reset_mock()
+                        with self.assertRaisesRegex(ValueError, "docDefaults.*уже выданную PDF-копию"):
+                            self.build()
+                        self.docx_converter.assert_not_called()
+                        self.assertFalse(self.output.exists())
+                        self.assertEqual(path.read_bytes(), before)
+
+    def test_inactive_default_hiding_and_unrelated_xml_do_not_block_visible_quote(self):
+        for index, namespace in enumerate(sorted(review.WORD_NAMESPACES)):
+            for value in ("0", "false", "off"):
+                with self.subTest(namespace=namespace, value=value):
+                    path = self.styled_prior_document(namespace, "defaults", default_value=value)
+                    with ZipFile(path, "a") as archive:
+                        hidden = '<w:docDefaults><w:rPrDefault><w:rPr><w:vanish/></w:rPr></w:rPrDefault></w:docDefaults>'
+                        archive.writestr("custom/not-styles.xml", f'<w:settings xmlns:w="{namespace}">{hidden}</w:settings>')
+                        archive.writestr("custom/foreign.xml", f'<w:styles xmlns:w="urn:other">{hidden}</w:styles>')
+                        archive.writestr("word/media/image.png", b"\x89PNG\r\n\x1a\n\xff\x00\x01")
+                        archive.writestr("word/fonts/font.odttf", b"\x00\x01\x00\x00binary font data")
+                    self.output = self.base / f"defaults-visible-{index}-{value}"
+                    self.build()
+                    self.assertTrue(review.audit(self.output)["valid"])
+
+    def test_docx_without_standard_style_part_still_requires_visible_quote(self):
+        self.prior_document()
+        def convert(source, destination, soffice=None):
+            pdf = destination / "visible.pdf"
+            self.pdf(pdf, ["A different visible clause."])
+            return pdf
+        self.docx_converter.side_effect = convert
+        with self.assertRaisesRegex(ValueError, "цитата не найдена в видимом тексте"):
+            self.build()
+        self.assertFalse(self.output.exists())
+
+    def test_previous_docx_requires_converter_and_detects_change_during_conversion(self):
+        path = self.prior_document()
+        convert = self.docx_converter.side_effect
+        self.docx_converter.side_effect = ValueError("LibreOffice не найден: укажите --soffice или PATH")
+        with self.assertRaisesRegex(ValueError, "LibreOffice не найден.*--soffice"):
+            self.build()
+        self.assertFalse(self.output.exists())
+        before = path.read_bytes()
+        def change(source, destination, soffice=None):
+            pdf = convert(source, destination, soffice)
+            path.write_bytes(before + b"changed during conversion")
+            return pdf
+        self.docx_converter.side_effect = change
+        with self.assertRaisesRegex(ValueError, "Прежний DOCX изменён во время проверки"):
+            self.build()
+        self.assertFalse(self.output.exists())
+        self.assertEqual(path.read_bytes(), before + b"changed during conversion")
+        self.assertFalse(self.docx_converter.call_args.args[1].exists())
+
     def test_prior_docx_quotes_use_current_visible_text_in_both_namespaces(self):
         namespaces = ("http://schemas.openxmlformats.org/wordprocessingml/2006/main",
                       "http://purl.oclc.org/ooxml/wordprocessingml/main")
