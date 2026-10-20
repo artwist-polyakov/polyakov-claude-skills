@@ -1075,6 +1075,35 @@ class HandoffTests(unittest.TestCase):
         self.assertFalse(result['valid'])
         self.assertTrue(any('ICS не соответствует' in issue for issue in result['issues']))
 
+    def test_matching_plan_exports_with_tampered_warnings_or_controls_cannot_be_issued(self):
+        self.scheduled_state()
+        for field in ('warnings', 'deadline_controls'):
+            with self.subTest(field=field):
+                files = self.plan_package('tampered-' + field)
+                plan = json.loads(files[0].read_text())
+                if field == 'warnings':
+                    self.assertTrue(plan[field])
+                    plan[field] = []
+                else:
+                    self.assertEqual(plan[field], [])
+                    plan[field] = [{'check': 'payment', 'date': '2026-11-08'}]
+                # Все три файла согласованы между собой и зарегистрированы с честными SHA.
+                files[0].write_text(json.dumps(plan))
+                files[1].write_text(handoff.deal.markdown(plan))
+                files[2].write_text(handoff.deal.ics(plan, handoff.deal.stamp(plan['generated_at'])))
+                self.register_plan(files)
+                response = self.file('reply-' + field + '.txt', f'[План](<{files[1]}>)')
+                before = {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
+                for record in (False, True):
+                    result = handoff.audit(self.state, response, record_issue=record)
+                    self.assertFalse(result['valid'])
+                    self.assertTrue(any(f'План {field} не воспроизводится' in issue for issue in result['issues']),
+                                    result['issues'])
+                    if record:
+                        self.assertFalse(result['plan_issue_recorded'])
+                    self.assertNotIn('plan_issues', self.data())
+                    self.assertEqual(before, {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()})
+
     def test_plan_markdown_tampered_before_registration_blocks_issue_without_writes(self):
         self.scheduled_state()
         old = self.plan_package('old-deadlines')

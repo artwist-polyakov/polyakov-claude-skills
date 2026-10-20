@@ -1241,6 +1241,39 @@ class DealTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "не воспроизводится"):
             deal.validate_plan(self.state, valid)
 
+    def test_validate_plan_rejects_missing_removed_and_changed_warnings_and_controls(self):
+        self.relative_payment()
+        valid = deal.plan(self.state, self.now)
+        for key in ("warnings", "deadline_controls"):
+            self.assertTrue(valid[key])
+            for change in ("missing", "empty", "changed"):
+                with self.subTest(key=key, change=change):
+                    changed = copy.deepcopy(valid)
+                    if change == "missing":
+                        changed.pop(key)
+                    elif change == "empty":
+                        changed[key] = []
+                    elif key == "warnings":
+                        changed[key][0] = "Все условия согласованы, дополнительных проверок не требуется."
+                    else:
+                        changed[key][0]["date"] = "2026-10-18"
+                    before = copy.deepcopy(changed)
+                    with self.assertRaisesRegex(ValueError, f"План {key} не воспроизводится"):
+                        deal.validate_plan(self.state, changed)
+                    self.assertEqual(changed, before)
+        self.assertIs(deal.validate_plan(self.state, valid), valid)
+
+    def test_validate_plan_rejects_stale_warnings_when_events_are_unchanged(self):
+        saved = deal.plan(self.state, self.now)
+        self.state["schedule"]["work_calendar_verified"] = True
+        current = deal.plan(self.state, self.now)
+        for key in ("events", "completed", "deadline_controls", "readiness_policy"):
+            self.assertEqual(saved[key], current[key])
+        self.assertNotEqual(saved["warnings"], current["warnings"])
+        with self.assertRaisesRegex(ValueError, "План warnings не воспроизводится"):
+            deal.validate_plan(self.state, saved)
+        self.assertIs(deal.validate_plan(self.state, current), current)
+
     def test_validate_plan_uses_saved_generation_time_and_ignores_sequence_and_overdue(self):
         saved = deal.plan(self.state, self.now)
         for section in ("events", "completed"):

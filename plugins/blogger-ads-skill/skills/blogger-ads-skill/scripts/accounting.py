@@ -141,7 +141,9 @@ def validate_data(data, command):
             raise ValueError("invoice_status: payable или paid_archive")
         if status == "paid_archive":
             payment = data.get("payment_received", {})
-            iso_date(required(payment, "date", "payment_received"))
+            paid_on = iso_date(required(payment, "date", "payment_received"))
+            if paid_on < iso_date(data["document"]["date"]):
+                raise ValueError("paid_archive: дата оплаты не может предшествовать дате исходного счёта")
             if number(required(payment, "amount", "payment_received"), "payment_received.amount") != calculate(data)[1]["gross"]:
                 raise ValueError("paid_archive: подтверждённая оплата должна совпадать с полной суммой счёта")
         return

@@ -316,6 +316,7 @@ class AccountingTests(unittest.TestCase):
 
     def test_paid_archive_requires_confirmed_full_payment_and_has_no_demand(self):
         data = fixture()
+        data["document"]["date"] = "2026-10-14"
         data["invoice_status"] = "paid_archive"
         data["payment_terms"] = "Оплатить до 16 октября"
         with self.assertRaises(ValueError):
@@ -345,6 +346,19 @@ class AccountingTests(unittest.TestCase):
         data["payment_received"]["date"] = "16.10.2026"
         with self.assertRaisesRegex(ValueError, "Дата должна"):
             accounting.render_html(data, "invoice")
+
+    def test_paid_archive_rejects_payment_before_original_invoice(self):
+        data = fixture()
+        data["invoice_status"] = "paid_archive"
+        data["payment_received"] = {"amount": "50000.00", "date": "2026-10-16"}
+        with self.assertRaisesRegex(ValueError, "дата оплаты.*дате исходного счёта"):
+            accounting.render_html(data, "invoice")
+        self.assertEqual(data["document"]["date"], "2026-10-17")
+
+        data["payment_received"]["date"] = "2026-10-17"
+        html = accounting.render_html(data, "invoice")
+        self.assertIn("Оплачено полностью 17.10.2026", html)
+        self.assertIn("повторная оплата не требуется", html)
 
 
 if __name__ == "__main__":

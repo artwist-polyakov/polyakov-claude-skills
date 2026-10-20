@@ -1288,6 +1288,9 @@ def validate_plan(state, plan_data, state_path=None):
     expected = content(recalculated)
     if plan_data.get("readiness_policy") != recalculated["readiness_policy"]:
         raise ValueError("План readiness_policy не соответствует текущей политике ОРД/ЕРИР; пересчитайте deal.py plan")
+    for key in ("warnings", "deadline_controls"):
+        if plan_data.get(key) != recalculated[key]:
+            raise ValueError(f"План {key} не воспроизводится из текущего состояния; пересчитайте deal.py plan")
     for section in ("events", "completed"):
         if actual[section] != expected[section]:
             raise ValueError(f"План {section} не воспроизводится из текущего состояния; пересчитайте deal.py plan")
