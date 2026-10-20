@@ -205,11 +205,23 @@ def docx_links(raw):
         names = set(archive.namelist())
         if "word/document.xml" not in names:
             raise ValueError("В DOCX отсутствует word/document.xml")
+        # Импорт может находиться вне XML-частей Word и не иметь целого w:altChunk.
+        for rel_path in sorted(name for name in names if name.endswith(".rels")):
+            for relationship in ET.fromstring(archive.read(rel_path)).findall(REL + "Relationship"):
+                if relationship.get("Type", "").rsplit("/", 1)[-1] == "aFChunk":
+                    warnings.append(f"{rel_path}: импорт aFChunk {relationship.get('Id')} "
+                                    f"(Target={relationship.get('Target')}, TargetMode={relationship.get('TargetMode', 'Internal')}); "
+                                    "содержимое и ссылки импортируемого файла не разобраны. "
+                                    "Сверьте их отдельно и сохраните разбор в resolution")
         # Тело первым; остальные части (например, колонтитулы) — по имени.
         parts = sorted(name for name in names if name.startswith("word/") and name.endswith((".xml", ".vml")))
         parts.remove("word/document.xml")
         for part in ["word/document.xml"] + parts:
             root = ET.fromstring(archive.read(part))
+            if any(node.tag in (W + "altChunk", "{http://purl.oclc.org/ooxml/wordprocessingml/main}altChunk")
+                   for node in root.iter()):
+                warnings.append(f"{part}: обнаружен w:altChunk; содержимое и ссылки импортируемого файла не разобраны. "
+                                "Сверьте их отдельно и сохраните разбор в resolution")
             if has_hyperlink_field(root):
                 warnings.append(f"{part}: обнаружено поле HYPERLINK; его адрес и якорь не извлечены. "
                                 "Сверьте их вручную и сохраните разбор в resolution")
@@ -270,7 +282,7 @@ def inspect_links(path, expected=None):
               "format": kind, "links": links, "warnings": warnings,
               "limitations": [COMPARISON_NOTE,
                   "PDF: извлечены /Link с действием /URI; прочие действия, /A у других типов аннотаций, цепочки /Next, /AA аннотаций и страниц, /OpenAction, /AA, /Outlines, /AcroForm и /Names/JavaScript каталога вызывают предупреждение. Закладки и поля форм не разбираются. anchor_hint — текст из области той же аннотации, он может захватить соседнюю строку или отсутствовать у скана; видимый якорь сверяйте по странице и прямоугольнику. Это не OCR и не автоматическое подтверждение соответствия якоря адресу.",
-                  "DOCX: внешние адреса w:hyperlink учтены только при Type гиперссылки и TargetMode=External; внутренние w:anchor показаны отдельно. Обычный текст URL не извлекается; поля HYPERLINK, ссылки DrawingML (hlinkClick/hlinkHover) и VML (href) вызывают предупреждение и требуют отдельной сверки адресов и связанных текста или объектов. Номера абзацев относятся к каждой XML-части отдельно.",
+                  "DOCX: внешние адреса w:hyperlink учтены только при Type гиперссылки и TargetMode=External; внутренние w:anchor показаны отдельно. Обычный текст URL не извлекается; поля HYPERLINK, ссылки DrawingML (hlinkClick/hlinkHover), VML (href) и импорт w:altChunk/aFChunk вызывают предупреждение и требуют отдельной сверки адресов и связанных текста или объектов. Импортируемые HTML/MHTML и другие форматы не разбираются и не загружаются. Номера абзацев относятся к каждой XML-части отдельно.",
                   "Адреса не открывались. Для DOCX порядок между XML-частями не определяет порядок страниц."]}
     if expected is not None:
         actual = [row["target"] for row in links if row["target"] is not None]

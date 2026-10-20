@@ -579,6 +579,118 @@ class LinkInspectionTests(unittest.TestCase):
         self.assertEqual(path.read_bytes(), before)
 
 
+class DocxAlternativeFormatTests(unittest.TestCase):
+    setUp = LinkInspectionTests.setUp
+
+    def imported_docx(self, *, with_links=True, element=True, relationship=True,
+                      external=False, extension='html', part='word/document.xml',
+                      rel_path=None, relationship_type=None):
+        path = self.base / 'imported.docx'
+        url = 'https://example.test/product'
+        ordinary = ('<w:p><w:hyperlink r:id="r1"><w:r><w:t>Продукт</w:t></w:r>'
+                    '</w:hyperlink></w:p>') if with_links else ''
+        chunk = '<w:altChunk r:id="import1"/>' if element else ''
+        start = ('<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+                 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>')
+        end = '</w:body></w:document>'
+        parts = {'word/document.xml': start + ordinary + (chunk if part == 'word/document.xml' else '') + end}
+        if part != 'word/document.xml':
+            parts[part] = start + chunk + end
+        rels = {'word/_rels/document.xml.rels': (
+            '<Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+            f'Target="{url}" TargetMode="External"/>')}
+        if relationship:
+            rel_path = rel_path or str(Path(part).parent / '_rels' / (Path(part).name + '.rels'))
+            relationship_type = relationship_type or 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/aFChunk'
+            target = f'https://remote.example.test/import.{extension}' if external else f'import.{extension}'
+            mode = ' TargetMode="External"' if external else ''
+            rels[rel_path] = rels.get(rel_path, '') + (
+                f'<Relationship Id="import1" Type="{relationship_type}" Target="{target}"{mode}/>')
+            if not external:
+                parts[str(Path(part).parent / ('import.' + extension))] = (
+                    '<html><body><a href="https://hidden.example.test/">Дополнительный переход</a></body></html>'
+                    if extension == 'html' else
+                    'MIME-Version: 1.0\r\nContent-Type: text/html\r\n\r\n'
+                    '<a href="https://hidden.example.test/">Дополнительный переход</a>')
+        with ZipFile(path, 'w') as archive:
+            for name, content in parts.items():
+                archive.writestr(name, content)
+            for name, content in rels.items():
+                archive.writestr(name, '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                                 + content + '</Relationships>')
+        return path, ([{'anchor': 'Продукт', 'url': url}] if with_links else [])
+
+    def assert_resolution_required(self, path, expected_map):
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        import handoff
+        original = path.read_bytes()
+        expected = [row['url'] for row in expected_map]
+        result = links.inspect_links(path, expected)
+        self.assertTrue(result['comparison']['ordered_lists_equal'])
+        self.assertEqual([row['target'] for row in result['links']], expected)
+        self.assertTrue(result['warnings'])
+        self.assertTrue(all('resolution' in warning for warning in result['warnings']))
+        report = self.base / 'import-links.json'
+        report.write_text(json.dumps(result), encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'resolution.result=accepted'):
+            handoff.check_link_comparison(report, {}, expected, expected_map)
+        review = self.base / 'import-review.md'
+        review.write_text('Импорт отдельно проверен: содержимое и все адреса переходов сопоставлены.', encoding='utf-8')
+        result['resolution'] = {'result': 'accepted', 'notes': 'Импорт отдельно проверен.', 'source': str(review)}
+        report.write_text(json.dumps(result), encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'resolution.source'):
+            handoff.check_link_comparison(report, {}, expected, expected_map)
+        handoff.check_link_comparison(report, {
+            review.resolve(): {'group': 'analysis', 'current': True, 'sha256': handoff.sha(review)}}, expected, expected_map)
+        self.assertEqual(path.read_bytes(), original)
+        return result
+
+    def test_internal_and_external_imports_block_even_with_matching_or_empty_urls(self):
+        for extension in ('html', 'mht'):
+            for external in (False, True):
+                for with_links in (False, True):
+                    with self.subTest(extension=extension, external=external, with_links=with_links):
+                        path, expected = self.imported_docx(extension=extension, external=external, with_links=with_links)
+                        result = self.assert_resolution_required(path, expected)
+                        self.assertTrue(any('w:altChunk' in warning for warning in result['warnings']))
+                        self.assertTrue(any('aFChunk' in warning and 'import1' in warning for warning in result['warnings']))
+                        if external:
+                            self.assertTrue(any('TargetMode=External' in warning for warning in result['warnings']))
+
+    def test_element_without_relationship_still_blocks_in_body_and_header(self):
+        for part in ('word/document.xml', 'word/header1.xml'):
+            with self.subTest(part=part):
+                path, expected = self.imported_docx(relationship=False, part=part)
+                result = self.assert_resolution_required(path, expected)
+                self.assertEqual(len(result['warnings']), 1)
+                self.assertIn(part, result['warnings'][0])
+                self.assertIn('w:altChunk', result['warnings'][0])
+
+    def test_import_relationship_without_element_blocks_in_any_relationship_part(self):
+        for rel_path in ('word/_rels/document.xml.rels', 'word/_rels/header1.xml.rels',
+                         'customXml/_rels/item1.xml.rels'):
+            for prefix in ('http://schemas.openxmlformats.org/officeDocument/2006/relationships/',
+                           'http://purl.oclc.org/ooxml/officeDocument/relationships/'):
+                with self.subTest(rel_path=rel_path, prefix=prefix):
+                    path, expected = self.imported_docx(element=False, rel_path=rel_path,
+                                                        relationship_type=prefix + 'aFChunk')
+                    result = self.assert_resolution_required(path, expected)
+                    self.assertEqual(len(result['warnings']), 1)
+                    self.assertIn(rel_path, result['warnings'][0])
+                    self.assertIn('aFChunk', result['warnings'][0])
+
+    def test_plain_docx_has_no_import_warning_or_resolution_requirement(self):
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        import handoff
+        path, expected_map = self.imported_docx(element=False, relationship=False)
+        expected = [row['url'] for row in expected_map]
+        result = links.inspect_links(path, expected)
+        self.assertEqual(result['warnings'], [])
+        report = self.base / 'plain-docx-links.json'
+        report.write_text(json.dumps(result), encoding='utf-8')
+        handoff.check_link_comparison(report, {}, expected, expected_map)
+
+
 class PdfCatalogWarningTests(unittest.TestCase):
     setUp = LinkInspectionTests.setUp
     pdf = LinkInspectionTests.pdf

@@ -45,6 +45,87 @@ def fixture():
 
 
 class AccountingTests(unittest.TestCase):
+    def ip_case(self, side, rate):
+        data = fixture()
+        data["vat"]["rate"] = rate
+        if side == "buyer":
+            data["buyer"] = dict(data["seller"], edo_id="2BM-TEST-BUYER")
+        return data
+
+    def test_supplied_ogrnip_is_checked_for_either_party_and_tax_mode(self):
+        for side in ("seller", "buyer"):
+            for rate in ("none", "22"):
+                valid = self.ip_case(side, rate)[side]["ogrnip"]
+                for number in ("111111111111112", valid[:-1], " " + valid, valid + " ", 111111111111112, False):
+                    with self.subTest(side=side, rate=rate, number=number):
+                        data = self.ip_case(side, rate)
+                        data[side]["ogrnip"] = number
+                        before = copy.deepcopy(data)
+                        with self.assertRaisesRegex(ValueError, side + r"\.ogrnip"):
+                            accounting.render_xml(data)
+                        for command in ("invoice", "upd-print"):
+                            with self.assertRaisesRegex(ValueError, side + r"\.ogrnip"):
+                                accounting.render_html(data, command)
+                        self.assertEqual(data, before)
+
+    def test_supplied_ogrnip_date_is_checked_independently(self):
+        for side in ("seller", "buyer"):
+            for rate in ("none", "22"):
+                for value in ("2020-02-30", "10.01.2020", "2020-01-10 ", False, []):
+                    with self.subTest(side=side, rate=rate, value=value):
+                        data = self.ip_case(side, rate)
+                        data[side]["ogrnip_date"] = value
+                        # Необязательная дата проверяется и без переданного номера.
+                        if side == "buyer" or rate == "none":
+                            data[side].pop("ogrnip")
+                        with self.assertRaisesRegex(ValueError, side + r"\.ogrnip_date"):
+                            accounting.render_xml(data)
+                        with self.assertRaisesRegex(ValueError, side + r"\.ogrnip_date"):
+                            accounting.render_html(data, "upd-print")
+
+    def test_optional_registration_fields_are_serialized_only_when_present(self):
+        for side in ("seller", "buyer"):
+            for rate in ("none", "22"):
+                for absent in ((), ("ogrnip",), ("ogrnip_date",), ("ogrnip", "ogrnip_date")):
+                    if side == "seller" and rate != "none" and absent:
+                        continue
+                    for empty in ("omit", None, ""):
+                        with self.subTest(side=side, rate=rate, absent=absent, empty=empty):
+                            data = self.ip_case(side, rate)
+                            for key in absent:
+                                if empty == "omit":
+                                    data[side].pop(key)
+                                else:
+                                    data[side][key] = empty
+                            before = copy.deepcopy(data)
+                            filename, xml = accounting.render_xml(data)
+                            accounting.validate_xml(xml, filename)
+                            tag = "СвПрод" if side == "seller" else "СвПокуп"
+                            ip = ET.fromstring(xml).find(f".//{tag}/ИдСв/СвИП")
+                            self.assertEqual(ip.get("ОГРНИП"), data[side].get("ogrnip") or None)
+                            self.assertEqual(ip.get("ДатаОГРНИП"), None if "ogrnip_date" in absent else "10.01.2020")
+                            html = accounting.render_html(data, "upd-print")
+                            if side == "seller":
+                                self.assertEqual("ОГРНИП " + fixture()["seller"]["ogrnip"] in html, "ogrnip" not in absent)
+                                self.assertEqual("10.01.2020" in html, "ogrnip_date" not in absent)
+                            self.assertEqual(data, before)
+
+    def test_taxed_seller_still_requires_registration_pair_in_upd_only(self):
+        for rate in ("5", "7", "22"):
+            for key in ("ogrnip", "ogrnip_date"):
+                for empty in ("omit", None, ""):
+                    with self.subTest(rate=rate, key=key, empty=empty):
+                        data = self.ip_case("seller", rate)
+                        if empty == "omit":
+                            data["seller"].pop(key)
+                        else:
+                            data["seller"][key] = empty
+                        with self.assertRaisesRegex(ValueError, "Заполните seller." + key):
+                            accounting.render_xml(data)
+                        with self.assertRaisesRegex(ValueError, "Заполните seller." + key):
+                            accounting.render_html(data, "upd-print")
+                        self.assertIn("Счёт на оплату", accounting.render_html(data, "invoice"))
+
     def test_none_vat_xml_passes_official_xsd_and_has_no_kpp_for_ip(self):
         filename, xml = accounting.render_xml(fixture())
         accounting.validate_xml(xml, filename)

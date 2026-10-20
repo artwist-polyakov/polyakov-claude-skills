@@ -91,11 +91,18 @@ def validate_party(party, where, vat):
         validate_fio(party.get("fio"), where + ".fio")
         if party.get("kpp"):
             raise ValueError(f"{where}: у ИП нет КПП; оставьте пустую строку или удалите поле")
-        if vat and where == "seller":
-            ogrnip = required(party, "ogrnip", where)
+        registration_required = vat and where == "seller"
+        if registration_required or party.get("ogrnip") not in (None, ""):
+            required(party, "ogrnip", where)
+            ogrnip = party["ogrnip"]
             if not re.fullmatch(r"[0-9]{15}", ogrnip) or int(ogrnip[:14]) % 13 % 10 != int(ogrnip[-1]):
-                raise ValueError("seller.ogrnip: неверный ОГРНИП")
-            iso_date(required(party, "ogrnip_date", where))
+                raise ValueError(f"{where}.ogrnip: неверный ОГРНИП")
+        if registration_required or party.get("ogrnip_date") not in (None, ""):
+            required(party, "ogrnip_date", where)
+            try:
+                iso_date(party["ogrnip_date"])
+            except ValueError as error:
+                raise ValueError(f"{where}.ogrnip_date: {error}") from error
 
 
 def validate_data(data, command):
@@ -320,8 +327,13 @@ def render_html(data, command):
                       payment_documents=docs_text(data["payment_docs"]), advance_documents=docs_text(data["advance_invoices"], True),
                       service_date=ru_date(data["document"]["service_date"]), ip_registration="")
         seller = data["seller"]
-        if seller["kind"] == "ip" and seller.get("ogrnip"):
-            values["ip_registration"] = f"ОГРНИП {seller['ogrnip']}, дата присвоения {ru_date(seller['ogrnip_date'])}."
+        if seller["kind"] == "ip":
+            registration = []
+            if seller.get("ogrnip"):
+                registration.append(f"ОГРНИП {seller['ogrnip']}")
+            if seller.get("ogrnip_date"):
+                registration.append(f"Дата присвоения ОГРНИП {ru_date(seller['ogrnip_date'])}")
+            values["ip_registration"] = ". ".join(registration) + ("." if registration else "")
         table = []
         for i, row in enumerate(rows, 1):
             cells = [str(i), row["description"], "—", row["unit_code"], row["unit"], row["quantity"],
@@ -352,6 +364,7 @@ def add_party(parent, tag, party):
         ip = sub(ident, "СвИП", ИННФЛ=party["inn"])
         if party.get("ogrnip"):
             ip.set("ОГРНИП", party["ogrnip"])
+        if party.get("ogrnip_date"):
             ip.set("ДатаОГРНИП", ru_date(party["ogrnip_date"]))
         add_fio(ip, party["fio"])
     else:
