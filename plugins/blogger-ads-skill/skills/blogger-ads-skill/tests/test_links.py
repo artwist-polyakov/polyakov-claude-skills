@@ -691,6 +691,116 @@ class DocxAlternativeFormatTests(unittest.TestCase):
         handoff.check_link_comparison(report, {}, expected, expected_map)
 
 
+class StrictDocxLinkTests(unittest.TestCase):
+    setUp = LinkInspectionTests.setUp
+    docx = LinkInspectionTests.docx
+
+    def as_strict(self, path, strict_package=False):
+        replacements = {
+            'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"':
+                'xmlns:w="http://purl.oclc.org/ooxml/wordprocessingml/main"',
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"':
+                'xmlns:a="http://purl.oclc.org/ooxml/drawingml/main"',
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"':
+                'xmlns:r="http://purl.oclc.org/ooxml/officeDocument/relationships"',
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/':
+                'Type="http://purl.oclc.org/ooxml/officeDocument/relationships/',
+        }
+        if strict_package:
+            replacements['xmlns="http://schemas.openxmlformats.org/package/2006/relationships"'] = (
+                'xmlns="http://purl.oclc.org/ooxml/package/relationships"')
+        with ZipFile(path) as archive:
+            parts = {name: archive.read(name) for name in archive.namelist()}
+        with ZipFile(path, 'w') as archive:
+            for name, raw in parts.items():
+                if name.endswith(('.xml', '.rels', '.vml')):
+                    for old, new in replacements.items():
+                        raw = raw.replace(old.encode(), new.encode())
+                archive.writestr(name, raw)
+
+    def test_strict_links_match_transitional_anchors_locations_and_duplicate_urls(self):
+        expected = ['https://pricing.example.test/?a=1&b=2'] * 2 + ['https://product.example.test/?a=1&b=2']
+        for strict_package in (False, True):
+            with self.subTest(strict_package=strict_package):
+                path = self.docx()
+                transitional = links.inspect_links(path, expected)
+                self.as_strict(path, strict_package)
+                before = path.read_bytes()
+                strict = links.inspect_links(path, expected)
+                for key in ('links', 'warnings', 'comparison'):
+                    self.assertEqual(strict[key], transitional[key])
+                self.assertEqual(strict['links'][1]['anchor'], 'OpenAI\tтарифы\nподробнее')
+                self.assertEqual([row['target'] for row in strict['links']], expected)
+                self.assertEqual(path.read_bytes(), before)
+
+    def test_strict_external_links_block_an_empty_expected_map(self):
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        import handoff
+        path = self.docx()
+        self.as_strict(path)
+        result = links.inspect_links(path, [])
+        self.assertEqual(len(result['links']), 3)
+        self.assertFalse(result['comparison']['ordered_lists_equal'])
+        report = self.base / 'strict-links.json'
+        report.write_text(json.dumps(result), encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'resolution.result=accepted'):
+            handoff.check_link_comparison(report, {}, [], [])
+
+    def test_strict_internal_anchor_and_literal_namespace_urls_are_preserved(self):
+        literal = 'http://purl.oclc.org/ooxml/officeDocument/relationships/hyperlink?b=2&a=1&a=2#raw'
+        path = self.docx('<w:p><w:hyperlink w:anchor="раздел"><w:r><w:t>Раздел</w:t><w:cr/>'
+                         '<w:t>Дальше</w:t></w:r></w:hyperlink></w:p>')
+        with ZipFile(path) as archive:
+            parts = {name: archive.read(name) for name in archive.namelist()}
+        escaped = literal.replace('&', '&amp;').encode()
+        parts['word/document.xml'] = parts['word/document.xml'].replace('<w:t>При</w:t>'.encode(), b'<w:t>' + escaped + b'</w:t>')
+        parts['word/_rels/document.xml.rels'] = parts['word/_rels/document.xml.rels'].replace(
+            b'https://pricing.example.test/?a=1&amp;b=2', escaped)
+        with ZipFile(path, 'w') as archive:
+            for name, raw in parts.items():
+                archive.writestr(name, raw)
+        self.as_strict(path)
+        result = links.inspect_links(path)
+        self.assertEqual(result['links'][0]['target'], literal)
+        self.assertEqual(result['links'][0]['anchor'], literal + 'мер')
+        self.assertEqual(result['links'][-1]['internal_anchor'], 'раздел')
+        self.assertEqual(result['links'][-1]['anchor'], 'Раздел\nДальше')
+        self.assertIsNone(result['links'][-1]['target'])
+        self.assertEqual(result['warnings'], [])
+
+    def test_strict_unparsed_features_keep_warnings_and_require_resolution(self):
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        import handoff
+        features = {
+            'HYPERLINK': '<w:p><w:fldSimple w:instr=\' HYPERLINK "https://hidden.example.test/" \'> '
+                         '<w:r><w:t>Импорт</w:t></w:r></w:fldSimple></w:p>',
+            'split-field': '<w:p><w:r><w:fldChar w:fldCharType="begin"/><w:instrText> HYPER</w:instrText></w:r>'
+                           '<w:r><w:instrText>LINK "https://hidden.example.test/" </w:instrText>'
+                           '<w:fldChar w:fldCharType="end"/></w:r></w:p>',
+            'hlinkClick': '<w:p><w:r><w:drawing xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+                          '<a:hlinkClick r:id="r1"/></w:drawing></w:r></w:p>',
+            'hlinkHover': '<w:p><w:r><w:drawing xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+                          '<a:hlinkHover r:id="r1"/></w:drawing></w:r></w:p>',
+            'altChunk': None,
+        }
+        for kind, extra in features.items():
+            with self.subTest(kind=kind):
+                path = self.docx(extra) if extra is not None else DocxAlternativeFormatTests.imported_docx(self)[0]
+                transitional = links.inspect_links(path)
+                self.as_strict(path, strict_package=True)
+                expected_map = [{'anchor': row['anchor'], 'url': row['target']} for row in transitional['links']]
+                expected = [row['url'] for row in expected_map]
+                result = links.inspect_links(path, expected)
+                self.assertEqual(result['links'], transitional['links'])
+                self.assertEqual(result['warnings'], transitional['warnings'])
+                self.assertTrue(result['warnings'])
+                self.assertTrue(result['comparison']['ordered_lists_equal'])
+                report = self.base / 'strict-warning-links.json'
+                report.write_text(json.dumps(result), encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, 'resolution.result=accepted'):
+                    handoff.check_link_comparison(report, {}, expected, expected_map)
+
+
 class PdfCatalogWarningTests(unittest.TestCase):
     setUp = LinkInspectionTests.setUp
     pdf = LinkInspectionTests.pdf

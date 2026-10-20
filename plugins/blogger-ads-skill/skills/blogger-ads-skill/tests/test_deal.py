@@ -90,6 +90,63 @@ class DealTests(unittest.TestCase):
             deal.validate(self.state)
         self.assertEqual(self.state, before)
 
+    def test_nonobject_state_schedule_and_policy_are_rejected_before_processing(self):
+        for field in (None, "schedule", "policy"):
+            for value in ([], None, True, 1, "pending"):
+                with self.subTest(field=field, value=value):
+                    state = copy.deepcopy(self.state)
+                    if field is None:
+                        state = value
+                        message = "Состояние сделки: требуется объект JSON"
+                    else:
+                        state[field] = value
+                        message = field + ": требуется объект"
+                    before = copy.deepcopy(state)
+                    for operation in (lambda: deal.validate(state),
+                                      lambda: deal.readiness_issues(state, self.now),
+                                      lambda: deal.check(state, self.now),
+                                      lambda: deal.plan(state, self.now)):
+                        with self.assertRaisesRegex(ValueError, message):
+                            operation()
+                    self.assertEqual(state, before)
+
+    def test_invalid_state_containers_fail_check_and_plan_cli_without_writes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state_path, output = Path(folder) / "state.json", Path(folder) / "plan"
+            for field in (None, "schedule", "policy"):
+                for value in ([], None, True, 1, "pending"):
+                    state = copy.deepcopy(self.state)
+                    if field is None:
+                        state = value
+                        message = "Состояние сделки: требуется объект JSON"
+                    else:
+                        state[field] = value
+                        message = field + ": требуется объект"
+                    state_path.write_text(json.dumps(state))
+                    before = {path: path.read_bytes() for path in Path(folder).rglob("*") if path.is_file()}
+                    for command in ("check", "plan"):
+                        with self.subTest(field=field, value=value, command=command):
+                            args = [sys.executable, str(ROOT / "scripts/deal.py"), command,
+                                    "--state", str(state_path), "--now", self.now.isoformat()]
+                            if command == "plan":
+                                args += ["--output-dir", str(output)]
+                            result = subprocess.run(args, capture_output=True, text=True)
+                            self.assertEqual(result.returncode, 1, result.stderr)
+                            self.assertEqual(result.stdout, "")
+                            self.assertIn("Ошибка: " + message, result.stderr)
+                            self.assertNotIn("Traceback", result.stderr)
+                            self.assertFalse(output.exists())
+                            self.assertEqual(before, {path: path.read_bytes() for path in Path(folder).rglob("*") if path.is_file()})
+
+    def test_absent_optional_schedule_keeps_pending_readiness(self):
+        self.state.pop("schedule")
+        before = copy.deepcopy(self.state)
+        self.assertIs(deal.validate(self.state), self.state)
+        result = deal.check(self.state, self.now)
+        self.assertFalse(result["ready"])
+        self.assertIn("publication_at", result["blockers"])
+        self.assertEqual(self.state, before)
+
     def test_nonobject_checks_are_rejected_by_validation_and_direct_readiness(self):
         original = copy.deepcopy(self.state)
         for key in (*original["checks"], "custom_check"):

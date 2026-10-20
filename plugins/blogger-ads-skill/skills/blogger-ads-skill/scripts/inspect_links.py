@@ -29,6 +29,12 @@ A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 V = "{urn:schemas-microsoft-com:vml}"
 R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+STRICT_NAMESPACES = {
+    "http://purl.oclc.org/ooxml/wordprocessingml/main": W[1:-1],
+    "http://purl.oclc.org/ooxml/drawingml/main": A[1:-1],
+    "http://purl.oclc.org/ooxml/officeDocument/relationships": R[1:-1],
+    "http://purl.oclc.org/ooxml/package/relationships": REL[1:-1],
+}
 COMPARISON_NOTE = (
     "Различия — повод проверить якоря, а не автоматическое доказательство ошибки: "
     "печатная таблица, переносы и некликабельный видимый URL могут менять число аннотаций. "
@@ -199,6 +205,29 @@ def has_hyperlink_field(root):
     return command.match("".join(fragments)) is not None
 
 
+def ooxml_root(raw):
+    """Свести Strict и Transitional имена к одному виду, сохранив текст и URL."""
+    def name(value):
+        if value.startswith("{"):
+            namespace, local = value[1:].split("}", 1)
+            return "{" + STRICT_NAMESPACES.get(namespace, namespace) + "}" + local
+        return value
+
+    root = ET.fromstring(raw)
+    for node in root.iter():
+        node.tag = name(node.tag)
+        attributes = {name(key): value for key, value in node.attrib.items()}
+        if len(attributes) != len(node.attrib):
+            raise ValueError("В DOCX неоднозначные атрибуты Strict и Transitional одного элемента")
+        node.attrib = attributes
+        if node.tag == REL + "Relationship":
+            strict_prefix = "http://purl.oclc.org/ooxml/officeDocument/relationships/"
+            relation_type = node.get("Type", "")
+            if relation_type.startswith(strict_prefix):
+                node.set("Type", R[1:-1] + "/" + relation_type[len(strict_prefix):])
+    return root
+
+
 def docx_links(raw):
     links, warnings = [], []
     with ZipFile(BytesIO(raw)) as archive:
@@ -207,7 +236,7 @@ def docx_links(raw):
             raise ValueError("В DOCX отсутствует word/document.xml")
         # Импорт может находиться вне XML-частей Word и не иметь целого w:altChunk.
         for rel_path in sorted(name for name in names if name.endswith(".rels")):
-            for relationship in ET.fromstring(archive.read(rel_path)).findall(REL + "Relationship"):
+            for relationship in ooxml_root(archive.read(rel_path)).findall(REL + "Relationship"):
                 if relationship.get("Type", "").rsplit("/", 1)[-1] == "aFChunk":
                     warnings.append(f"{rel_path}: импорт aFChunk {relationship.get('Id')} "
                                     f"(Target={relationship.get('Target')}, TargetMode={relationship.get('TargetMode', 'Internal')}); "
@@ -217,9 +246,8 @@ def docx_links(raw):
         parts = sorted(name for name in names if name.startswith("word/") and name.endswith((".xml", ".vml")))
         parts.remove("word/document.xml")
         for part in ["word/document.xml"] + parts:
-            root = ET.fromstring(archive.read(part))
-            if any(node.tag in (W + "altChunk", "{http://purl.oclc.org/ooxml/wordprocessingml/main}altChunk")
-                   for node in root.iter()):
+            root = ooxml_root(archive.read(part))
+            if any(node.tag == W + "altChunk" for node in root.iter()):
                 warnings.append(f"{part}: обнаружен w:altChunk; содержимое и ссылки импортируемого файла не разобраны. "
                                 "Сверьте их отдельно и сохраните разбор в resolution")
             if has_hyperlink_field(root):
@@ -235,7 +263,7 @@ def docx_links(raw):
             rel_path = str(Path(part).parent / "_rels" / (Path(part).name + ".rels"))
             relationships = {}
             if rel_path in names:
-                relationships = {node.get("Id"): node for node in ET.fromstring(archive.read(rel_path)).findall(REL + "Relationship")}
+                relationships = {node.get("Id"): node for node in ooxml_root(archive.read(rel_path)).findall(REL + "Relationship")}
             for paragraph_index, hyperlink_index, link in paragraph_links(root):
                 relationship_id = link.get(R + "id")
                 relationship = relationships.get(relationship_id)
@@ -282,7 +310,7 @@ def inspect_links(path, expected=None):
               "format": kind, "links": links, "warnings": warnings,
               "limitations": [COMPARISON_NOTE,
                   "PDF: извлечены /Link с действием /URI; прочие действия, /A у других типов аннотаций, цепочки /Next, /AA аннотаций и страниц, /OpenAction, /AA, /Outlines, /AcroForm и /Names/JavaScript каталога вызывают предупреждение. Закладки и поля форм не разбираются. anchor_hint — текст из области той же аннотации, он может захватить соседнюю строку или отсутствовать у скана; видимый якорь сверяйте по странице и прямоугольнику. Это не OCR и не автоматическое подтверждение соответствия якоря адресу.",
-                  "DOCX: внешние адреса w:hyperlink учтены только при Type гиперссылки и TargetMode=External; внутренние w:anchor показаны отдельно. Обычный текст URL не извлекается; поля HYPERLINK, ссылки DrawingML (hlinkClick/hlinkHover), VML (href) и импорт w:altChunk/aFChunk вызывают предупреждение и требуют отдельной сверки адресов и связанных текста или объектов. Импортируемые HTML/MHTML и другие форматы не разбираются и не загружаются. Номера абзацев относятся к каждой XML-части отдельно.",
+                  "DOCX: поддержаны пространства имён Strict и Transitional. Внешние адреса w:hyperlink учтены только при Type гиперссылки и TargetMode=External; внутренние w:anchor показаны отдельно. Обычный текст URL не извлекается; поля HYPERLINK, ссылки DrawingML (hlinkClick/hlinkHover), VML (href) и импорт w:altChunk/aFChunk вызывают предупреждение и требуют отдельной сверки адресов и связанных текста или объектов. Импортируемые HTML/MHTML и другие форматы не разбираются и не загружаются. Номера абзацев относятся к каждой XML-части отдельно.",
                   "Адреса не открывались. Для DOCX порядок между XML-частями не определяет порядок страниц."]}
     if expected is not None:
         actual = [row["target"] for row in links if row["target"] is not None]

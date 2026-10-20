@@ -73,7 +73,16 @@ def local_datetime(day, clock, zone, field):
     return result
 
 
+def validate_state_objects(state):
+    if not isinstance(state, dict):
+        raise ValueError("Состояние сделки: требуется объект JSON")
+    for key in ("schedule", "policy"):
+        if not isinstance(state.get(key, {}), dict):
+            raise ValueError(f"{key}: требуется объект")
+
+
 def scene_clock_entries(state):
+    validate_state_objects(state)
     clock = state.get("clock")
     if clock is None:
         return []
@@ -563,6 +572,7 @@ def fee_events(fee, zone, payment_due_on=None):
 
 
 def validate_checks(state):
+    validate_state_objects(state)
     checks = state.get("checks", {})
     if not isinstance(checks, dict):
         raise ValueError("checks: требуется объект")
@@ -1461,6 +1471,7 @@ def main():
             print(json.dumps(review_action(args.state, args.id, args.reason, args.now), ensure_ascii=False, indent=2))
             return
         state = read_json(args.state)
+        validate_state_objects(state)
         if args.command == "fee-payment-basis":
             print(json.dumps(fee_payment_basis(state), ensure_ascii=False, indent=2))
             return
