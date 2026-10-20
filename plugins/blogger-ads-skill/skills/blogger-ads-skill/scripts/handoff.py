@@ -157,7 +157,7 @@ def local_response_links(text):
     validate_link = parser.validateLink
     # Только читаем адреса: file:// должен дойти до нашей явной диагностики.
     parser.validateLink = lambda url: url.lower().startswith('file:') or validate_link(url)
-    parser.normalizeLink = lambda url: url  # Не смешивать пробел с буквальным %20 в имени файла.
+    parser.normalizeLink = lambda url: url  # Декодируем URI ровно один раз ниже.
 
     def file_citation(state, silent):
         match = re.match(r':codex-file-citation\{[^}\n]*\bpath="([^"]+)"[^}\n]*\}', state.src[state.pos:])
@@ -195,14 +195,12 @@ def local_response_links(text):
             continue
         if '://' in target or target.startswith(('#', 'mailto:')):
             continue
-        target = re.sub(r':\d+$', '', target.split('#', 1)[0])
+        target = unquote(re.sub(r':\d+$', '', target.split('#', 1)[0]))
         path = Path(target)
         if not path.is_absolute():
             issues.append(f'В ответе нужен абсолютный путь: {target}')
             continue
         path = path.resolve()
-        if not path.exists() and '%' in target:
-            path = Path(unquote(target)).resolve()
         if not path.exists():
             issues.append(f'Ссылка ведёт на отсутствующий файл: {target}')
         elif not path.is_file():

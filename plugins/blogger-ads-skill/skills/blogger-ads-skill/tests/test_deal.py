@@ -90,6 +90,54 @@ class DealTests(unittest.TestCase):
             deal.validate(self.state)
         self.assertEqual(self.state, before)
 
+    def test_nonobject_checks_are_rejected_by_validation_and_direct_readiness(self):
+        original = copy.deepcopy(self.state)
+        for key in (*original["checks"], "custom_check"):
+            for value in (None, True, False, 1, "confirmed", []):
+                with self.subTest(key=key, value=value):
+                    self.state = copy.deepcopy(original)
+                    self.state["checks"][key] = value
+                    before = copy.deepcopy(self.state)
+                    for operation in (lambda: deal.validate(self.state),
+                                      lambda: deal.readiness_issues(self.state, self.now),
+                                      lambda: deal.unfinished_checks(self.state, self.now)):
+                        with self.assertRaisesRegex(ValueError, f"checks.{key}: требуется объект проверки"):
+                            operation()
+                    self.assertEqual(self.state, before)
+
+    def test_check_and_plan_cli_report_scalar_proof_without_traceback(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state_path, output = Path(folder) / "state.json", Path(folder) / "plan"
+            self.state["checks"]["erid"] = True
+            state_path.write_text(json.dumps(self.state))
+            before = state_path.read_bytes()
+            for command in ("check", "plan"):
+                with self.subTest(command=command):
+                    args = [sys.executable, str(ROOT / "scripts/deal.py"), command,
+                            "--state", str(state_path), "--now", self.now.isoformat()]
+                    if command == "plan":
+                        args += ["--output-dir", str(output)]
+                    result = subprocess.run(args, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("Ошибка: checks.erid: требуется объект проверки", result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+                    self.assertEqual(state_path.read_bytes(), before)
+                    self.assertFalse(output.exists())
+            args = [sys.executable, str(ROOT / "scripts/deal.py"), "check",
+                    "--state", str(state_path), "--now", self.now.isoformat()]
+            self.state["checks"]["erid"] = {}
+            state_path.write_text(json.dumps(self.state))
+            pending = subprocess.run(args, capture_output=True, text=True)
+            self.assertEqual(pending.returncode, 2, pending.stderr)
+            self.assertFalse(json.loads(pending.stdout)["ready"])
+            self.assertEqual(pending.stderr, "")
+            self.confirm_readiness()
+            state_path.write_text(json.dumps(self.state))
+            ready = subprocess.run(args, capture_output=True, text=True)
+            self.assertEqual(ready.returncode, 0, ready.stderr)
+            self.assertTrue(json.loads(ready.stdout)["ready"])
+
     def test_inactive_stages_remove_future_publication_and_restore_same_events(self):
         self.state["schedule"]["claims_after_end_hours"] = 24
         self.state["schedule"]["erid_due_at"] = "2026-11-08T09:00:00+03:00"
@@ -2293,6 +2341,21 @@ class CreativeImportTests(unittest.TestCase):
         inspection = deal.inspect_creative(self.state, self.state_path)
         self.assertEqual(result["inspection"], inspection)
         return inspection
+
+    def test_import_rejects_scalar_proof_before_copying_sources(self):
+        self.state["checks"]["legality"] = "confirmed"
+        self.save_state()
+        before = {path: path.read_bytes() for path in self.folder.rglob("*") if path.is_file()}
+        with self.assertRaisesRegex(ValueError, "checks.legality: требуется объект проверки"):
+            self.import_source()
+        command = [sys.executable, str(ROOT / "scripts/deal.py"), "import-creative", "--state", str(self.state_path),
+                   "--text", str(self.text_path), "--links", str(self.links_path), "--now", self.now.isoformat()]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("Ошибка: checks.legality: требуется объект проверки", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(before, {path: path.read_bytes() for path in self.folder.rglob("*") if path.is_file()})
 
     def test_inspect_eof_literal_preserves_real_bracket_and_does_not_invent_one(self):
         for suffix in ("", "[", "]", ",."):

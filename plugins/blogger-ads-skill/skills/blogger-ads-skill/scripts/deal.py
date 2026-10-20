@@ -284,6 +284,7 @@ def import_creative(state_path, text_path, links_path, now=None, media_paths=Non
     """Импортировать исходники без правки текста и без подтверждения согласования."""
     state_path = Path(state_path).resolve()
     state = read_json(state_path)
+    validate_checks(state)
     now = effective_now(state, now)
     previous = state.get("creative", {})
     previous_digest = digest(previous)
@@ -561,6 +562,16 @@ def fee_events(fee, zone, payment_due_on=None):
     return result
 
 
+def validate_checks(state):
+    checks = state.get("checks", {})
+    if not isinstance(checks, dict):
+        raise ValueError("checks: требуется объект")
+    for key, proof in checks.items():
+        if not isinstance(proof, dict):
+            raise ValueError(f"checks.{key}: требуется объект проверки, а не отдельный статус")
+    return checks
+
+
 def validate(state, state_path=None):
     validate_scene_clock(state)
     if state.get("schema_version") != 1:
@@ -573,8 +584,9 @@ def validate(state, state_path=None):
         raise ValueError("deal_id: используйте буквы латиницы, цифры, дефис и подчёркивание")
     if state.get("user_role") not in ("blogger", "advertiser", "agency"):
         raise ValueError("user_role: blogger, advertiser или agency")
-    if not isinstance(state.get("checks", {}), dict) or not isinstance(state.get("completed_events", {}), dict):
-        raise ValueError("checks и completed_events должны быть объектами")
+    validate_checks(state)
+    if not isinstance(state.get("completed_events", {}), dict):
+        raise ValueError("completed_events: требуется объект")
     policy = state["policy"]
     for key in ("require_prepayment", "require_erir_visibility"):
         if not isinstance(policy.get(key), bool):
@@ -609,8 +621,6 @@ def validate(state, state_path=None):
             raise ValueError(f"deadline_terms.{key}: внесите согласованный точный срок в {key}_due_at")
         relative_calculation(term, key)
     recovery = state.get("checks", {}).get("edo_exchange", {})
-    if not isinstance(recovery, dict):
-        raise ValueError("checks.edo_exchange: требуется объект проверки обмена ЭДО")
     if "edo_exchange" in state.get("checks", {}) and "recovery_expected_on" not in recovery:
         raise ValueError("checks.edo_exchange.recovery_expected_on: явно укажите дату из сообщения о восстановлении YYYY-MM-DD "
                          "или null, если дата не сообщена. При известной дате нужны recovery_source и recovery_check_time")
@@ -1047,7 +1057,7 @@ def readiness_policy(state):
 
 def readiness_issues(state, now):
     """Общие причины незавершённости проверок; расписание не является доказательством."""
-    checks = state.get("checks", {})
+    checks = validate_checks(state)
     token = checks.get("erid", {}).get("token", "")
     issues = {}
 

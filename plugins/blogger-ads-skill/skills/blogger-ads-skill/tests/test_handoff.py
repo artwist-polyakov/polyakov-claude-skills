@@ -682,6 +682,24 @@ class HandoffTests(unittest.TestCase):
                 self.assertEqual(before, self.state.read_bytes())
                 self.assertEqual(mtime, self.state.stat().st_mtime_ns)
 
+    def test_encoded_link_cannot_deliver_an_unregistered_file_with_a_similar_name(self):
+        literal = self.file('file%20name.txt', 'Зарегистрированная версия')
+        spaced = self.file('file name.txt', 'Другая версия')
+        handoff.register(self.state, [literal], 'prepared', 'v1', self.at, group='reference')
+        before = self.state.read_bytes()
+        response = self.file('reply.txt', f'[Документ](<{literal}>)')
+        result = handoff.audit(self.state, response)
+        self.assertFalse(result['valid'])
+        self.assertTrue(any('не зарегистрирован' in issue and str(spaced) in issue for issue in result['issues']),
+                        result['issues'])
+        self.assertEqual(self.state.read_bytes(), before)
+
+        encoded_literal = str(literal).replace('%', '%25')
+        response.write_text(f'[Документ](<{encoded_literal}>)')
+        result = handoff.audit(self.state, response)
+        self.assertTrue(result['valid'], result['issues'])
+        self.assertEqual(self.state.read_bytes(), before)
+
     def test_previous_or_foreign_plan_link_cannot_issue_current_plan(self):
         self.scheduled_state()
         first = self.plan_package()
@@ -2086,10 +2104,22 @@ class HandoffLinkCheckTests(unittest.TestCase):
         spaced = self.root / 'file name.pdf'
         literal.write_text('Символы процента в имени')
         spaced.write_text('Пробел в имени')
-        self.response.write_text(f'[С пробелом][doc]\n\n[doc]: <{spaced}>')
+        for target, expected in ((str(spaced), spaced), (str(literal), spaced),
+                                 (str(literal).replace('%', '%25'), literal)):
+            for text in (f'[Файл](<{target}>)', f'![Превью](<{target}>)',
+                         f'[Файл][doc]\n\n[doc]: <{target}>'):
+                with self.subTest(text=text):
+                    self.response.write_text(text)
+                    result, data = self.run_check()
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(data['local_links'], [str(expected.resolve())])
+
+        spaced.unlink()
+        self.response.write_text(f'[Файл](<{literal}>)')
         result, data = self.run_check()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(data['local_links'], [str(spaced.resolve())])
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(data['local_links'], [])
+        self.assertTrue(any('отсутствующий файл' in issue for issue in data['issues']))
 
     def test_native_citation_preserves_markdown_characters_in_path(self):
         path = self.root / '_черновик_' / '[счёт] `итог`.pdf'
