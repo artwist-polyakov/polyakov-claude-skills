@@ -193,9 +193,10 @@ def local_response_links(text):
         if target.lower().startswith('file:'):
             issues.append(f'Локальная ссылка {target}: используйте абсолютный путь без file://')
             continue
-        if '://' in target or target.startswith(('#', 'mailto:')):
+        if re.match(r'^[A-Za-z][A-Za-z0-9+.-]*://', target) or target.startswith(('#', 'mailto:')):
             continue
-        target = unquote(re.sub(r':\d+$', '', target.split('#', 1)[0]))
+        # Query/fragment относятся к URI; буквальные ?/# в имени должны быть закодированы.
+        target = unquote(re.sub(r':\d+$', '', re.split(r'[?#]', target, maxsplit=1)[0]))
         path = Path(target)
         if not path.is_absolute():
             issues.append(f'В ответе нужен абсолютный путь: {target}')

@@ -705,6 +705,26 @@ class HandoffTests(unittest.TestCase):
         self.assertTrue(result['valid'], result['issues'])
         self.assertEqual(self.state.read_bytes(), before)
 
+    def test_query_link_cannot_deliver_an_unregistered_file_hidden_by_a_registered_name(self):
+        actual = self.file('document.txt', 'Незарегистрированная версия')
+        literal = self.file('document.txt?download=1', 'Зарегистрированная версия')
+        handoff.register(self.state, [literal], 'prepared', 'v1', self.at, group='reference')
+        for query in ('download=1', 'next=https://example.org'):
+            with self.subTest(query=query):
+                response = self.file('reply.txt', f'[Документ](<{actual}?{query}#page=2>)')
+                before = {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
+                result = handoff.audit(self.state, response, record_issue=True)
+                self.assertFalse(result['valid'])
+                self.assertTrue(any('не зарегистрирован' in issue and str(actual) in issue for issue in result['issues']),
+                                result['issues'])
+                self.assertEqual(before, {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()})
+        encoded = str(literal).replace('?', '%3F')
+        response.write_text(f'[Документ](<{encoded}>)')
+        before = self.state.read_bytes()
+        result = handoff.audit(self.state, response)
+        self.assertTrue(result['valid'], result['issues'])
+        self.assertEqual(self.state.read_bytes(), before)
+
     def test_previous_or_foreign_plan_link_cannot_issue_current_plan(self):
         self.scheduled_state()
         first = self.plan_package()
@@ -2169,6 +2189,37 @@ class HandoffLinkCheckTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertEqual(data['local_links'], [])
         self.assertTrue(any('отсутствующий файл' in issue for issue in data['issues']))
+
+    def test_query_and_fragment_are_removed_before_single_percent_decode(self):
+        actual = self.root / 'file.pdf'
+        literal = self.root / 'file.pdf?download=1'
+        with_fragment = self.root / 'file.pdf?download=1#page'
+        percent = self.root / 'file.pdf%3Fdownload=1'
+        for path in (actual, literal, with_fragment, percent):
+            path.write_text(path.name)
+        encoded = str(literal).replace('?', '%3F')
+        cases = ((f'{actual}?download=1#page', actual),
+                 (f'{actual}?next=https://example.org#page', actual),
+                 (f'{actual}#page?download=1', actual),
+                 (f'{actual}:12?download=1#page', actual),
+                 (f'{encoded}?download=2#page', literal),
+                 (str(with_fragment).replace('?', '%3F').replace('#', '%23'), with_fragment),
+                 (str(percent).replace('%', '%25') + '?download=2#page', percent))
+        for target, expected in cases:
+            for text in (f'[Файл](<{target}>)', f'![Превью](<{target}>)',
+                         f'[Файл][doc]\n\n[doc]: <{target}>'):
+                with self.subTest(text=text):
+                    self.response.write_text(text)
+                    result, data = self.run_check()
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(data['local_links'], [str(expected.resolve())])
+        actual.unlink()
+        for query in ('download=1', 'next=https://example.org'):
+            self.response.write_text(f'[Файл](<{actual}?{query}>)')
+            result, data = self.run_check()
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertEqual(data['local_links'], [])
+            self.assertTrue(any('отсутствующий файл' in issue for issue in data['issues']))
 
     def test_native_citation_preserves_markdown_characters_in_path(self):
         path = self.root / '_черновик_' / '[счёт] `итог`.pdf'

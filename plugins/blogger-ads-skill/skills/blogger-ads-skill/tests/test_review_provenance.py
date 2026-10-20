@@ -1,6 +1,7 @@
 import copy
 import json
 import unittest
+from urllib.parse import quote
 
 import test_review
 
@@ -114,6 +115,69 @@ class ReviewProvenanceTests(unittest.TestCase):
         self.save_state_plan()
         with self.assertRaisesRegex(ValueError, "другую сверку"):
             self.check()
+
+    def test_old_review_uri_query_cannot_hide_the_actual_local_path(self):
+        stale = self.stale_package("old-review")
+        encoded = str(stale).replace("terms-review", "terms%2Dreview")
+        self.build()
+        for suffix in ("?download=1", "?download=/preview", ":12?next=https://example.test/preview#условия"):
+            with self.subTest(suffix=suffix):
+                self.state["checks"]["contract"]["source"] = f"[Сверка](<{encoded}{suffix}>)"
+                self.save_state_plan()
+                before = self.state_path.read_bytes()
+                with self.assertRaisesRegex(ValueError, "checks.contract.source.*другую сверку"):
+                    self.check()
+                self.assertEqual(self.state_path.read_bytes(), before)
+
+    def test_current_review_query_is_not_reinterpreted_as_a_second_file_path(self):
+        stale = self.stale_package("old-review")
+        self.build()
+        current = self.output / "terms-review.md"
+        self.state["checks"]["contract"]["source"] = f"[Сверка](<{current}?download={stale}#условия>)"
+        self.save_state_plan()
+        self.assertTrue(self.check()["state_checked"])
+
+    def test_old_review_link_titles_and_reference_links_do_not_hide_target(self):
+        stale = self.stale_package("old-review")
+        encoded = str(stale).replace("terms-review", "terms%2Dreview")
+        self.build()
+        sources = (f'[Сверка](<{encoded}> "Таблица / условия")',
+                   f'[Сверка](<{encoded}?download=/preview> "Таблица / условия")',
+                   f'[Сверка][r]\n\n[r]: <{encoded}:12?download=1#условия> "Таблица / условия"')
+        for source in sources:
+            with self.subTest(source=source):
+                self.state["checks"]["contract"]["source"] = source
+                self.save_state_plan()
+                with self.assertRaisesRegex(ValueError, "другую сверку"):
+                    self.check()
+
+    def test_link_title_is_not_a_second_technical_file_reference(self):
+        stale = self.stale_package("old-review")
+        self.build()
+        current = self.output / "terms-review.md"
+        self.state["checks"]["contract"]["source"] = f'[Сверка](<{current}> "Сравнение с {stale}")'
+        self.save_state_plan()
+        self.assertTrue(self.check()["state_checked"])
+
+    def test_encoded_review_uri_preserves_literal_question_hash_and_percent(self):
+        stale = self.stale_package("old?review#%23")
+        encoded = quote(str(stale), safe="/")
+        self.state["checks"]["contract"]["source"] = f"[Сверка](<{encoded}:12?download=/preview#условия>)"
+        self.build()
+        self.save_state_plan()
+        with self.assertRaisesRegex(ValueError, "другую сверку"):
+            self.check()
+
+    def test_bare_technical_review_paths_keep_literal_uri_characters(self):
+        self.build()
+        for name in ("old?review", "old#review", "old%23review"):
+            with self.subTest(name=name):
+                stale = self.stale_package(name)
+                for source in (f"Сверка: {stale.relative_to(self.base)}.", f"Сверка: `{stale.relative_to(self.base)}`."):
+                    self.state["checks"]["contract"]["source"] = source
+                    self.save_state_plan()
+                    with self.assertRaisesRegex(ValueError, "другую сверку"):
+                        self.check()
 
     def test_old_manifest_requires_new_package_without_rewriting_old_files(self):
         self.build()

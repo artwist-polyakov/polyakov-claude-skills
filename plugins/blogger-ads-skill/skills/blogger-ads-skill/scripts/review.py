@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pypdf>=5,<7"]
+# dependencies = ["pypdf>=5,<7", "markdown-it-py>=3,<5"]
 # ///
 """Единый источник таблицы условий и листа правок. Не изменяет договор или состояние."""
 import argparse
@@ -810,18 +810,39 @@ def pointer(data, path):
 
 def check_current_review_references(state, base, directory):
     """Текущие подтверждения не должны ссылаться на внутреннюю или старую сверку."""
+    from markdown_it import MarkdownIt
+    parser = MarkdownIt("commonmark")
     for key, check in state.get("checks", {}).items():
         source = check.get("source") if isinstance(check, dict) else None
         if not isinstance(source, str):
             continue
-        # Ссылки с пробелами читаются целиком; дополнительно поддерживаем простой путь в тексте.
-        candidates = re.findall(r"\]\((<[^>]+>|[^)\n]+)\)", source)
-        candidates += re.findall(r"[^\s`\"'<>()[\]]+/(?:terms-review\.md|corrections\.md|review-input\.json|manifest\.json)", source)
-        for candidate in candidates:
+        # Цель Markdown-ссылки не включает её заголовок; технические пути остаются буквальными.
+        candidates, plain_parts = [], []
+        for block in parser.parse(source):
+            if block.type in ("fence", "code_block"):
+                plain_parts.append(block.content)
+            link_depth = 0
+            for token in block.children or []:
+                if token.type == "link_open":
+                    candidates.append((token.attrGet("href"), True))
+                    link_depth += 1
+                elif token.type == "link_close":
+                    link_depth -= 1
+                elif token.type == "image":
+                    candidates.append((token.attrGet("src"), True))
+                elif not link_depth and token.type in ("text", "code_inline"):
+                    plain_parts.append(token.content)
+        for part in plain_parts:
+            candidates += [(value, False) for value in re.findall(
+                r"[^\s`\"'<>()[\]]+/(?:terms-review\.md|corrections\.md|review-input\.json|manifest\.json)", part)]
+        for candidate, is_uri in candidates:
             candidate = candidate.strip().removeprefix("<").removesuffix(">")
-            if "://" in candidate:
+            if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", candidate):
                 continue
-            path = (base / unquote(re.sub(r":\d+$", "", candidate.split("#", 1)[0]))).resolve()
+            if is_uri:
+                candidate = re.split(r"[?#]", candidate, maxsplit=1)[0]
+                candidate = unquote(re.sub(r":\d+$", "", candidate))
+            path = (base / candidate).resolve()
             is_review = (path.parent / "manifest.json").is_file() and (path.parent / "review-input.json").is_file()
             if is_review and path.parent != directory:
                 raise ValueError(f"checks.{key}.source ссылается на другую сверку {path}. "
