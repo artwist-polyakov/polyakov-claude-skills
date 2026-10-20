@@ -534,7 +534,7 @@ def archive_layout_manifests(state, base):
             item.update(current=False, archive_reason='DOCX заменён; просмотр вёрстки относится к его исторической версии')
 
 
-def layout_issues(documents):
+def layout_issues(documents, soffice=None):
     issues, covered = [], set()
     for path, item in documents.items():
         if not item.get('current'):
@@ -549,7 +549,7 @@ def layout_issues(documents):
                     raise ValueError(f'{path}: просмотр вёрстки относится к незарегистрированному, полученному '
                                      'или историческому DOCX; зарегистрируйте текущий собственный исходник')
                 import render_docx
-                render_docx.check(path)
+                render_docx.check(path, soffice=soffice)
                 covered.add((original, digest))
         except (ValueError, OSError, TypeError) as error:
             issues.append(f'Проверка вёрстки {path}: {error}')
@@ -955,7 +955,7 @@ def contract_date_change(state_path, number, from_date, to_date, source, quote, 
     return entry
 
 
-def audit(state_path, response=None, historical=(), record_issue=False):
+def audit(state_path, response=None, historical=(), record_issue=False, soffice=None):
     state_path = Path(state_path).resolve()
     base = state_path.parent
     original_state = state_path.read_bytes()
@@ -1034,7 +1034,7 @@ def audit(state_path, response=None, historical=(), record_issue=False):
             issues.append(f'documents: группа {group} содержит несколько актуальных версий; прежние версии должны быть историческими')
     issues.extend(link_report_issues(documents, state.get('creative', {}).get('links', []), state, state_path,
                                     expected_link_map=state.get('creative', {}).get('link_map')))
-    issues.extend(layout_issues(documents))
+    issues.extend(layout_issues(documents, soffice=soffice))
     contract_history, contract_documents = [], {}
     unchecked_contract_dates = [
         {'path': str(path), 'reason': 'Нет сохранённой карты .fields.json: дата основного договора автоматически не проверена. '
@@ -1202,6 +1202,7 @@ def main():
     check.add_argument('--response', type=Path)
     check.add_argument('--historical', nargs='*', default=[], type=Path)
     check.add_argument('--record-issue', action='store_true', help='После всех успешных проверок зафиксировать выдачу плана и собственных договорных DOCX с окончательным ответом по SHA')
+    check.add_argument('--soffice', help='LibreOffice для повторной проверки вёрстки DOCX; иначе поиск в PATH')
     links = sub.add_parser('check-links', help='Проверить локальные ссылки ответа без состояния и записи выдачи')
     links.add_argument('--response', type=Path, required=True)
     restore_cmd = sub.add_parser('restore')
@@ -1228,7 +1229,7 @@ def main():
         elif args.command == 'restore':
             result = restore(args.state, args.file, args.save_current)
         else:
-            result = audit(args.state, args.response, args.historical, args.record_issue)
+            result = audit(args.state, args.response, args.historical, args.record_issue, soffice=args.soffice)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         if result.get('valid') is False:
             sys.exit(2)

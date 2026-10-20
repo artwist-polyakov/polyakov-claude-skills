@@ -1,4 +1,3 @@
-import base64
 import copy
 import json
 from pathlib import Path
@@ -8,30 +7,46 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from pypdf import PdfWriter
+from pypdf import PdfReader, PdfWriter
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import handoff
 import render_docx
 
-PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
+REAL_CONVERT_TO_PDF = render_docx.convert_to_pdf
+
+
+def write_test_pdf(source, pdf, count=2):
+    """Синтетическая отрисовка зависит от байтов исходника, чтобы замечать подмену."""
+    import pymupdf
+    digest = render_docx.sha(source)
+    with pymupdf.open() as document:
+        for number in range(count):
+            page = document.new_page(width=200, height=300)
+            page.insert_text((10, 20), digest[:32], fontsize=8)
+            page.insert_text((10, 35), digest[32:], fontsize=8)
+            page.insert_text((10, 50), str(number + 1), fontsize=8)
+        document.save(pdf)
+    return pdf
+
+
+def fake_convert_to_pdf(source, destination, soffice=None):
+    return write_test_pdf(source, destination / (source.stem + '.pdf'))
 
 
 def make_layout_fixture(source, destination, count=2):
     """Синтетический комплект для проверок связности, не визуальный вердикт о реальном документе."""
     destination.mkdir()
     pdf = destination / 'document.pdf'
-    writer = PdfWriter()
-    for _ in range(count):
-        writer.add_blank_page(width=200, height=300)
-    with pdf.open('wb') as stream:
-        writer.write(stream)
+    write_test_pdf(source, pdf, count)
     pages = []
-    for number in range(1, count + 1):
-        image = destination / f'page-{number:03}.png'
-        image.write_bytes(PNG)
-        pages.append({'number': number, 'path': image.name, 'sha256': render_docx.sha(image)})
+    import pymupdf
+    with pymupdf.open(pdf) as document:
+        for number, page in enumerate(document, 1):
+            image = destination / f'page-{number:03}.png'
+            render_docx.page_pixels(page).save(image)
+            pages.append({'number': number, 'path': image.name, 'sha256': render_docx.sha(image)})
     data = {'kind': 'docx_layout', 'format_version': 1,
             'source': {'path': str(source), 'sha256': render_docx.sha(source)},
             'pdf': {'path': pdf.name, 'sha256': render_docx.sha(pdf)},
@@ -51,6 +66,9 @@ class DocxLayoutTests(unittest.TestCase):
         self.state = self.root / 'deal-state.json'
         self.state.write_bytes((ROOT / 'assets/deal.example.json').read_bytes())
         self.at = '2026-11-01T12:00:00+03:00'
+        conversion = patch.object(render_docx, 'convert_to_pdf', side_effect=fake_convert_to_pdf)
+        self.converter = conversion.start()
+        self.addCleanup(conversion.stop)
 
     def package(self, name='layout', source=None):
         return make_layout_fixture(source or self.source, self.root / name)
@@ -64,16 +82,13 @@ class DocxLayoutTests(unittest.TestCase):
     def test_render_creates_every_page_and_does_not_confirm_it(self):
         def conversion(command, **kwargs):
             destination = Path(command[command.index('--outdir') + 1])
-            writer = PdfWriter()
-            for _ in range(2):
-                writer.add_blank_page(width=200, height=300)
-            with (destination / 'final.pdf').open('wb') as stream:
-                writer.write(stream)
+            write_test_pdf(self.source, destination / 'final.pdf')
             self.assertIn('--headless', command)
             self.assertEqual(Path(command[-1]), self.source)
             return subprocess.CompletedProcess(command, 0, '', '')
-        with patch.object(render_docx.subprocess, 'run', side_effect=conversion):
-            manifest = render_docx.render(self.source, self.root / 'rendered', sys.executable)
+        with patch.object(render_docx, 'convert_to_pdf', side_effect=REAL_CONVERT_TO_PDF):
+            with patch.object(render_docx.subprocess, 'run', side_effect=conversion):
+                manifest = render_docx.render(self.source, self.root / 'rendered', sys.executable)
         data = render_docx.check(manifest, require_review=False)
         self.assertIsNone(data['review'])
         self.assertEqual([page['number'] for page in data['pages']], [1, 2])
@@ -113,6 +128,105 @@ class DocxLayoutTests(unittest.TestCase):
                 target.write_bytes(original + b'changed')
                 with self.assertRaisesRegex(ValueError, 'изменён'):
                     render_docx.check(manifest)
+
+    def test_rebinding_preview_to_another_docx_fails_even_with_updated_hashes(self):
+        manifest = self.package()
+        self.confirm(manifest)
+        different = self.root / 'different.docx'
+        different.write_bytes(b'changed DOCX with different layout')
+        data = json.loads(manifest.read_text())
+        data['source'] = {'path': str(different), 'sha256': render_docx.sha(different)}
+        manifest.write_text(json.dumps(data))
+        before = {path: path.read_bytes() for path in manifest.parent.iterdir()}
+        with self.assertRaisesRegex(ValueError, 'PDF страницы 1 не совпадает'):
+            render_docx.check(manifest)
+        data['review'] = None
+        manifest.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, 'PDF страницы 1 не совпадает'):
+            self.confirm(manifest)
+        self.assertIsNone(json.loads(manifest.read_text())['review'])
+        for path, contents in before.items():
+            if path != manifest:
+                self.assertEqual(path.read_bytes(), contents)
+        temporary = self.converter.call_args.args[1]
+        self.assertFalse(temporary.exists())
+
+    def test_substituted_pdf_or_png_fails_after_hashes_are_updated(self):
+        import pymupdf
+        different = self.root / 'different.docx'
+        different.write_bytes(b'different page content')
+        wrong_pdf = write_test_pdf(different, self.root / 'different.pdf')
+        for target in ('pdf', 'png'):
+            with self.subTest(target=target):
+                manifest = self.package(target)
+                data = json.loads(manifest.read_text())
+                if target == 'pdf':
+                    item = data['pdf']
+                    path = manifest.parent / item['path']
+                    path.write_bytes(wrong_pdf.read_bytes())
+                else:
+                    item = data['pages'][0]
+                    path = manifest.parent / item['path']
+                    with pymupdf.open(wrong_pdf) as document:
+                        render_docx.page_pixels(document[0]).save(path)
+                item['sha256'] = render_docx.sha(path)
+                manifest.write_text(json.dumps(data))
+                with self.assertRaisesRegex(ValueError, target.upper() + ' страницы 1 не совпадает'):
+                    self.confirm(manifest)
+
+    def test_pdf_metadata_changes_do_not_break_visual_binding(self):
+        manifest = self.package()
+        data = json.loads(manifest.read_text())
+        pdf = manifest.parent / data['pdf']['path']
+        writer = PdfWriter(clone_from=PdfReader(pdf))
+        writer.add_metadata({'/CreationDate': 'D:20400101000000Z', '/Title': 'Metadata does not change pixels'})
+        with pdf.open('wb') as stream:
+            writer.write(stream)
+        data['pdf']['sha256'] = render_docx.sha(pdf)
+        manifest.write_text(json.dumps(data))
+        self.confirm(manifest)
+        render_docx.check(manifest)
+
+    def test_page_count_and_dimensions_must_match_fresh_conversion(self):
+        import pymupdf
+        for variant in ('count', 'size'):
+            with self.subTest(variant=variant):
+                manifest = self.package(variant)
+                data = json.loads(manifest.read_text())
+                pdf = manifest.parent / data['pdf']['path']
+                if variant == 'count':
+                    pdf.unlink()
+                    write_test_pdf(self.source, pdf, count=1)
+                    data['page_count'] = 1
+                    data['pages'] = data['pages'][:1]
+                else:
+                    with pymupdf.open(pdf) as document:
+                        document[0].set_mediabox(pymupdf.Rect(0, 0, 250, 350))
+                        document.saveIncr()
+                data['pdf']['sha256'] = render_docx.sha(pdf)
+                manifest.write_text(json.dumps(data))
+                with self.assertRaisesRegex(ValueError, 'не совпадает'):
+                    render_docx.check(manifest, require_review=False)
+
+    def test_converter_comes_from_caller_not_manifest(self):
+        manifest = self.package()
+        data = json.loads(manifest.read_text())
+        data['render'] = {'executable': '/untrusted/manifest/command', 'dpi': 1}
+        manifest.write_text(json.dumps(data))
+        render_docx.check(manifest, require_review=False, soffice='/caller/converter')
+        self.assertEqual(self.converter.call_args.args[2], '/caller/converter')
+        render_docx.check(manifest, require_review=False)
+        self.assertIsNone(self.converter.call_args.args[2])
+
+    def test_missing_converter_and_timeout_are_actionable_failures(self):
+        manifest = self.package()
+        with patch.object(render_docx, 'convert_to_pdf', side_effect=REAL_CONVERT_TO_PDF):
+            with patch.object(render_docx.shutil, 'which', return_value=None):
+                with self.assertRaisesRegex(ValueError, 'LibreOffice не найден'):
+                    render_docx.check(manifest, require_review=False)
+            with patch.object(render_docx.subprocess, 'run', side_effect=subprocess.TimeoutExpired('soffice', 180)):
+                with self.assertRaisesRegex(ValueError, 'Не удалось отрисовать DOCX'):
+                    render_docx.check(manifest, require_review=False, soffice=sys.executable)
 
     def test_pages_must_cover_actual_pdf_once_in_order(self):
         manifest = self.package()

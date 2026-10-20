@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -19,6 +20,10 @@ spec.loader.exec_module(handoff)
 
 class HandoffTests(unittest.TestCase):
     def setUp(self):
+        from test_docx_layout import fake_convert_to_pdf
+        self.converter = patch('render_docx.convert_to_pdf', side_effect=fake_convert_to_pdf)
+        self.converter.start()
+        self.addCleanup(self.converter.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
