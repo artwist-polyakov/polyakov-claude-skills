@@ -821,17 +821,29 @@ def check_current_review_references(state, base, directory):
         for block in parser.parse(source):
             if block.type in ("fence", "code_block"):
                 plain_parts.append(block.content)
-            link_depth = 0
+            link_depth, inline_parts = 0, []
             for token in block.children or []:
                 if token.type == "link_open":
                     candidates.append((token.attrGet("href"), True))
                     link_depth += 1
+                    inline_parts.append(" ")
                 elif token.type == "link_close":
                     link_depth -= 1
+                    inline_parts.append(" ")
                 elif token.type == "image":
                     candidates.append((token.attrGet("src"), True))
-                elif not link_depth and token.type in ("text", "code_inline"):
-                    plain_parts.append(token.content)
+                    inline_parts.append(" ")
+                elif not link_depth:
+                    if token.type == "text":
+                        inline_parts.append(token.content)
+                    elif token.type == "code_inline":
+                        inline_parts.append(token.markup + token.content + token.markup)
+                    elif token.type in ("em_open", "em_close", "strong_open", "strong_close"):
+                        inline_parts.append(token.markup)
+                    elif token.type in ("softbreak", "hardbreak"):
+                        inline_parts.append("\n")
+            # _folder_/terms-review.md — буквальный технический путь, а не отдельные слова.
+            plain_parts.append("".join(inline_parts))
         for part in plain_parts:
             candidates += [(value, False) for value in re.findall(
                 r"[^\s`\"'<>()[\]]+/(?:terms-review\.md|corrections\.md|review-input\.json|manifest\.json)", part)]

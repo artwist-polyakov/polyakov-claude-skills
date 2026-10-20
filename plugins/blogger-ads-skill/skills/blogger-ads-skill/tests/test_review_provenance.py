@@ -179,6 +179,19 @@ class ReviewProvenanceTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "другую сверку"):
                         self.check()
 
+    def test_technical_paths_that_look_like_emphasis_keep_their_literal_names(self):
+        self.build()
+        for name in ("_internal_", "__internal__", "**internal**"):
+            stale = self.stale_package(name)
+            for path in (stale.relative_to(self.base), stale):
+                with self.subTest(path=path):
+                    self.state["checks"]["contract"]["source"] = f"Сверка: {path}."
+                    self.save_state_plan()
+                    before = self.state_path.read_bytes()
+                    with self.assertRaisesRegex(ValueError, "checks.contract.source.*другую сверку"):
+                        self.check()
+                    self.assertEqual(self.state_path.read_bytes(), before)
+
     def test_old_manifest_requires_new_package_without_rewriting_old_files(self):
         self.build()
         path = self.output / "manifest.json"
