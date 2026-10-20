@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from urllib.parse import unquote
 from zipfile import ZipFile
@@ -604,13 +605,50 @@ class ReviewTests(unittest.TestCase):
             with self.subTest(quote=quote), self.assertRaisesRegex(ValueError, "цитата не найдена"):
                 review.verify_citation(item, document, {}, allow_layout=True)
 
-    def test_visual_claim_cannot_override_wrong_quote_on_searchable_pdf_page(self):
+    def test_visual_claim_is_rejected_when_quote_is_found_in_text_layer(self):
         source = self.data["decisions"][0]["source"]
-        source["page"] = 2
         source["verification"] = {"method": "visual", "basis": "Визуально кажется верным."}
-        with self.assertRaisesRegex(ValueError, "содержит извлекаемый текст"):
+        with self.assertRaisesRegex(ValueError, "цитата найдена в текстовом слое"):
             self.build()
         self.assertFalse(self.output.exists())
+        del source["verification"]
+        self.build()
+        manifest = json.loads((self.output / "manifest.json").read_text())
+        self.assertEqual(manifest["verification"]["citations"][0]["method"], "pdf_text")
+
+    def test_partial_text_layer_allows_only_explicit_manual_citation_and_replacement(self):
+        self.pdf(self.source, ["Page one.", "Page two.", "Contract header. Page 3."])
+        source = self.data["decisions"][0]["source"]
+        self.assertNotIn(source["quote"], PdfReader(self.source).pages[2].extract_text())
+        with self.assertRaisesRegex(ValueError, "цитата не найдена на странице 3"):
+            self.build()
+        self.assertFalse(self.output.exists())
+
+        source["verification"] = {"method": "visual", "basis": ""}
+        with self.assertRaisesRegex(ValueError, "basis"):
+            self.build()
+        self.assertFalse(self.output.exists())
+        basis = ("Просмотрен полный пункт 5.2 в изображении страницы 3; текст читаем. "
+                 "Текстовый слой содержит только шапку и номер страницы, без этого пункта.")
+        source["verification"] = {"method": "pdf_text", "basis": basis}
+        with self.assertRaisesRegex(ValueError, "требуется method: visual"):
+            self.build()
+        self.assertFalse(self.output.exists())
+
+        source["verification"]["method"] = "visual"
+        self.build()
+        manifest = json.loads((self.output / "manifest.json").read_text())
+        citation = manifest["verification"]["citations"][0]
+        self.assertEqual(citation["method"], "visual_scan")
+        self.assertEqual(citation["basis"], basis)
+        self.assertEqual(citation["replacement_span"], {
+            "quote": source["quote"], "start": 0, "end": len(source["quote"])})
+        table = (self.output / "terms-review.md").read_text()
+        self.assertIn("Визуальная проверка составителя; автоматическая сверка текста не выполнена", table)
+        self.assertIn(basis, table)
+        self.assertNotIn("Цитата автоматически найдена", table)
+        self.assertIn(source["quote"], (self.output / "corrections.md").read_text())
+        self.assertTrue(review.audit(self.output)["valid"])
 
     def test_timing_category_cannot_skip_binding_or_declare_known_deadline_unknown(self):
         item = self.data["decisions"][0]
@@ -1170,13 +1208,13 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(corrections.count("Контекст: пункт 5.2; страница 3."), 2)
 
     def test_docx_original_is_hashed_registered_and_preserved_alongside_pdf(self):
-        path = self.prior_document()
-        self.data["documents"][0]["original_path"] = path.name
+        path, converter = self.original_document()
         self.build()
         self.save_state_plan()
         manifest = json.loads((self.output / "manifest.json").read_text())
         self.assertEqual(manifest["sources"][0]["original"], {"path": str(path.resolve()), "sha256": review.sha256(path.read_bytes())})
         self.assertTrue(self.check()["state_checked"])
+        self.assertEqual(converter.call_count, 2)
         state = json.loads(self.state_path.read_text())
         state["documents"] = [entry for entry in state["documents"] if entry["path"] != path.name]
         self.state_path.write_text(json.dumps(state))
@@ -1187,6 +1225,93 @@ class ReviewTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "SHA-256"):
             review.audit(self.output)
         self.assertEqual(path.read_bytes(), original + b"manual edit")
+
+    def original_document(self):
+        """Учебный DOCX: абзац на страницу; подменяется только преобразователь."""
+        path = self.base / "received.docx"
+        namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        root = review.ElementTree.Element(f"{{{namespace}}}document")
+        body = review.ElementTree.SubElement(root, f"{{{namespace}}}body")
+        for page in PdfReader(self.source).pages:
+            paragraph = review.ElementTree.SubElement(body, f"{{{namespace}}}p")
+            run = review.ElementTree.SubElement(paragraph, f"{{{namespace}}}r")
+            review.ElementTree.SubElement(run, f"{{{namespace}}}t").text = page.extract_text()
+        with ZipFile(path, "w") as archive:
+            archive.writestr("word/document.xml", review.ElementTree.tostring(root))
+        self.data["documents"][0]["original_path"] = path.name
+        self.state["documents"].append({"path": path.name, "sha256": review.sha256(path.read_bytes()),
+                                        "status": "received", "current": True})
+
+        def convert(source, destination, soffice=None):
+            with ZipFile(source) as archive:
+                document = review.ElementTree.fromstring(archive.read("word/document.xml"))
+            pdf = destination / (source.stem + ".pdf")
+            self.pdf(pdf, [review.word_text(p).strip() for p in document.iter(f"{{{namespace}}}p")])
+            return pdf
+
+        conversion = patch.object(review.render_docx, "convert_to_pdf", side_effect=convert)
+        converter = conversion.start()
+        self.addCleanup(conversion.stop)
+        return path, converter
+
+    def test_unrelated_pdf_cannot_be_bound_to_original_docx(self):
+        path, converter = self.original_document()
+        self.pdf(self.source, ["Different first page.", "Page two.", "The customer pays for the services in advance."])
+        before = path.read_bytes(), self.source.read_bytes()
+        with self.assertRaisesRegex(ValueError, "original_path.*PDF страницы 1.*Создайте PDF"):
+            self.build()
+        self.assertFalse(self.output.exists())
+        self.assertEqual(before, (path.read_bytes(), self.source.read_bytes()))
+        self.assertFalse(converter.call_args.args[1].exists())
+
+    def test_audit_rechecks_original_even_when_manifest_hashes_are_updated(self):
+        path, converter = self.original_document()
+        self.build()
+        with ZipFile(path) as archive:
+            xml = archive.read("word/document.xml")
+        with ZipFile(path, "w") as archive:
+            archive.writestr("word/document.xml", xml.replace(b"Page one.", b"Changed first page."))
+        manifest_path = self.output / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["sources"][0]["original"]["sha256"] = review.sha256(path.read_bytes())
+        manifest_path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, "PDF страницы 1.*повторите сверку"):
+            review.audit(self.output)
+        self.assertEqual(converter.call_count, 2)
+
+    def test_original_conversion_receives_explicit_soffice_on_every_check(self):
+        _, converter = self.original_document()
+        self.save()
+        self.save_state_plan()
+        review.build(self.input, self.output, soffice="/chosen/soffice")
+        review.audit(self.output, soffice="/chosen/soffice")
+        review.check_state(self.output, self.state_path, self.plan_path, soffice="/chosen/soffice")
+        review.amendment_changes(self.output, soffice="/chosen/soffice")
+        self.assertEqual(converter.call_count, 4)
+        self.assertTrue(all(call.args[2] == "/chosen/soffice" for call in converter.call_args_list))
+        self.assertTrue(all(not call.args[1].exists() for call in converter.call_args_list))
+
+    def test_missing_converter_fails_without_creating_review(self):
+        _, converter = self.original_document()
+        converter.side_effect = ValueError("LibreOffice не найден: укажите --soffice")
+        with self.assertRaisesRegex(ValueError, "original_path.*LibreOffice не найден.*--soffice"):
+            self.build()
+        self.assertFalse(self.output.exists())
+
+    def test_original_and_pdf_cannot_change_during_conversion(self):
+        path, converter = self.original_document()
+        conversion = converter.side_effect
+        for target in (path, self.source):
+            before = target.read_bytes()
+            def change(source, destination, soffice=None):
+                pdf = conversion(source, destination, soffice)
+                target.write_bytes(before + b"changed while converting")
+                return pdf
+            converter.side_effect = change
+            with self.subTest(file=target.name), self.assertRaisesRegex(ValueError, "изменён во время проверки original_path"):
+                self.build()
+            self.assertFalse(self.output.exists())
+            target.write_bytes(before)
 
     def test_original_path_requires_existing_docx_and_cannot_accept_supplied_sha(self):
         self.data["documents"][0]["original_path"] = "missing.docx"

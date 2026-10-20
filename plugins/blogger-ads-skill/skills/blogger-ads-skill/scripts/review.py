@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pypdf>=5,<7", "markdown-it-py>=3,<5"]
+# dependencies = ["pypdf>=5,<7", "pymupdf>=1.26,<2", "markdown-it-py>=3,<5"]
 # ///
 """Единый источник таблицы условий и листа правок. Не изменяет договор или состояние."""
 import argparse
@@ -24,6 +24,10 @@ _DEAL_SPEC = importlib.util.spec_from_file_location("review_deal", Path(__file__
 deal = importlib.util.module_from_spec(_DEAL_SPEC)
 _DEAL_SPEC.loader.exec_module(deal)
 plain = deal.escape_markdown
+
+_RENDER_SPEC = importlib.util.spec_from_file_location("review_render_docx", Path(__file__).with_name("render_docx.py"))
+render_docx = importlib.util.module_from_spec(_RENDER_SPEC)
+_RENDER_SPEC.loader.exec_module(render_docx)
 
 
 ACTIONS = {"replace": "Заменить", "append": "Добавить", "keep": "Оставить",
@@ -49,6 +53,35 @@ CATEGORIES = {
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".tif", ".tiff"}
 TIMED_CATEGORIES = {"placement", "payment", "signing", "creative_delivery", "erid",
                     "ord_reporting", "client_reporting", "acceptance", "closing"}
+
+
+def word_text(root):
+    """Текст текущей редакции Word без удалений и служебных инструкций полей."""
+    namespaces = {"http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+                  "http://purl.oclc.org/ooxml/wordprocessingml/main"}
+    parts = []
+
+    def walk(node):
+        namespace, _, name = node.tag.removeprefix("{").partition("}")
+        if namespace in namespaces:
+            if name in {"del", "moveFrom", "delText", "instrText", "delInstrText"}:
+                return
+            if name == "r":
+                hidden = node.find(f"{{{namespace}}}rPr/{{{namespace}}}vanish")
+                if hidden is not None and hidden.get(f"{{{namespace}}}val", "true") not in {"0", "false", "off"}:
+                    return
+            if name == "t":
+                parts.append(node.text or "")
+                return
+            if name in {"tab", "br", "cr"}:
+                parts.append("\t" if name == "tab" else "\n")
+        for child in node:
+            walk(child)
+        if namespace in namespaces and name == "p":
+            parts.append("\n")
+
+    walk(root)
+    return "".join(parts)
 
 
 def previous_source(previous, base):
@@ -85,9 +118,7 @@ def previous_source(previous, base):
         if path.suffix.lower() == ".docx":
             with ZipFile(BytesIO(raw)) as archive:
                 root = ElementTree.fromstring(archive.read("word/document.xml"))
-            paragraph_tags = {"{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p",
-                              "{http://purl.oclc.org/ooxml/wordprocessingml/main}p"}
-            text = "\n".join("".join(p.itertext()) for p in root.iter() if p.tag in paragraph_tags)
+            text = word_text(root)
         elif path.suffix.lower() == ".pdf":
             text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(raw)).pages)
         else:
@@ -358,22 +389,25 @@ def verify_citation(item, document, readers, *, allow_layout=False):
             raise ValueError(f"{item['id']}: отсутствие пункта описывается в not_found_reason, не verification")
         return dict(result, method="not_found_manual", basis=source["not_found_reason"])
     if page_text is not None and normalized(page_text):
-        if "verification" in source:
-            raise ValueError(f"{item['id']}: страница содержит извлекаемый текст; визуальный режим не заменяет автоматическую сверку")
-        if normalized(source["quote"]) not in normalized(page_text):
+        matched = normalized(source["quote"]) in normalized(page_text)
+        if not matched and allow_layout:
             # Раздельно позиционированные буквы иногда дают ложный пробел в plain.
             # Запасное извлечение разрешено для сверки поста без замен.
             # Координаты правок договора рассчитываются только в plain.
-            if allow_layout:
-                layout_text = source_page(document, page_number, readers, extraction_mode="layout")
-                if normalized(source["quote"]) in normalized(layout_text):
-                    return dict(result, method="pdf_text", extraction_mode="layout")
+            layout_text = source_page(document, page_number, readers, extraction_mode="layout")
+            matched = normalized(source["quote"]) in normalized(layout_text)
+            if matched:
+                result["extraction_mode"] = "layout"
+        if matched:
+            if "verification" in source:
+                raise ValueError(f"{item['id']}: цитата найдена в текстовом слое; визуальный режим не требуется")
+            return dict(result, method="pdf_text")
+        if "verification" not in source:
             raise ValueError(f"{item['id']}: цитата не найдена на странице {page_number} PDF. Проверьте страницу и дословность по оригиналу")
-        return dict(result, method="pdf_text")
     verification = source.get("verification")
     fields(verification, ("method", "basis"), (), f"{item['id']}.source.verification")
     if verification["method"] != "visual":
-        raise ValueError(f"{item['id']}: для изображения или страницы без текста требуется method: visual")
+        raise ValueError(f"{item['id']}: для ручной сверки цитаты требуется method: visual")
     basis = string(verification["basis"], "source.verification.basis")
     return dict(result, method="visual_scan" if page_text is not None else "visual_image", basis=basis)
 
@@ -425,7 +459,7 @@ def signature_matrix(data, sources, scope, base, readers):
     return result
 
 
-def replacement_span(item, document, readers):
+def replacement_span(item, document, readers, citation):
     decision, source = item["decision"], item["source"]
     original = normalized(string(decision.get("original"), "decision.original"))
     quote = normalized(source["quote"] or "")
@@ -433,10 +467,9 @@ def replacement_span(item, document, readers):
         raise ValueError(f"{item['id']}: decision.original должен быть дословным фрагментом source.quote")
     if quote.count(original) != 1:
         raise ValueError(f"{item['id']}: original повторяется в цитате; укажите более полный однозначный фрагмент")
-    text = source_page(document, source["page"], readers)
-    if text is None or not normalized(text):
+    if citation["method"] in ("visual_scan", "visual_image"):
         return {"quote": quote, "start": quote.index(original), "end": quote.index(original) + len(original)}
-    text = normalized(text)
+    text = normalized(source_page(document, source["page"], readers))
     if text.count(quote) != 1:
         raise ValueError(f"{item['id']}: цитата неоднозначна на странице; расширьте её контекст для точной замены")
     start = text.index(quote) + quote.index(original)
@@ -479,7 +512,7 @@ def correction_groups(data, sources, citations):
     return list(groups.values())
 
 
-def load_review(raw, base):
+def load_review(raw, base, soffice=None):
     data = json.loads(raw)
     fields(data, ("title", "documents", "decisions"), ("scope", "signature_matrix", "review_basis", "comparison_at"), "review")
     string(data["title"], "title")
@@ -508,6 +541,14 @@ def load_review(raw, base):
             if path.suffix.lower() != ".pdf" or original.suffix.lower() != ".docx":
                 raise ValueError("original_path связывает PDF-представление только с исходным DOCX")
             record["original"] = {"path": str(original), "sha256": sha256(original.read_bytes())}
+            try:
+                render_docx.verify_rendered_pages(original, path, soffice=soffice)
+            except ValueError as error:
+                raise ValueError(f"original_path: связь PDF с исходным DOCX не подтверждена: {error}. "
+                                 "Создайте PDF из этого DOCX через render_docx.py render … --soffice … и повторите сверку; "
+                                 "исходные файлы не изменяйте") from error
+            if sha256(path.read_bytes()) != record["sha256"] or sha256(original.read_bytes()) != record["original"]["sha256"]:
+                raise ValueError("PDF или исходный DOCX изменён во время проверки original_path; повторите сверку")
         sources.append(record)
     if not isinstance(data["decisions"], list) or not data["decisions"]:
         raise ValueError("decisions: нужен непустой список решений")
@@ -560,7 +601,7 @@ def load_review(raw, base):
             raise ValueError("decision.original допустим только для replace")
         citation = verify_citation(item, by_id[source["document"]], readers)
         if decision["action"] == "replace":
-            citation["replacement_span"] = replacement_span(item, by_id[source["document"]], readers)
+            citation["replacement_span"] = replacement_span(item, by_id[source["document"]], readers, citation)
         citations.append(citation)
     missing, extra = set(scope["categories"]) - covered, covered - set(scope["categories"])
     if missing or extra:
@@ -605,7 +646,7 @@ def render(data, sources, verification, output):
         if "original" in source:
             original = source["original"]
             review.append(f"  Исходный DOCX: {link('Полученный оригинал', original['path'])}; SHA-256: `{original['sha256']}`. "
-                          "Соответствие PDF оригиналу проверяет составитель; хеши подтверждают сохранность файлов, а не качество преобразования.")
+                          "PDF сверен с повторным преобразованием этого DOCX; качество отображения проверяет составитель.")
     if verification["review_basis"] is not None:
         basis = verification["review_basis"]
         review += ["", f"Редакция для выбранных условий текущего плана: {plain(basis['edition'])}. {plain(basis['reason'])}",
@@ -718,10 +759,10 @@ def render(data, sources, verification, output):
             "corrections.md": ("\n".join(corrections) + "\n").encode()}
 
 
-def build(input_path, output):
+def build(input_path, output, soffice=None):
     input_path, output = Path(input_path).resolve(), Path(output).resolve()
     raw = input_path.read_bytes()
-    data, sources, verification = load_review(raw, input_path.parent)
+    data, sources, verification = load_review(raw, input_path.parent, soffice=soffice)
     outputs = render(data, sources, verification, output)
     outputs["review-input.json"] = raw
     manifest = {"format": 5, "created_at": datetime.now(timezone.utc).isoformat(),
@@ -735,7 +776,7 @@ def build(input_path, output):
             "corrections": len(correction_groups(data, sources, verification["citations"]))}
 
 
-def audit(directory):
+def audit(directory, soffice=None):
     directory = Path(directory).resolve()
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     fields(manifest, ("format", "created_at", "input_path", "sources", "outputs", "verification"), (), "manifest")
@@ -757,7 +798,7 @@ def audit(directory):
             raise ValueError(f"Исходный документ отсутствует: {path}")
         if sha256(path.read_bytes()) != source["sha256"]:
             raise ValueError(f"Исходный документ изменён: SHA-256 не совпадает с манифестом: {path}")
-    data, sources, verification = load_review(raw, Path(manifest["input_path"]).parent)
+    data, sources, verification = load_review(raw, Path(manifest["input_path"]).parent, soffice=soffice)
     if sources != manifest["sources"]:
         raise ValueError("Исходные документы изменены: SHA-256 или путь не совпадает с манифестом")
     if verification != manifest["verification"]:
@@ -769,10 +810,10 @@ def audit(directory):
             "decisions": len(data["decisions"]), "state_checked": False}
 
 
-def amendment_changes(directory):
+def amendment_changes(directory, soffice=None):
     """Точные поправки для допсоглашения из той же проверенной сверки."""
     directory = Path(directory).resolve()
-    audit(directory)
+    audit(directory, soffice=soffice)
     input_raw = (directory / "review-input.json").read_bytes()
     manifest_raw = (directory / "manifest.json").read_bytes()
     data, manifest = json.loads(input_raw), json.loads(manifest_raw)
@@ -862,9 +903,9 @@ def check_current_review_references(state, base, directory):
                                  "прежние объяснения сохраните в history")
 
 
-def check_state(directory, state_path, plan_path=None):
+def check_state(directory, state_path, plan_path=None, soffice=None):
     """Сверить ожидания таблицы с текущими файлами, ничего не изменяя."""
-    result = audit(directory)
+    result = audit(directory, soffice=soffice)
     directory, state_path = Path(directory).resolve(), Path(state_path).resolve()
     state_raw = state_path.read_bytes()
     state = json.loads(state_raw)
@@ -950,14 +991,16 @@ def main():
     checker.add_argument("directory")
     checker.add_argument("--state", required=True)
     checker.add_argument("--plan", help="Обязателен при известной дате публикации или плановых связях в сверке")
+    for command in (builder, auditor, checker):
+        command.add_argument("--soffice", help="LibreOffice для проверки original_path; иначе поиск в PATH")
     args = parser.parse_args()
     try:
         if args.command == "build":
-            result = build(args.input, args.output)
+            result = build(args.input, args.output, soffice=args.soffice)
         elif args.command == "check-state":
-            result = check_state(args.directory, args.state, args.plan)
+            result = check_state(args.directory, args.state, args.plan, soffice=args.soffice)
         else:
-            result = audit(args.directory)
+            result = audit(args.directory, soffice=args.soffice)
     except (ValueError, OSError, TypeError, KeyError) as exc:
         parser.exit(1, f"Ошибка: {exc}\n")
     print(json.dumps(result, ensure_ascii=False, indent=2))

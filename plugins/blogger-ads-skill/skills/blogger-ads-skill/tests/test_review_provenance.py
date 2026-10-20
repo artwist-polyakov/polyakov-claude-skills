@@ -1,7 +1,9 @@
 import copy
+import hashlib
 import json
 import unittest
 from urllib.parse import quote
+from zipfile import ZipFile
 
 import test_review
 
@@ -17,6 +19,48 @@ class ReviewProvenanceTests(unittest.TestCase):
     save = test_review.ReviewTests.save
     save_state_plan = test_review.ReviewTests.save_state_plan
     check = test_review.ReviewTests.check
+
+    def test_prior_docx_quotes_use_current_visible_text_in_both_namespaces(self):
+        namespaces = ("http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+                      "http://purl.oclc.org/ooxml/wordprocessingml/main")
+        for index, namespace in enumerate(namespaces):
+            with self.subTest(namespace=namespace):
+                path = self.prior_document()
+                with ZipFile(path, "w") as archive:
+                    archive.writestr("word/document.xml", f'<w:document xmlns:w="{namespace}"><w:body><w:p>'
+                                     '<w:del><w:r><w:delText>Deleted price 90000.</w:delText></w:r></w:del>'
+                                     '<w:del><w:r><w:t>Deleted container text.</w:t></w:r></w:del>'
+                                     '<w:moveFrom><w:r><w:t>Moved old clause.</w:t></w:r></w:moveFrom>'
+                                     '<w:r><w:instrText>Internal field instruction.</w:instrText></w:r>'
+                                     '<w:r><w:rPr><w:vanish/></w:rPr><w:t>Hidden old clause.</w:t></w:r>'
+                                     '<w:r><w:t>Current</w:t><w:tab/></w:r>'
+                                     '<w:ins><w:r><w:t>price 50000.</w:t><w:br/></w:r></w:ins>'
+                                     '<w:moveTo><w:r><w:t>Accepted clause.</w:t></w:r></w:moveTo>'
+                                     '<w:r><w:rPr><w:vanish w:val="0"/></w:rPr><w:t> Visible result.</w:t></w:r>'
+                                     '</w:p></w:body></w:document>')
+                self.output = self.base / f"revisions-{index}"
+                source = self.data["decisions"][0]["previous"]["source"]
+                for hidden in ("Deleted price 90000.", "Deleted container text.", "Moved old clause.",
+                               "Internal field instruction.", "Hidden old clause."):
+                    source["quote"] = hidden
+                    with self.assertRaisesRegex(ValueError, "дословная цитата не найдена"):
+                        self.build()
+                    self.assertFalse(self.output.exists())
+                source["quote"] = "Current price 50000. Accepted clause. Visible result."
+                self.build()
+                self.assertTrue(review.audit(self.output)["valid"])
+                self.assertIn(source["quote"], (self.output / "terms-review.md").read_text())
+
+                saved = self.output / "review-input.json"
+                data = json.loads(saved.read_text())
+                data["decisions"][0]["previous"]["source"]["quote"] = "Deleted price 90000."
+                saved.write_text(json.dumps(data))
+                manifest_path = self.output / "manifest.json"
+                manifest = json.loads(manifest_path.read_text())
+                manifest["outputs"]["review-input.json"] = hashlib.sha256(saved.read_bytes()).hexdigest()
+                manifest_path.write_text(json.dumps(manifest))
+                with self.assertRaisesRegex(ValueError, "дословная цитата не найдена"):
+                    review.audit(self.output)
 
     def test_none_cannot_hide_an_already_delivered_document(self):
         previous = copy.deepcopy(self.data["decisions"][0]["previous"])

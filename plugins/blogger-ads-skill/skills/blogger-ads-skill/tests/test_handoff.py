@@ -1759,23 +1759,48 @@ class HandoffTests(unittest.TestCase):
             self.assertFalse(result['valid'])
             self.assertTrue(any('пакет review' in issue for issue in result['issues']))
 
-    def test_docx_received_source_is_covered_only_by_explicit_hashed_pdf_original_link(self):
+    def test_docx_received_source_is_covered_only_by_verified_pdf_original_link(self):
         import review
         _, folder, _ = self.review_package()
         original = self.root / 'received.docx'
         with ZipFile(original, 'w') as archive:
             archive.writestr('word/document.xml', '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
                              '<w:body><w:p><w:r><w:t>The parties agree on advertising services.</w:t></w:r></w:p></w:body></w:document>')
+        def convert(source, destination, soffice=None):
+            with ZipFile(source) as archive:
+                text = review.word_text(review.ElementTree.fromstring(archive.read('word/document.xml'))).strip()
+            return self.received_pdf(str(destination / (source.stem + '.pdf')), text)
+        conversion = patch.object(review.render_docx, 'convert_to_pdf', side_effect=convert)
+        converter = conversion.start()
+        self.addCleanup(conversion.stop)
         handoff.register(self.state, [original], 'received', 'v1', self.at, group='docx-source', document_kind='contract')
         self.assertTrue(any('не охватывает' in issue for issue in handoff.audit(self.state)['issues']))
         decisions = json.loads((folder / 'review-input.json').read_text())
         decisions['documents'][0]['original_path'] = original.name
         source = self.file('decisions-v2.json', json.dumps(decisions))
         second = self.root / 'review-v2'
-        review.build(source, second)
+        review.build(source, second, soffice='/chosen/soffice')
         handoff.register(self.state, [second / name for name in handoff.REVIEW_FILES], 'reviewed', 'v2', self.at, group='review')
-        result = handoff.audit(self.state)
+        result = handoff.audit(self.state, soffice='/chosen/soffice')
         self.assertTrue(result['valid'], result['issues'])
+        self.assertEqual(converter.call_count, 2)
+        self.assertTrue(all(call.args[2] == '/chosen/soffice' for call in converter.call_args_list))
+        # Даже согласованные SHA исходника и реестра не доказывают происхождение PDF.
+        with ZipFile(original) as archive:
+            xml = archive.read('word/document.xml')
+        with ZipFile(original, 'w') as archive:
+            archive.writestr('word/document.xml', xml.replace(b'agree on', b'disagree on'))
+        manifest_path = second / 'manifest.json'
+        manifest = json.loads(manifest_path.read_text())
+        manifest['sources'][0]['original']['sha256'] = handoff.sha(original)
+        manifest_path.write_text(json.dumps(manifest))
+        state = self.data()
+        for path in (original, manifest_path):
+            self.fixture_hash(state, path)
+        handoff.save(self.state, state)
+        result = handoff.audit(self.state, soffice='/chosen/soffice')
+        self.assertFalse(result['valid'])
+        self.assertTrue(any('original_path' in issue and 'PDF страницы 1' in issue for issue in result['issues']), result['issues'])
         original.write_bytes(original.read_bytes() + b'changed')
         self.assertFalse(handoff.audit(self.state)['valid'])
 

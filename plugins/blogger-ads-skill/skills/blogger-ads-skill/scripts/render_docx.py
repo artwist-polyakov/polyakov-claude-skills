@@ -126,20 +126,20 @@ def pixels_equal(first, second):
     return (first.width, first.height, first.n, first.samples) == (second.width, second.height, second.n, second.samples)
 
 
-def verify_rendered_pages(source, pdf, pages, soffice=None):
-    """Связать PDF и каждый PNG с повторной отрисовкой текущего DOCX."""
+def verify_rendered_pages(source, pdf, pages=None, soffice=None):
+    """Связать PDF и, при наличии, каждый PNG с повторной отрисовкой DOCX."""
     import pymupdf
     with tempfile.TemporaryDirectory(prefix='docx-layout-check-') as directory:
         fresh_pdf = convert_to_pdf(source, Path(directory), soffice)
         try:
             with pymupdf.open(fresh_pdf) as fresh, pymupdf.open(pdf) as saved:
-                if len(fresh) != len(saved) or len(fresh) != len(pages):
+                if len(fresh) != len(saved) or (pages is not None and len(fresh) != len(pages)):
                     raise ValueError('Число страниц не совпадает с повторной отрисовкой DOCX')
-                for number, (fresh_page, saved_page, image) in enumerate(zip(fresh, saved, pages), 1):
+                for number, (fresh_page, saved_page) in enumerate(zip(fresh, saved), 1):
                     expected = page_pixels(fresh_page)
                     if not pixels_equal(expected, page_pixels(saved_page)):
                         raise ValueError(f'PDF страницы {number} не совпадает с повторной отрисовкой DOCX')
-                    if not pixels_equal(expected, pymupdf.Pixmap(image)):
+                    if pages is not None and not pixels_equal(expected, pymupdf.Pixmap(pages[number - 1])):
                         raise ValueError(f'PNG страницы {number} не совпадает с повторной отрисовкой DOCX')
         except Exception as error:
             if isinstance(error, ValueError):

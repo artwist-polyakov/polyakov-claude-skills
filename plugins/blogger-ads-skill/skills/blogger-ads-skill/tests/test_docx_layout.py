@@ -108,6 +108,35 @@ class DocxLayoutTests(unittest.TestCase):
         self.assertEqual(sentinel.read_bytes(), b'keep')
         self.assertEqual(list(folder.iterdir()), [sentinel])
 
+    def test_pdf_only_binding_checks_all_pages_count_and_dimensions(self):
+        pdf = self.root / 'source.pdf'
+        write_test_pdf(self.source, pdf)
+        render_docx.verify_rendered_pages(self.source, pdf, soffice='/chosen/soffice')
+        self.assertEqual(self.converter.call_args.args[2], '/chosen/soffice')
+        self.assertFalse(self.converter.call_args.args[1].exists())
+        for change in ('count', 'last_page', 'size'):
+            write_test_pdf(self.source, pdf)
+            writer = PdfWriter(clone_from=pdf)
+            if change == 'count':
+                writer.remove_page(1)
+            elif change == 'size':
+                writer.pages[-1].mediabox.upper_right = (250, 300)
+            else:
+                writer.pages[-1].rotate(180)
+            with pdf.open('wb') as stream:
+                writer.write(stream)
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'не совпадает'):
+                render_docx.verify_rendered_pages(self.source, pdf)
+
+    def test_pdf_only_binding_ignores_metadata(self):
+        pdf = self.root / 'source.pdf'
+        write_test_pdf(self.source, pdf)
+        writer = PdfWriter(clone_from=pdf)
+        writer.add_metadata({'/CreationDate': 'D:20400101000000Z', '/Title': 'Same pages'})
+        with pdf.open('wb') as stream:
+            writer.write(stream)
+        render_docx.verify_rendered_pages(self.source, pdf)
+
     def test_changed_docx_pdf_or_png_cannot_be_confirmed_or_reused(self):
         for label in ('DOCX', 'PDF', 'PNG'):
             with self.subTest(label=label):

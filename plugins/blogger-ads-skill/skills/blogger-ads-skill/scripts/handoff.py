@@ -704,7 +704,7 @@ def register(state_path, files, status, version, at, supersedes=(), group='docum
     return {'registered': [relative(base, p) for p, *_ in prepared], 'replaced': [relative(base, p) for p in replaced]}
 
 
-def check_contract_review(documents, state_path, plan_path, required=False):
+def check_contract_review(documents, state_path, plan_path, required=False, soffice=None):
     received = {path: item for path, item in documents.items()
                 if received_document(item, path) and item.get('document_kind') in CONTRACT_KINDS}
     if not received and not required:
@@ -719,7 +719,7 @@ def check_contract_review(documents, state_path, plan_path, required=False):
     if not {directory / name for name in REVIEW_FILES} <= review_files:
         raise ValueError('Пакет review неполон: зарегистрируйте manifest.json, review-input.json, terms-review.md и corrections.md одной версии')
     import review  # Платёжные документы и первоначальная анкета не загружают PDF-зависимость.
-    review.check_state(directory, state_path, plan_path)
+    review.check_state(directory, state_path, plan_path, soffice=soffice)
     manifest = deal.read_json(manifests[0])
     reviewed = {source['sha256'] for source in manifest['sources']}
     reviewed.update(source['original']['sha256'] for source in manifest['sources'] if 'original' in source)
@@ -729,7 +729,7 @@ def check_contract_review(documents, state_path, plan_path, required=False):
     return directory
 
 
-def check_amendments(documents, state_path, plan_path, review_dir):
+def check_amendments(documents, state_path, plan_path, review_dir, soffice=None):
     """Классификация явная; DOCX допсоглашения связан с точными поправками review."""
     own = {path: item for path, item in documents.items() if item.get('current')
            and not received_status(item.get('status')) and path.suffix.lower() in {'.docx', '.pdf'}}
@@ -759,11 +759,11 @@ def check_amendments(documents, state_path, plan_path, review_dir):
         if review_dir is None and not proof:
             continue
         if review_dir is None:
-            review_dir = check_contract_review(documents, state_path, plan_path, required=True)
+            review_dir = check_contract_review(documents, state_path, plan_path, required=True, soffice=soffice)
         if not documents.get(sidecar, {}).get('current'):
             raise ValueError(f'{source}: зарегистрируйте текущую карту .fields.json вместе с DOCX допсоглашения')
         import render_contract
-        render_contract.verify_review_document(source, review_dir)
+        render_contract.verify_review_document(source, review_dir, soffice=soffice)
 
 
 def instruction(state_path, source, quote, at):
@@ -1096,8 +1096,8 @@ def audit(state_path, response=None, historical=(), record_issue=False, soffice=
             except (ValueError, KeyError, TypeError, OSError) as error:
                 issues.append(f'План: {error}')
     try:
-        review_dir = check_contract_review(documents, state_path, plan_path)
-        check_amendments(documents, state_path, plan_path, review_dir)
+        review_dir = check_contract_review(documents, state_path, plan_path, soffice=soffice)
+        check_amendments(documents, state_path, plan_path, review_dir, soffice=soffice)
     except (ValueError, KeyError, TypeError, OSError) as error:
         issues.append(f'Сверка договора: {error}')
     response_ref = None
@@ -1203,7 +1203,7 @@ def main():
     check.add_argument('--response', type=Path)
     check.add_argument('--historical', nargs='*', default=[], type=Path)
     check.add_argument('--record-issue', action='store_true', help='После всех успешных проверок зафиксировать выдачу плана и собственных договорных DOCX с окончательным ответом по SHA')
-    check.add_argument('--soffice', help='LibreOffice для повторной проверки вёрстки DOCX; иначе поиск в PATH')
+    check.add_argument('--soffice', help='LibreOffice для проверки вёрстки DOCX и PDF исходного договора; иначе поиск в PATH')
     links = sub.add_parser('check-links', help='Проверить локальные ссылки ответа без состояния и записи выдачи')
     links.add_argument('--response', type=Path, required=True)
     restore_cmd = sub.add_parser('restore')
