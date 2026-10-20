@@ -13,11 +13,17 @@ import re
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 from xml.etree import ElementTree
 from zipfile import ZipFile
 
 from pypdf import PdfReader
+
+
+_DEAL_SPEC = importlib.util.spec_from_file_location("review_deal", Path(__file__).with_name("deal.py"))
+deal = importlib.util.module_from_spec(_DEAL_SPEC)
+_DEAL_SPEC.loader.exec_module(deal)
+plain = deal.escape_markdown
 
 
 ACTIONS = {"replace": "Заменить", "append": "Добавить", "keep": "Оставить",
@@ -567,17 +573,13 @@ def load_review(raw, base):
 
 
 def cell(value):
-    return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(
-        ">", "&gt;").replace("|", "&#124;").replace("\r\n", "\n").replace("\n", "<br>")
+    return "<br>".join(plain(line) for line in str(value).replace("\r\n", "\n").replace("\r", "\n").split("\n"))
 
 
 def link(label, path):
-    label = label.replace("\\", "\\\\").replace("[", "\\[").replace(
-        "]", "\\]").replace("|", "&#124;").replace("\n", " ")
     # Сохраняем абсолютный локальный путь; специальные символы URL кодируем.
-    target = str(path).replace("%", "%25").replace("<", "%3C").replace(
-        ">", "%3E").replace("#", "%23").replace("\n", "%0A")
-    return f"[{label}](<{target}>)"
+    target = quote(str(path), safe="/")
+    return f"[{plain(label)}](<{target}>)"
 
 
 def render(data, sources, verification, output):
@@ -592,21 +594,21 @@ def render(data, sources, verification, output):
               "Сборка не подтверждает перенос условий в состояние: перед выдачей обязателен check-state с текущими состоянием и планом.")
     scope = verification["scope"]
     scope_text = (f"Полная сверка: все {len(CATEGORIES)} категорий." if scope["mode"] == "full" else
-                  "Выборочная сверка: " + ", ".join(scope["categories"]) + ". Ограничение: «" +
+                  "Выборочная сверка: " + plain(", ".join(scope["categories"])) + ". Ограничение: «" +
                   cell(scope["source"]["quote"]) + "»; " + link("источник поручения", scope["source"]["path"]) +
                   f"; SHA-256: `{scope['source']['sha256']}`.")
-    review = [f"# {data['title']}", "", common, "", scope_text, "", "## Исходные документы", ""]
+    review = [f"# {plain(data['title'])}", "", common, "", scope_text, "", "## Исходные документы", ""]
     if data.get("comparison_at"):
-        review += [f"Начало сравнения прежних условий: {data['comparison_at']}. Позднейшая выдача не изменяет этот срез.", ""]
+        review += [f"Начало сравнения прежних условий: {plain(data['comparison_at'])}. Позднейшая выдача не изменяет этот срез.", ""]
     for source in sources:
-        review.append(f"- {source['id']}: {link(source['label'], source['path'])}; SHA-256: `{source['sha256']}`")
+        review.append(f"- {plain(source['id'])}: {link(source['label'], source['path'])}; SHA-256: `{source['sha256']}`")
         if "original" in source:
             original = source["original"]
             review.append(f"  Исходный DOCX: {link('Полученный оригинал', original['path'])}; SHA-256: `{original['sha256']}`. "
                           "Соответствие PDF оригиналу проверяет составитель; хеши подтверждают сохранность файлов, а не качество преобразования.")
     if verification["review_basis"] is not None:
         basis = verification["review_basis"]
-        review += ["", f"Редакция для выбранных условий текущего плана: {basis['edition']}. {basis['reason']}",
+        review += ["", f"Редакция для выбранных условий текущего плана: {plain(basis['edition'])}. {plain(basis['reason'])}",
                    "Это основание планирования, а не подтверждение подписания."]
     review += ["", "## Подписи по логическим документам", "",
                "Наблюдения фиксирует составитель после визуального просмотра. Скрипт проверяет страницы и сохранность файлов, "
@@ -630,7 +632,7 @@ def render(data, sources, verification, output):
     review += ["", "## Условия и решения", "",
                "| ID / предмет | Источник, пункт и страница | Прежнее значение и источник | Полученное условие — дословно | Статус принятия | Решение, выбранное условие и план |",
                "| --- | --- | --- | --- | --- | --- |"]
-    corrections = [f"# Лист правок — {data['title']}", "", common, "", scope_text, "",
+    corrections = [f"# Лист правок — {plain(data['title'])}", "", common, "", scope_text, "",
                    f"Конкретных правок: {len(grouped)}. Текст ниже — предложение для согласования, если статус прямо не указывает принятие.", ""]
     for item in data["decisions"]:
         decision, source = item["decision"], item["source"]
@@ -664,7 +666,7 @@ def render(data, sources, verification, output):
         for event in applied.get("plan", []):
             disposition += f"<br>Событие: {cell(event['id'])}; {cell(event['at'])}"
         if decision["action"] in ("replace", "append"):
-            disposition += f"<br>{link('Точная правка ' + item['id'], output / 'corrections.md')} (ID {item['id']})"
+            disposition += f"<br>{link('Точная правка ' + item['id'], output / 'corrections.md')} (ID {cell(item['id'])})"
         else:
             disposition += "<br>Текст правки не выпускается; решение зафиксировано в листе."
         proof = previous_checks[item["id"]]
@@ -691,13 +693,13 @@ def render(data, sources, verification, output):
         ids = ", ".join(item["id"] for item in group)
         texts = [decision["text"], decision.get("original", ""), first["source"]["quote"] or ""]
         fence = "`" * max(3, 1 + max((len(m.group()) for text in texts for m in re.finditer(r"`+", text)), default=0))
-        corrections += [f"## {ids} — {first['topic']}", "",
+        corrections += [f"## {plain(ids)} — {plain(first['topic'])}", "",
                         f"Документ: {link(by_id[first['source']['document']]['label'], by_id[first['source']['document']]['path'])}",
-                        f"Место правки: {decision['target']}", ""]
+                        f"Место правки: {plain(decision['target'])}", ""]
         for item in group:
-            corrections += [f"- {item['id']}: {STATUSES[item['status']]}. Основание: {item['decision']['reason']}"]
+            corrections += [f"- {plain(item['id'])}: {STATUSES[item['status']]}. Основание: {plain(item['decision']['reason'])}"]
         if decision["action"] == "replace":
-            corrections += ["", f"Контекст: пункт {first['source']['clause']}; страница {first['source']['page']}.",
+            corrections += ["", f"Контекст: пункт {plain(first['source']['clause'])}; страница {first['source']['page']}.",
                             "", fence + "text", first["source"]["quote"], fence,
                             "", "Заменить только фрагмент:", "", fence + "text", decision["original"], fence,
                             "", "на:", "", fence + "text", decision["text"], fence, "", "Остальное условие сохранить.", ""]
@@ -709,9 +711,9 @@ def render(data, sources, verification, output):
         corrections.append("Нет.")
     for item in unchanged:
         decision = item["decision"]
-        corrections += [f"- {item['id']} / {item['topic']}: {ACTIONS[decision['action']]}. "
-                        f"Статус: {STATUSES[item['status']]}.<br>Основание: {decision['reason']}<br>"
-                        f"Выбранное условие: {decision['selected']}<br>План: {decision['plan']}<br>Текст правки не выпускается."]
+        corrections += [f"- {plain(item['id'])} / {plain(item['topic'])}: {ACTIONS[decision['action']]}. "
+                        f"Статус: {STATUSES[item['status']]}.<br>Основание: {plain(decision['reason'])}<br>"
+                        f"Выбранное условие: {plain(decision['selected'])}<br>План: {plain(decision['plan'])}<br>Текст правки не выпускается."]
     return {"terms-review.md": ("\n".join(review) + "\n").encode(),
             "corrections.md": ("\n".join(corrections) + "\n").encode()}
 
@@ -895,9 +897,6 @@ def check_state(directory, state_path, plan_path=None):
             if applied["kind"] == "unresolved" and event.get("kind") != "organizational":
                 raise ValueError(f"{item['id']}: неразрешённое условие требует отдельного организационного действия")
         check_timing_state(item, state, events)
-    spec = importlib.util.spec_from_file_location("review_deal", Path(__file__).with_name("deal.py"))
-    deal = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(deal)
     if plan_data is None:
         deal.validate(state, state_path)
     else:

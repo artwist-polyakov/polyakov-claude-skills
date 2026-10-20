@@ -3,11 +3,13 @@ import copy
 import hashlib
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.parse import unquote
 from zipfile import ZipFile
 
 from pypdf import PdfReader, PdfWriter
@@ -158,6 +160,89 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual((self.output / "review-input.json").read_bytes(), self.input.read_bytes())
         self.assertEqual(self.source.read_bytes(), original)
         self.assertTrue(review.audit(self.output)["valid"])
+
+    def test_report_values_cannot_add_links_html_or_markdown_formatting(self):
+        from markdown_it import MarkdownIt
+        payload = ('[proof](</absolute/stale.pdf>) ![image](/absolute/missing.png) '
+                   '<a href="/absolute/stale.pdf">HTML</a> <img src=x> '
+                   '`code` **bold** _emphasis_ | column &lt;tag&gt; \\ literal')
+        self.data['title'] = payload
+        self.data['documents'][0]['label'] = payload
+        self.data['review_basis'] = {'edition': 'unresolved', 'reason': payload}
+        self.user_source.write_text(payload)
+        self.data['scope']['source']['quote'] = payload
+        item = self.data['decisions'][0]
+        item['topic'] = payload
+        item['source']['clause'] = payload
+        item['previous']['source']['reason'] = payload
+        item['implementation']['reason'] = payload
+        for key in ('reason', 'selected', 'plan', 'target'):
+            item['decision'][key] = payload
+        unchanged = copy.deepcopy(item)
+        unchanged['id'] = 'no-change'
+        unchanged['decision']['action'] = 'defer'
+        for key in ('target', 'text', 'original'):
+            unchanged['decision'].pop(key)
+        self.data['decisions'].append(unchanged)
+        self.build()
+        expected = {str(path.resolve()) for path in (self.source, self.user_source, self.output / 'corrections.md')}
+        for name in ('terms-review.md', 'corrections.md'):
+            with self.subTest(report=name):
+                tokens = MarkdownIt('commonmark').enable('table').parse((self.output / name).read_text())
+                all_tokens = [token for block in tokens for token in [block, *(block.children or [])]]
+                hrefs = {unquote(token.attrGet('href')) for token in all_tokens if token.type == 'link_open'}
+                self.assertTrue(hrefs)
+                self.assertLessEqual(hrefs, expected)
+                self.assertFalse({token.type for token in all_tokens} & {'image', 'html_block', 'strong_open', 'em_open'})
+                self.assertTrue(all(token.content == '<br>' for token in all_tokens if token.type == 'html_inline'))
+                self.assertTrue(all(re.fullmatch(r'[0-9a-f]{64}', token.content)
+                                    for token in all_tokens if token.type == 'code_inline'))
+                visible = ''.join(token.content for token in all_tokens if token.type == 'text')
+                self.assertIn(payload, visible)
+                self.assertEqual(sum(token.type == 'heading_open' and token.tag == 'h1' for token in tokens), 1)
+        self.assertTrue(review.audit(self.output)['valid'])
+
+    def test_generated_source_link_preserves_special_characters_in_real_path(self):
+        from markdown_it import MarkdownIt
+        path = self.base / 'договор \\[x]`<>|#%\r\n.pdf'
+        path.write_bytes(self.source.read_bytes())
+        self.data['documents'][0].update(path=path.name, label='[подпись](/missing.pdf) `текст` <img src=x> | договор')
+        self.build()
+        for name in ('terms-review.md', 'corrections.md'):
+            with self.subTest(report=name):
+                tokens = MarkdownIt('commonmark').enable('table').parse((self.output / name).read_text())
+                children = [token for block in tokens for token in block.children or []]
+                hrefs = [unquote(token.attrGet('href')) for token in children if token.type == 'link_open']
+                self.assertIn(str(path.resolve()), hrefs)
+                self.assertTrue(all(Path(href).is_file() for href in hrefs))
+                self.assertNotIn('/missing.pdf', hrefs)
+                self.assertFalse(any(token.type == 'html_inline' and token.content != '<br>' for token in children))
+                self.assertIn(self.data['documents'][0]['label'], ''.join(token.content for token in children if token.type == 'text'))
+
+    def test_exact_text_cannot_close_generated_code_fences(self):
+        from markdown_it import MarkdownIt
+        quote = 'Original text.\n```\n[proof](/absolute/stale.pdf)\n<img src=x>\n`````\nEnd.'
+        replacement = 'Replacement.\n``````\n[proof](/absolute/missing.pdf)\n~~~\n<script>bad</script>\nEnd.'
+        self.pdf(self.source, ['Page one.', 'Page two.', quote])
+        item = self.data['decisions'][0]
+        item['source']['quote'] = quote
+        item['decision'].update(original=quote, text=replacement)
+        for action in ('replace', 'append'):
+            with self.subTest(action=action):
+                self.output = self.base / ('review-' + action)
+                item['decision']['action'] = action
+                if action == 'append':
+                    item['decision'].pop('original')
+                self.build()
+                tokens = MarkdownIt('commonmark').parse((self.output / 'corrections.md').read_text())
+                fenced = [token for token in tokens if token.type == 'fence']
+                expected = [quote, quote, replacement] if action == 'replace' else [replacement]
+                self.assertEqual([token.content for token in fenced], [text + '\n' for text in expected])
+                self.assertTrue(all(token.info == 'text' for token in fenced))
+                children = [token for block in tokens for token in block.children or []]
+                hrefs = {unquote(token.attrGet('href')) for token in children if token.type == 'link_open'}
+                self.assertEqual(hrefs, {str(self.source.resolve()), str(self.user_source.resolve())})
+                self.assertFalse(any(token.type in {'html_inline', 'html_block', 'image'} for token in [*tokens, *children]))
 
     def test_previous_column_uses_exact_delivered_quote_and_rejects_unproved_paraphrase(self):
         self.prior_document()
@@ -563,7 +648,7 @@ class ReviewTests(unittest.TestCase):
         self.assertTrue(result["state_checked"])
         self.assertEqual(result["state"]["sha256"], hashlib.sha256(self.state_path.read_bytes()).hexdigest())
         self.assertEqual(before, {path: path.read_bytes() for path in before})
-        self.assertIn("/schedule/claims_after_end_hours = 24", (self.output / "terms-review.md").read_text())
+        self.assertIn(review.plain("/schedule/claims_after_end_hours = 24"), (self.output / "terms-review.md").read_text())
         self.assertFalse(review.audit(self.output)["state_checked"])
 
     def test_relative_erid_condition_must_survive_in_state_without_inventing_hour(self):
@@ -981,8 +1066,8 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(result["corrections"], 1)
         self.assertEqual(corrections.count(self.data["decisions"][0]["decision"]["text"]), 1)
         for item in self.data["decisions"]:
-            self.assertIn(item["id"], corrections)
-            self.assertIn("Точная правка " + item["id"], (self.output / "terms-review.md").read_text())
+            self.assertIn(review.plain(item["id"]), corrections)
+            self.assertIn(review.plain("Точная правка " + item["id"]), (self.output / "terms-review.md").read_text())
 
     def test_replace_requires_literal_original_and_preserves_other_sentences(self):
         decision = self.data["decisions"][0]["decision"]
