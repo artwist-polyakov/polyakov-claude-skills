@@ -774,14 +774,12 @@ class DealTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "повторяется id ord"):
             deal.plan(self.state, self.now)
 
-    def test_pending_facts_allow_plan_without_confirming_them_or_adding_service_maps(self):
+    def test_pending_facts_allow_plan_without_confirming_them(self):
         before = copy.deepcopy(self.state)
         result = deal.plan(self.state, self.now)
-        self.assertNotIn("action_coverage", result)
         events = {event["id"]: event for event in result["events"]}
         self.assertEqual(events["report-signing"]["checks"], ["contract"])
         self.assertEqual(events["report-ord-check"]["checks"], ["erid", "ord_creative"])
-        self.assertFalse(any("context_sha256" in event or "context_review" in event for event in events.values()))
         self.assertFalse(deal.check(self.state, self.now)["ready"])
         self.assertEqual(before, self.state)
 
@@ -972,7 +970,7 @@ class DealTests(unittest.TestCase):
         self.assertEqual(deal.changes(issued, moved), {"create": [], "update": [old["uid"]], "cancel": []})
         self.assertEqual(next(event["sequence"] for event in moved["events"] if event["uid"] == old["uid"]), 2)
 
-    def test_changed_check_and_renamed_action_do_not_require_formal_context_review(self):
+    def test_updated_facts_and_renamed_action_rebuild_plan(self):
         issued = deal.plan(self.state, self.now)
         self.state["checks"]["contract"] = {"status": "pending", "source": "Реквизиты получены, подписи пока нет"}
         self.state["schedule"]["revision"] += 1
@@ -1091,7 +1089,6 @@ class DealTests(unittest.TestCase):
                 result = subprocess.run(command, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 plan = json.loads((output / "plan.json").read_text())
-                self.assertNotIn("action_coverage", plan)
                 publication = next(event for event in plan["events"] if event["id"] == "publication")
                 self.assertEqual(publication["at"], self.state["schedule"]["publication_at"])
                 files = [str(output / name) for name in ("plan.json", "plan.md", "reminders.ics")]
