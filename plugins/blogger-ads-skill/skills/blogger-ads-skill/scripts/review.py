@@ -381,18 +381,22 @@ def normalized(text):
     return " ".join(text.split())
 
 
+def pdf_reader(path, readers):
+    if path not in readers:
+        try:
+            readers[path] = PdfReader(BytesIO(path.read_bytes()))
+        except Exception as error:
+            raise ValueError(f"Не удалось прочитать PDF {path}: {error}") from error
+    return readers[path]
+
+
 def source_page(document, page_number, readers, *, extraction_mode="plain"):
     if type(page_number) is not int or page_number < 1:
         raise ValueError("source.page: номер страницы, целое число от 1")
     path = Path(document["path"])
     page_text = None
     if path.suffix.lower() == ".pdf":
-        if path not in readers:
-            try:
-                readers[path] = PdfReader(BytesIO(path.read_bytes()))
-            except Exception as error:
-                raise ValueError(f"Не удалось прочитать PDF {path}: {error}") from error
-        reader = readers[path]
+        reader = pdf_reader(path, readers)
         if page_number > len(reader.pages):
             raise ValueError(f"В PDF нет страницы {page_number}: {path}")
         page_text = reader.pages[page_number - 1].extract_text(extraction_mode=extraction_mode) or ""
@@ -552,15 +556,29 @@ def load_review(raw, base, soffice=None):
         string(basis["reason"], "review_basis.reason")
     if not isinstance(data["documents"], list) or not data["documents"]:
         raise ValueError("documents: нужен непустой список исходных документов")
-    sources, ids = [], set()
+    sources, ids, readers = [], set(), {}
     for document in data["documents"]:
-        fields(document, ("id", "label", "path"), ("original_path",), "documents[]")
+        fields(document, ("id", "label", "path"), ("original_path", "viewed_pages"), "documents[]")
         unique_id(document["id"], ids, "documents[].id")
         string(document["label"], "documents[].label")
         path = (base / string(document["path"], "documents[].path")).resolve()
         if not path.is_file():
             raise ValueError(f"Исходный документ отсутствует или не является файлом: {path}")
         record = {"id": document["id"], "label": document["label"], "path": str(path), "sha256": sha256(path.read_bytes())}
+        if "viewed_pages" in document and path.suffix.lower() != ".pdf":
+            raise ValueError("documents[].viewed_pages применяется только к PDF")
+        if path.suffix.lower() == ".pdf" and (scope["mode"] == "full" or "viewed_pages" in document):
+            count = len(pdf_reader(path, readers).pages)
+            viewed = document.get("viewed_pages")
+            if (not isinstance(viewed, list) or not viewed
+                    or any(type(page) is not int or not 1 <= page <= count for page in viewed)
+                    or viewed != sorted(set(viewed))):
+                raise ValueError(f"{document['id']}: documents[].viewed_pages — просмотренные страницы PDF по порядку, "
+                                 "целыми числами без повторов и пропусков в полной сверке")
+            if scope["mode"] == "full" and viewed != list(range(1, count + 1)):
+                raise ValueError(f"{document['id']}: полная сверка требует documents[].viewed_pages всех страниц PDF "
+                                 f"от 1 до {count} по порядку, включая страницы без цитат и подписей")
+            record.update(page_count=count, viewed_pages=viewed)
         if "original_path" in document:
             original = (base / string(document["original_path"], "documents[].original_path")).resolve()
             if path.suffix.lower() != ".pdf" or original.suffix.lower() != ".docx":
@@ -577,7 +595,7 @@ def load_review(raw, base, soffice=None):
         sources.append(record)
     if not isinstance(data["decisions"], list) or not data["decisions"]:
         raise ValueError("decisions: нужен непустой список решений")
-    used, covered, citations, readers, previous = set(), set(), [], {}, []
+    used, covered, citations, previous = set(), set(), [], []
     by_id = {source["id"]: source for source in sources}
     for item in data["decisions"]:
         fields(item, ("id", "category", "topic", "source", "previous", "status", "decision", "implementation"), ("received",), "decisions[]")
@@ -655,6 +673,7 @@ def render(data, sources, verification, output):
     changes = [item for item in data["decisions"] if item["decision"]["action"] in ("replace", "append")]
     grouped = correction_groups(data, sources, verification["citations"])
     common = ("Для страниц PDF с извлекаемым текстом цитаты сверяются автоматически с нормализацией только пробелов. "
+              "Перечень просмотренных страниц заполняет составитель; скрипт проверяет нумерацию и полноту перечня, а не факт просмотра. "
               "Визуальные проверки и отсутствие пункта помечены отдельно и остаются ответственностью составителя. Скрипт рассчитывает SHA-256 "
               "и связывает каждое решение с листом правок; согласование, подписи и исполнение он не подтверждает. "
               "Сборка не подтверждает перенос условий в состояние: перед выдачей обязателен check-state с текущими состоянием и планом.")
@@ -668,6 +687,8 @@ def render(data, sources, verification, output):
         review += [f"Начало сравнения прежних условий: {plain(data['comparison_at'])}. Позднейшая выдача не изменяет этот срез.", ""]
     for source in sources:
         review.append(f"- {plain(source['id'])}: {link(source['label'], source['path'])}; SHA-256: `{source['sha256']}`")
+        if "viewed_pages" in source:
+            review.append(f"  Заявлен просмотр страниц: {', '.join(map(str, source['viewed_pages']))}; всего в PDF: {source['page_count']}.")
         if "original" in source:
             original = source["original"]
             review.append(f"  Исходный DOCX: {link('Полученный оригинал', original['path'])}; SHA-256: `{original['sha256']}`. "

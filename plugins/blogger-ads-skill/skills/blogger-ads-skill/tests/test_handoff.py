@@ -898,7 +898,7 @@ class HandoffTests(unittest.TestCase):
             'title': 'Учебная сверка полученного договора', 'scope': {'mode': 'full'},
             'comparison_at': self.at,
             'review_basis': {'edition': 'received', 'reason': 'Предварительный план по полученной редакции.'},
-            'documents': [{'id': 'contract', 'label': 'Полученный договор', 'path': source.name}],
+            'documents': [{'id': 'contract', 'label': 'Полученный договор', 'path': source.name, 'viewed_pages': [1]}],
             'signature_matrix': [{'label': 'Учебный договор', 'source': {'document': 'contract', 'page': 1},
                                   'not_applicable': 'Учебный текст без подписной части; просмотрена вся страница.'}],
             'decisions': [{

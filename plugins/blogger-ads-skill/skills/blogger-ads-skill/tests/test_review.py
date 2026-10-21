@@ -126,6 +126,7 @@ class ReviewTests(unittest.TestCase):
 
     def full_scope(self):
         self.data.pop("scope", None)
+        self.data["documents"][0]["viewed_pages"] = [1, 2, 3]
         self.data["review_basis"] = {"edition": "received", "reason": "Предварительный план по полученной редакции."}
         self.data["signature_matrix"] = [{"label": "Учебный текст", "source": {"document": "contract", "page": 3},
                                           "not_applicable": "Учебный файл без подписной части; просмотрены все три страницы."}]
@@ -494,6 +495,58 @@ class ReviewTests(unittest.TestCase):
         self.build()
         self.assertIn("все 14 категорий", (self.output / "terms-review.md").read_text())
         self.assertTrue(review.audit(self.output)["valid"])
+
+    def test_full_scope_requires_complete_page_list_for_each_pdf(self):
+        self.full_scope()
+        second = self.base / "appendix.pdf"
+        self.pdf(second, ["Appendix.", None])
+        appendix = {"id": "appendix", "label": "Приложение", "path": second.name}
+        self.data["documents"].append(appendix)
+        self.data["signature_matrix"].append({
+            "label": "Приложение", "source": {"document": "appendix", "page": 1},
+            "not_applicable": "Подписной части нет; просмотрены обе страницы, вторая пустая."})
+        with self.assertRaisesRegex(ValueError, "appendix.*viewed_pages"):
+            self.build()
+        appendix["viewed_pages"] = [1]
+        with self.assertRaisesRegex(ValueError, "всех страниц PDF"):
+            self.build()
+        self.assertFalse(self.output.exists())
+        appendix["viewed_pages"] = [1, 2]
+        self.build()
+        manifest = json.loads((self.output / "manifest.json").read_text())
+        self.assertEqual(manifest["sources"][1]["page_count"], 2)
+        self.assertEqual(manifest["sources"][1]["viewed_pages"], [1, 2])
+        self.assertTrue(review.audit(self.output)["valid"])
+
+    def test_full_scope_rejects_incomplete_or_invalid_page_lists(self):
+        self.full_scope()
+        document = self.data["documents"][0]
+        for viewed in (None, [], [1], [2, 3], [1, 2, 2, 3], [3, 2, 1], [True, 2, 3], [1, 2, 4]):
+            with self.subTest(viewed=viewed):
+                if viewed is None:
+                    document.pop("viewed_pages", None)
+                else:
+                    document["viewed_pages"] = viewed
+                with self.assertRaisesRegex(ValueError, "viewed_pages"):
+                    self.build()
+                self.assertFalse(self.output.exists())
+
+    def test_audit_and_check_state_recheck_pdf_page_coverage(self):
+        self.full_scope()
+        self.build()
+        self.save_state_plan()
+        self.assertTrue(self.check()["state_checked"])
+        saved_input = self.output / "review-input.json"
+        saved = json.loads(saved_input.read_text())
+        saved["documents"][0]["viewed_pages"] = [3]
+        saved_input.write_text(json.dumps(saved))
+        manifest_path = self.output / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["outputs"]["review-input.json"] = review.sha256(saved_input.read_bytes())
+        manifest_path.write_text(json.dumps(manifest))
+        for check in (lambda: review.audit(self.output), self.check):
+            with self.assertRaisesRegex(ValueError, "всех страниц PDF"):
+                check()
 
     def test_ord_reporting_does_not_cover_creative_delivery_or_report_to_client(self):
         self.full_scope()
@@ -962,7 +1015,8 @@ class ReviewTests(unittest.TestCase):
         self.full_scope()
         second = self.base / "appendix.pdf"
         self.pdf(second, ["Appendix.", "Signature area."])
-        self.data["documents"].append({"id": "appendix", "label": "Приложение", "path": second.name})
+        self.data["documents"].append({"id": "appendix", "label": "Приложение", "path": second.name,
+                                       "viewed_pages": [1, 2]})
         self.data["signature_matrix"] = [self.signature("Договор", page=2), self.signature("ТЗ", page=3),
                                           self.signature("Текст публикации", "appendix", 2)]
         self.data["signature_matrix"][2]["customer"] = {"status": "unclear", "observation": "Изображение в строке подписи нечёткое."}
@@ -996,7 +1050,8 @@ class ReviewTests(unittest.TestCase):
             elif change == "image":
                 row["image_path"] = "missing.png"
             else:
-                self.data["documents"].append({"id": "uncovered", "label": "Непроверенное вложение", "path": self.source.name})
+                self.data["documents"].append({"id": "uncovered", "label": "Непроверенное вложение", "path": self.source.name,
+                                               "viewed_pages": [1, 2, 3]})
             with self.subTest(change=change), self.assertRaises(ValueError):
                 self.build()
             self.assertFalse(self.output.exists())
