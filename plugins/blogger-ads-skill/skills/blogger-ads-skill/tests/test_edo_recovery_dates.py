@@ -29,11 +29,6 @@ class EdoRecoveryDatesTests(unittest.TestCase):
     def event(self, plan):
         return next(event for event in plan['events'] if event['id'] == 'edo-recovery')
 
-    def reviewed_plan(self, previous):
-        self.exchange['context_review'] = deal.action_review(
-            self.state, self.exchange, 'Отдельная проверка квитанций остаётся актуальной при уточнении доступности сервиса', self.now)
-        return deal.plan(self.state, self.now, previous=previous)
-
     def test_legacy_format_and_default_day_preserve_time_without_mutating_state(self):
         before = copy.deepcopy(self.state)
         legacy = self.event(deal.plan(self.state, self.now))
@@ -105,7 +100,7 @@ class EdoRecoveryDatesTests(unittest.TestCase):
         old = self.event(issued)
         self.recovery['recovery_check_on'] = '2026-11-06'
         self.state['schedule']['revision'] += 1
-        current = self.reviewed_plan(issued)
+        current = deal.plan(self.state, self.now, previous=issued)
         new = self.event(current)
         self.assertEqual(deal.changes(issued, current), {'create': [], 'update': [old['uid']], 'cancel': []})
         self.assertEqual(new['sequence'], old['sequence'] + 1)
@@ -119,7 +114,7 @@ class EdoRecoveryDatesTests(unittest.TestCase):
         self.recovery['recovery_expected_on'] = '2026-11-04'
         self.recovery['recovery_source'] = 'messages/update.txt: Приглашения восстановят 4 ноября'
         self.state['schedule']['revision'] += 1
-        current = self.reviewed_plan(issued)
+        current = deal.plan(self.state, self.now, previous=issued)
         old, new = self.event(issued), self.event(current)
         self.assertEqual(new['at'], old['at'])
         self.assertEqual(new['recovery_expected_on'], '2026-11-04')

@@ -116,8 +116,7 @@ class SceneClockTests(unittest.TestCase):
             approval = Path(directory) / "approval.txt"
             approval.write_text("Текст согласован.", encoding="utf-8")
             commands = (("import-creative", "--text", text, "--links", links),
-                        ("approve-creative", "--source", approval, "--quote", "Текст согласован."),
-                        ("review-action", "--id", "signing", "--reason", "Подписи по-прежнему не получены"))
+                        ("approve-creative", "--source", approval, "--quote", "Текст согласован."))
             for command in commands:
                 with self.subTest(command=command[0]):
                     before = {p.relative_to(directory): p.read_bytes() for p in Path(directory).rglob("*") if p.is_file()}
@@ -130,8 +129,6 @@ class SceneClockTests(unittest.TestCase):
             updated = deal.read_json(path)
             self.assertEqual(updated["checks"]["creative_approval"]["checked_at"], self.at)
             self.assertTrue(all(row["at"] == self.at for row in updated["history"] if row.get("action") in ("import_creative", "approve_creative")))
-            signing = next(row for row in updated["schedule"]["reporting_deadlines"] if row["id"] == "signing")
-            self.assertEqual(signing["context_review"]["reviewed_at"], self.at)
 
     def test_legacy_live_state_retains_machine_or_explicit_time(self):
         del self.state["clock"]

@@ -58,12 +58,6 @@ class DealTests(unittest.TestCase):
             "scheduled_message_id": self.state["publication"]["scheduled_message_id"],
             "token": self.state["checks"]["erid"]["token"]}
 
-    def review_current_actions(self):
-        # Эти сценарии проверяют доказательства и завершение; общие учебные формулировки сохраняют смысл.
-        for item in self.state["schedule"]["reporting_deadlines"]:
-            if item.get("kind") == "organizational":
-                item["context_review"] = deal.action_review(
-                    self.state, item, "Общее учебное действие остаётся применимым после изменения доказательства", self.now)
 
     def test_documented_stages_are_valid_and_preserve_inactive_readiness_block(self):
         self.confirm_readiness()
@@ -426,17 +420,17 @@ class DealTests(unittest.TestCase):
                             "requires": ["contract"] if requires is None else requires}}
         self.now = deal.stamp("2026-10-16T20:20:00+03:00")
 
-    def test_relative_deadline_requires_payment_and_explicit_prerequisite_on_friday(self):
+    def test_relative_deadline_keeps_friday_control_without_blocking_later_actions(self):
         self.relative_payment()
         signing, payment = self.state["schedule"]["reporting_deadlines"][1], self.state["schedule"]["reporting_deadlines"][4]
         signing["at"], payment["at"] = "2026-10-17T09:00:00+03:00", "2026-10-17T10:00:00+03:00"
         before = copy.deepcopy(self.state)
-        with self.assertRaisesRegex(ValueError, "План опаздывает.*2026-10-16.*contract, payment"):
-            deal.plan(self.state, self.now)
+        late = deal.plan(self.state, self.now)
+        self.assertEqual(late["deadline_controls"][0]["date"], "2026-10-16")
+        times = {event["id"]: event["at"] for event in late["events"]}
+        self.assertEqual((times["report-signing"], times["report-payment-check"]), (signing["at"], payment["at"]))
         self.assertEqual(self.state, before)
         signing["at"] = "2026-10-16T20:30:00+03:00"
-        with self.assertRaisesRegex(ValueError, "План опаздывает.*payment"):
-            deal.plan(self.state, self.now)
         payment["at"] = "2026-10-16T21:00:00+03:00"
         result = deal.plan(self.state, self.now)
         self.assertEqual(result["deadline_controls"][0]["date"], "2026-10-16")
@@ -453,8 +447,7 @@ class DealTests(unittest.TestCase):
         self.now = deal.stamp("2026-10-12T09:00:00+03:00")
         payment = self.state["schedule"]["reporting_deadlines"][4]
         payment["at"] = "2026-10-17T10:00:00+03:00"
-        with self.assertRaisesRegex(ValueError, "не позже 2026-10-16"):
-            deal.plan(self.state, self.now)
+        deal.plan(self.state, self.now)
         payment["at"] = "2026-10-16T23:30:00+03:00"
         self.assertEqual(deal.plan(self.state, self.now)["deadline_controls"][0]["date"], "2026-10-16")
         payment["at"] = "2026-10-12T10:00:00+03:00"
@@ -473,8 +466,7 @@ class DealTests(unittest.TestCase):
         self.state["schedule"]["reporting_deadlines"][1]["at"] = "2026-10-17T10:00:00+03:00"
         deal.plan(self.state, self.now)
         self.state["schedule"]["deadline_terms"]["payment"]["calculation"]["requires"] = ["contract"]
-        with self.assertRaisesRegex(ValueError, "План опаздывает.*contract"):
-            deal.plan(self.state, self.now)
+        deal.plan(self.state, self.now)
         self.state["checks"]["payment"] = {"status": "confirmed", "source": "Выписка банка",
                                              "checked_at": self.now.isoformat()}
         deal.plan(self.state, self.now)
@@ -519,8 +511,7 @@ class DealTests(unittest.TestCase):
         self.assertEqual(control["date"], calculation["review_on"])
         self.assertNotIn("payment", {event["id"] for event in result["events"]})
         self.state["schedule"]["reporting_deadlines"][4]["at"] = "2026-10-17T09:00:00+03:00"
-        with self.assertRaisesRegex(ValueError, "План опаздывает.*payment"):
-            deal.plan(self.state, self.now)
+        deal.plan(self.state, self.now)
 
     def test_relative_calculation_rejects_ambiguous_structure(self):
         self.relative_payment()
@@ -797,52 +788,61 @@ class DealTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "повторяется id ord"):
             deal.plan(self.state, self.now)
 
-    def test_pending_facts_allow_plan_with_explicit_actions_without_confirming_them(self):
+    def test_pending_facts_allow_plan_without_confirming_them_or_adding_service_maps(self):
         before = copy.deepcopy(self.state)
         result = deal.plan(self.state, self.now)
-        self.assertEqual(result["action_coverage"]["contract"], ["report-signing"])
-        self.assertEqual(result["action_coverage"]["ord_creative"], ["report-ord-check"])
-        self.assertEqual(result["action_coverage"]["creative_approval"], ["creative"])
+        self.assertNotIn("action_coverage", result)
+        events = {event["id"]: event for event in result["events"]}
+        self.assertEqual(events["report-signing"]["checks"], ["contract"])
+        self.assertEqual(events["report-ord-check"]["checks"], ["erid", "ord_creative"])
+        self.assertFalse(any("context_sha256" in event or "context_review" in event for event in events.values()))
         self.assertFalse(deal.check(self.state, self.now)["ready"])
         self.assertEqual(before, self.state)
 
-    def test_plan_rejects_missing_actions_but_fact_check_still_returns_its_result(self):
+    def test_plan_allows_missing_actions_while_questions_remain_open(self):
         for removed, key in (("signing", "contract"), ("ord-check", "ord_creative"),
                              ("queue", "scheduled_message")):
             with self.subTest(check=key):
                 self.state["schedule"]["reporting_deadlines"] = [
                     item for item in planned_actions() if item["id"] != removed]
-                with self.assertRaisesRegex(ValueError, f"План неполон:.*{key}"):
-                    deal.plan(self.state, self.now)
-                self.assertFalse(deal.check(self.state, self.now)["ready"])
+                before = copy.deepcopy(self.state)
+                result = deal.plan(self.state, self.now)
+                self.assertNotIn("report-" + removed, {event["id"] for event in result["events"]})
+                self.assertIn(key, deal.readiness_issues(self.state, self.now))
+                self.assertEqual(self.state, before)
         self.state["schedule"]["reporting_deadlines"] = []
-        with self.assertRaisesRegex(ValueError, "Общая readiness"):
-            deal.plan(self.state, self.now)
+        result = deal.plan(self.state, self.now)
+        self.assertFalse(any(event["id"].startswith("report-") for event in result["events"]))
+        self.assertIn("readiness", {event["id"] for event in result["events"]})
+        self.assertFalse(deal.check(self.state, self.now)["ready"])
 
-    def test_action_after_publication_does_not_cover_a_prepublication_check(self):
+    def test_late_action_keeps_its_date_without_confirming_publication_readiness(self):
         action = next(item for item in self.state["schedule"]["reporting_deadlines"] if item["id"] == "signing")
-        action["at"] = "2026-11-09T09:01:00+03:00"
-        with self.assertRaisesRegex(ValueError, "План неполон:.*contract"):
-            deal.plan(self.state, self.now)
-        action["at"] = self.state["schedule"]["publication_at"]
-        self.assertEqual(deal.plan(self.state, self.now)["action_coverage"]["contract"], ["report-signing"])
+        for at in ("2026-11-09T09:01:00+03:00", self.state["schedule"]["publication_at"]):
+            with self.subTest(at=at):
+                action["at"] = at
+                result = deal.plan(self.state, self.now)
+                event = next(event for event in result["events"] if event["id"] == "report-signing")
+                self.assertEqual(event["at"], at)
+                self.assertIn("contract", deal.readiness_issues(self.state, self.now))
 
     def test_optional_edo_action_does_not_change_publication_readiness(self):
         self.confirm_readiness()
         self.state["schedule"]["fee_obligation"] = self.fee_settings("not_applicable", [])
         self.state["schedule"]["reporting_deadlines"] = []
         self.state["checks"]["edo_exchange"] = {"status": "pending", "source": "Сбой оператора, обмен ещё не завершён", "recovery_expected_on": None}
+        result = deal.plan(self.state, self.now)
         self.assertTrue(deal.check(self.state, self.now)["ready"])
-        with self.assertRaisesRegex(ValueError, "План неполон:.*edo_exchange"):
-            deal.plan(self.state, self.now)
+        self.assertIn("edo_exchange", deal.unfinished_checks(self.state, self.now))
+        self.assertNotIn("report-restore-edo", {event["id"] for event in result["events"]})
         self.state["schedule"]["reporting_deadlines"] = [{
             "id": "restore-edo", "title": "Проверить восстановление ЭДО и отправку оригиналов",
             "at": "2026-11-12T15:00:00+03:00", "source": "Сбой оператора; проверить канал и статус обмена",
             "kind": "organizational", "checks": ["edo_exchange"]}]
-        self.assertEqual(deal.plan(self.state, self.now)["action_coverage"], {"edo_exchange": ["report-restore-edo"]})
         self.state["publication"]["actual_at"] = "2026-11-09T09:00:00+03:00"
         self.state["stage"] = "closing"
-        self.assertEqual(deal.plan(self.state, self.now)["action_coverage"], {"edo_exchange": ["report-restore-edo"]})
+        event = next(event for event in deal.plan(self.state, self.now)["events"] if event["id"] == "report-restore-edo")
+        self.assertEqual((event["at"], event["checks"]), ("2026-11-12T15:00:00+03:00", ["edo_exchange"]))
 
     def edo_recovery(self):
         self.confirm_readiness()
@@ -863,14 +863,14 @@ class DealTests(unittest.TestCase):
         recovery = next(event for event in result["events"] if event["id"] == "edo-recovery")
         self.assertEqual(recovery["at"], "2026-11-05T09:00:00+03:00")
         self.assertEqual(recovery["service"], "edo")
-        self.assertEqual(result["action_coverage"]["edo_exchange"], ["report-finish-edo-exchange"])
         self.assertIn("не подтверждает подписи", recovery["note"])
         self.assertIn("не относится к ОРД", recovery["note"])
         self.assertTrue(deal.check(self.state, self.now)["ready"])
         self.assertEqual(self.state, before)
         self.state["schedule"]["reporting_deadlines"].remove(action)
-        with self.assertRaisesRegex(ValueError, "План неполон:.*edo_exchange"):
-            deal.plan(self.state, self.now)
+        without_action = deal.plan(self.state, self.now)
+        self.assertIn("edo-recovery", {event["id"] for event in without_action["events"]})
+        self.assertIn("edo_exchange", deal.unfinished_checks(self.state, self.now))
 
     def test_edo_recovery_completion_is_independent_of_exchange_completion(self):
         self.edo_recovery()
@@ -881,7 +881,6 @@ class DealTests(unittest.TestCase):
                  "checked_at": "2026-11-05T09:05:00+03:00"}
         self.state["completed_events"]["edo-recovery"] = proof
         self.state["schedule"]["revision"] += 1
-        self.review_current_actions()
         current = deal.plan(self.state, later, previous=issued)
         self.assertIn("edo-recovery", {event["id"] for event in current["completed"]})
         self.assertIn("report-finish-edo-exchange", {event["id"] for event in current["events"]})
@@ -890,10 +889,8 @@ class DealTests(unittest.TestCase):
         self.assertEqual(deal.changes(issued, current)["cancel"], ["new-deal-edo-recovery@blogger-ads-skill"])
         self.state["completed_events"]["edo-recovery"] = {"status": "pending"}
         self.state["checks"]["edo_exchange"].update(proof)
-        self.review_current_actions()
         reopened = deal.plan(self.state, later, previous=current)
         self.assertIn("edo-recovery", {event["id"] for event in reopened["events"]})
-        self.assertNotIn("edo_exchange", reopened["action_coverage"])
 
     def test_edo_recovery_rejects_reserved_manual_duplicate_but_unknown_date_stays_optional(self):
         self.edo_recovery()
@@ -906,13 +903,11 @@ class DealTests(unittest.TestCase):
         self.state["checks"]["edo_exchange"] = {"status": "pending", "source": "Дата восстановления ещё неизвестна", "recovery_expected_on": None}
         result = deal.plan(self.state, self.now)
         self.assertNotIn("edo-recovery", {event["id"] for event in result["events"]})
-        self.assertEqual(result["action_coverage"]["edo_exchange"], ["report-finish-edo-exchange"])
 
     def test_edo_recovery_time_and_sequence_stay_fixed_until_explicit_change(self):
         self.edo_recovery()
         issued = deal.plan(self.state, self.now)
         later = deal.stamp("2026-11-06T12:00:00+03:00")
-        self.review_current_actions()
         current = deal.plan(self.state, later, previous=issued)
         self.assertEqual(deal.changes(issued, current), {"create": [], "update": [], "cancel": []})
         old = next(event for event in issued["events"] if event["id"] == "edo-recovery")
@@ -924,7 +919,6 @@ class DealTests(unittest.TestCase):
         self.state["checks"]["edo_exchange"]["recovery_expected_on"] = "2026-11-07"
         self.state["checks"]["edo_exchange"]["recovery_source"] = "Оператор уточнил дату: 7 ноября"
         self.state["schedule"]["revision"] += 1
-        self.review_current_actions()
         moved = deal.plan(self.state, later, previous=issued)
         self.assertEqual(deal.changes(issued, moved), {"create": [], "update": [old["uid"]], "cancel": []})
 
@@ -950,12 +944,11 @@ class DealTests(unittest.TestCase):
         self.state["checks"]["ord_creative"]["status"] = "pending"
         self.state["schedule"]["fee_obligation"] = self.fee_settings("not_applicable", [])
         result = deal.plan(self.state, self.now)
-        self.assertEqual(result["action_coverage"], {"erid": ["erid"], "ord_creative": ["erid"], "payment": ["payment"]})
         self.assertFalse(any(event["id"].startswith("report-") for event in result["events"]))
         for key in ("payment", "erid"):
             self.assertEqual(sum(event["id"] == key for event in result["events"]), 1)
 
-    def test_stale_ord_confirmation_still_needs_an_action(self):
+    def test_stale_ord_confirmation_blocks_readiness_without_blocking_plan(self):
         self.confirm_readiness()
         self.state["schedule"]["reporting_deadlines"] = []
         registered = copy.deepcopy(self.state["checks"]["ord_creative"])
@@ -963,8 +956,7 @@ class DealTests(unittest.TestCase):
                        {"verified": {"text": True, "links": False, "media": True}}):
             with self.subTest(change=change):
                 self.state["checks"]["ord_creative"] = dict(registered, **change)
-                with self.assertRaisesRegex(ValueError, "План неполон:.*ord_creative"):
-                    deal.plan(self.state, self.now)
+                deal.plan(self.state, self.now)
                 self.assertFalse(deal.check(self.state, self.now)["ready"])
 
     def test_organizational_action_schema_rejects_missing_or_ambiguous_inputs(self):
@@ -996,23 +988,21 @@ class DealTests(unittest.TestCase):
         self.assertEqual(deal.changes(issued, moved), {"create": [], "update": [old["uid"]], "cancel": []})
         self.assertEqual(next(event["sequence"] for event in moved["events"] if event["uid"] == old["uid"]), 2)
 
-    def test_previous_plan_rejects_new_id_for_same_open_checks(self):
+    def test_changed_check_and_renamed_action_do_not_require_formal_context_review(self):
         issued = deal.plan(self.state, self.now)
+        self.state["checks"]["contract"] = {"status": "pending", "source": "Реквизиты получены, подписи пока нет"}
         self.state["schedule"]["revision"] += 1
-        for index in (0, 3, 5):
-            with self.subTest(action=planned_actions()[index]["id"]):
-                actions = planned_actions()
-                action = actions[index]
-                old_id = action["id"]
-                action.update(id="renamed-" + old_id, title="Уточнённая формулировка действия",
-                              at="2026-11-03T15:00:00+03:00", checks=list(reversed(action["checks"])))
-                self.state["schedule"]["reporting_deadlines"] = actions
-                with self.assertRaisesRegex(ValueError, f"report-{old_id} заменено новым report-renamed-{old_id}.*тем же набором checks"):
-                    deal.plan(self.state, self.now, previous=issued)
-                action["id"] = old_id
-                current = deal.plan(self.state, self.now, previous=issued)
-                delta = deal.changes(issued, current)
-                self.assertEqual(delta, {"create": [], "update": [f"new-deal-report-{old_id}@blogger-ads-skill"], "cancel": []})
+        action = self.state["schedule"]["reporting_deadlines"][1]
+        action.update(id="next-signing", title="Получить подпись на уточнённом проекте", at="2026-11-10T10:00:00+03:00")
+        current = deal.plan(self.state, self.now, previous=issued)
+        event = next(event for event in current["events"] if event["id"] == "report-next-signing")
+        self.assertEqual(event["at"], action["at"])
+        self.assertEqual(event["title"], action["title"])
+        self.assertIn("contract", deal.readiness_issues(self.state, self.now))
+        self.assertNotIn("report-signing", {event["id"] for event in current["completed"]})
+        delta = deal.changes(issued, current)
+        self.assertIn(event["uid"], delta["create"])
+        self.assertIn("new-deal-report-signing@blogger-ads-skill", delta["cancel"])
 
     def test_previous_plan_keeps_id_when_only_completed_checks_are_removed(self):
         action = self.state["schedule"]["reporting_deadlines"][3]
@@ -1021,11 +1011,7 @@ class DealTests(unittest.TestCase):
         self.confirm_readiness()
         self.state["checks"]["ord_creative"]["status"] = "pending"
         self.state["schedule"]["revision"] += 1
-        action.update(id="renamed-ord-check", checks=["erid", "marking", "ord_creative"])
-        with self.assertRaisesRegex(ValueError, "report-ord-check заменено новым report-renamed-ord-check.*незавершённых checks \\(ord_creative\\)"):
-            deal.plan(self.state, self.now, previous=issued)
-        action["id"] = "ord-check"
-        self.review_current_actions()
+        action["checks"] = ["erid", "marking", "ord_creative"]
         current = deal.plan(self.state, self.now, previous=issued)
         delta = deal.changes(issued, current)
         old = next(event for event in issued["events"] if event["id"] == "report-ord-check")
@@ -1057,26 +1043,11 @@ class DealTests(unittest.TestCase):
                 action["checks"] = [key for key in ("creative_approval", "erid", "marking", "ord_creative") if key != omitted]
                 separate = dict(action, id="separate-check", checks=[omitted])
                 self.state["schedule"]["reporting_deadlines"].append(separate)
-                self.review_current_actions()
                 current = deal.plan(self.state, self.now, previous=issued)
                 self.assertIn("report-remaining-ord-check", {event["id"] for event in current["events"]})
                 self.assertIn("report-separate-check", {event["id"] for event in current["events"]})
                 self.state["schedule"]["reporting_deadlines"].remove(separate)
 
-    def test_remaining_work_includes_edo_and_unknown_fee_period(self):
-        self.confirm_readiness()
-        proof = dict(self.state["checks"]["contract"])
-        for key in ("edo_exchange", "fee_period"):
-            with self.subTest(check=key):
-                action = dict(planned_actions()[1], id="combined", checks=["contract", key])
-                self.state["checks"][key] = {"status": "pending", "recovery_expected_on": None} if key == "edo_exchange" else proof
-                self.state["schedule"]["reporting_deadlines"].append(action)
-                issued = deal.plan(self.state, self.now)
-                action.update(id="renamed-combined", checks=[key])
-                with self.assertRaisesRegex(ValueError, f"незавершённых checks \\({key}\\)"):
-                    deal.plan(self.state, self.now, previous=issued)
-                self.state["schedule"]["reporting_deadlines"].remove(action)
-                self.state["checks"].pop(key)
 
     def test_previous_plan_allows_split_checks_and_deletion_without_replacement(self):
         issued = deal.plan(self.state, self.now)
@@ -1115,21 +1086,43 @@ class DealTests(unittest.TestCase):
         current = deal.plan(self.state, self.now, previous=completed)
         self.assertIn("report-new-version-signing", {event["id"] for event in current["events"]})
 
-    def test_plan_cli_rejects_renamed_open_action_before_export(self):
-        issued = deal.plan(self.state, self.now)
-        self.state["schedule"]["reporting_deadlines"][5]["id"] = "another-queue-id"
+    def test_plan_without_actions_is_rebuilt_and_delivered_with_open_questions(self):
+        self.state["schedule"]["reporting_deadlines"] = []
+        checks = copy.deepcopy(self.state["checks"])
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
-            state_path, previous_path = folder / "state.json", folder / "issued-plan.json"
-            state_path.write_text(json.dumps(self.state, ensure_ascii=False), encoding="utf-8")
-            previous_path.write_text(json.dumps(issued, ensure_ascii=False), encoding="utf-8")
-            output = folder / "new-plan"
-            result = subprocess.run([sys.executable, str(ROOT / "scripts/deal.py"), "plan", "--state", str(state_path),
-                                     "--previous", str(previous_path), "--output-dir", str(output), "--now", self.now.isoformat()],
-                                    capture_output=True, text=True)
-            self.assertEqual(result.returncode, 1)
-            self.assertIn("Сохраните прежний reporting_deadlines.id", result.stderr)
-            self.assertFalse(output.exists())
+            state_path = folder / "state.json"
+            previous = None
+            for version in (1, 2):
+                self.state["schedule"]["publication_at"] = f"2026-11-{8 + version:02d}T09:00:00+03:00"
+                self.state["schedule"]["revision"] = version
+                state_path.write_text(json.dumps(self.state, ensure_ascii=False), encoding="utf-8")
+                output = folder / f"plan-v{version}"
+                command = [sys.executable, str(ROOT / "scripts/deal.py"), "plan", "--state", str(state_path),
+                           "--output-dir", str(output), "--now", self.now.isoformat()]
+                if previous:
+                    command += ["--previous", str(previous)]
+                result = subprocess.run(command, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                plan = json.loads((output / "plan.json").read_text())
+                self.assertNotIn("action_coverage", plan)
+                publication = next(event for event in plan["events"] if event["id"] == "publication")
+                self.assertEqual(publication["at"], self.state["schedule"]["publication_at"])
+                files = [str(output / name) for name in ("plan.json", "plan.md", "reminders.ics")]
+                registered = subprocess.run([sys.executable, str(ROOT / "scripts/handoff.py"), "register",
+                    "--state", str(state_path), "--files", *files, "--group", "plan", "--status", "prepared",
+                    "--version", f"v{version}", "--at", self.now.isoformat()], capture_output=True, text=True)
+                self.assertEqual(registered.returncode, 0, registered.stderr)
+                response = folder / f"reply-v{version}.txt"
+                response.write_text(f"Проект плана: [план](<{output / 'plan.md'}>)", encoding="utf-8")
+                issued = subprocess.run([sys.executable, str(ROOT / "scripts/handoff.py"), "check",
+                    "--state", str(state_path), "--response", str(response), "--record-issue"], capture_output=True, text=True)
+                self.assertEqual(issued.returncode, 0, issued.stdout + issued.stderr)
+                self.assertEqual(json.loads(issued.stdout)["plan_issue_count"], version)
+                self.state = json.loads(state_path.read_text())
+                self.assertEqual(self.state["checks"], checks)
+                self.assertFalse(deal.check(self.state, self.now)["ready"])
+                previous = output / "plan.json"
 
     def test_duplicate_payment_flag_is_rejected_but_receipt_details_are_allowed(self):
         self.confirm_readiness()
@@ -1164,8 +1157,7 @@ class DealTests(unittest.TestCase):
         self.assertEqual(deal.changes(issued, completed)["cancel"], [uid])
         self.assertNotIn(uid, deal.ics(completed, self.now))
         self.state["checks"]["contract"] = {"status": "pending", "source": "Новая редакция требует подписи"}
-        with self.assertRaisesRegex(ValueError, "План неполон:.*contract"):
-            deal.plan(self.state, self.now)
+        deal.plan(self.state, self.now)
         self.assertFalse(deal.check(self.state, self.now)["ready"])
         self.state["completed_events"][action_id] = {"status": "pending"}
         self.state["schedule"]["revision"] += 1
@@ -1205,11 +1197,9 @@ class DealTests(unittest.TestCase):
             with self.subTest(key=key):
                 original = self.state["checks"][key]
                 self.state["checks"][key] = proof
-                self.review_current_actions()
                 current = deal.plan(self.state, self.now, previous=issued)
                 self.assertNotIn("report-joint", {event["id"] for event in current["completed"]})
                 self.state["checks"][key] = original
-        self.review_current_actions()
         current = deal.plan(self.state, self.now, previous=issued)
         self.assertIn("report-joint", {event["id"] for event in current["completed"]})
 
@@ -1235,14 +1225,12 @@ class DealTests(unittest.TestCase):
         action.update(id="new-ord-check", checks=["ord_creative"])
         self.state["schedule"]["reporting_deadlines"].append(dict(action, id="token-check", checks=["erid"]))
         self.state["creative"]["text"] += " Новая версия."
-        self.review_current_actions()
         current = deal.plan(self.state, self.now, previous=issued)
         self.assertNotIn(action_id, {event["id"] for event in current["completed"]})
         # Даже после полной сверки нового креатива явная запись старой версии не годится.
         current_digest = deal.digest(self.state["creative"])
         for key in ("creative_approval", "marking", "erid", "ord_creative"):
             self.state["checks"][key]["creative_sha256"] = current_digest
-        self.review_current_actions()
         current = deal.plan(self.state, self.now, previous=issued)
         self.assertNotIn(action_id, {event["id"] for event in current["completed"]})
         proof["creative_sha256"] = current_digest
@@ -1251,13 +1239,9 @@ class DealTests(unittest.TestCase):
                        {"checked_at": "2026-11-02T12:00:00+03:00"}):
             with self.subTest(change=change):
                 self.state["checks"]["ord_creative"] = dict(full, **change)
-                with self.assertRaisesRegex(ValueError, "незавершённых checks \\(ord_creative\\)"):
-                    deal.plan(self.state, self.now, previous=issued)
-                current = deal._plan(self.state, self.now)
-                deal.retain_completed_actions(self.state, self.now, issued, current)
+                current = deal.plan(self.state, self.now, previous=issued)
                 self.assertNotIn(action_id, {event["id"] for event in current["completed"]})
         self.state["checks"]["ord_creative"] = full
-        self.review_current_actions()
         current = deal.plan(self.state, self.now, previous=issued)
         self.assertIn(action_id, {event["id"] for event in current["completed"]})
 
@@ -1301,12 +1285,10 @@ class DealTests(unittest.TestCase):
                     self.state["checks"]["erir"]["token"] = token
                     self.state["checks"]["erid"]["token"] = token
                     self.state["completed_events"] = {"report-erir-check": dict(proof)} if explicit else {}
-                    self.review_current_actions()
                     current = deal.plan(self.state, self.now, previous=issued)
                     self.assertEqual("report-erir-check" in {event["id"] for event in current["completed"]},
                                      token == "test-not-a-real-erid")
         self.state["checks"]["erir"]["token"] = "another-token"
-        self.review_current_actions()
         current = deal.plan(self.state, self.now, previous=issued)
         self.assertNotIn("report-erir-check", {event["id"] for event in current["completed"]})
 
@@ -1570,7 +1552,6 @@ class DealTests(unittest.TestCase):
         fee["source"] = "Зачисление подтверждено выпиской; квартал предварительный, правовой период и плательщик проверяются"
         fee["payment_basis_sha256"] = deal.fee_payment_basis(self.state)["sha256"]
         self.state["schedule"]["revision"] += 1
-        self.review_current_actions()
         current = deal.plan(self.state, self.now, previous=previous)
         events = self.fee_events(current)
         self.assertEqual(len(events), 3)
@@ -1634,7 +1615,6 @@ class DealTests(unittest.TestCase):
         self.state["schedule"]["fee_obligation"]["quarters"] = []
         result = deal.plan(self.state, self.now)
         self.assertEqual(self.fee_events(result), {})
-        self.assertEqual(result["action_coverage"]["fee_period"], ["report-fee-period"])
 
     def test_fee_payment_basis_cli_reads_stale_state_without_modifying_it(self):
         self.record_fee_payment()
@@ -1825,15 +1805,9 @@ class DealTests(unittest.TestCase):
         self.state["schedule"]["fee_obligation"]["source"] = "Ожидаемая предоплата в Q4; поступление, юридический период и плательщик не подтверждены"
         self.state["schedule"]["reporting_deadlines"] = planned_actions()[:-1]
         before = copy.deepcopy(self.state)
-        with self.assertRaisesRegex(ValueError, "План неполон:.*fee_period"):
-            deal.plan(self.state, self.now)
-        self.assertEqual(self.state, before)
-        self.state["schedule"]["reporting_deadlines"] = planned_actions()
-        before = copy.deepcopy(self.state)
         result = deal.plan(self.state, self.now)
         events = self.fee_events(result)
         self.assertEqual(len(events), 3)
-        self.assertEqual(result["action_coverage"]["fee_period"], ["report-fee-period"])
         self.assertTrue(all(event["payer"] is None and event["applicability"] == "unknown" for event in events.values()))
         self.assertTrue(all("не считать этот план обязанностью" in event["note"] for event in events.values()))
         self.assertTrue(any("не установлены" in warning for warning in result["warnings"]))
@@ -1845,7 +1819,7 @@ class DealTests(unittest.TestCase):
                          {key: item["uid"] for key, item in self.fee_events(new).items()})
         self.assertEqual(len(deal.changes(result, new)["update"]), 3)
 
-    def test_unknown_and_legacy_fee_settings_require_action_instead_of_assigning_period_or_payer(self):
+    def test_unknown_and_legacy_fee_settings_do_not_invent_period_or_payer(self):
         for role in ("blogger", "advertiser", "agency"):
             for legacy in (False, True):
                 with self.subTest(role=role, legacy=legacy):
@@ -1855,12 +1829,8 @@ class DealTests(unittest.TestCase):
                     else:
                         self.state["schedule"]["fee_obligation"] = self.fee_settings("unknown", [])
                     self.state["schedule"]["reporting_deadlines"] = planned_actions()[:-1]
-                    with self.assertRaisesRegex(ValueError, "План неполон:.*fee_period"):
-                        deal.plan(self.state, self.now)
-                    self.state["schedule"]["reporting_deadlines"] = planned_actions()
                     before = copy.deepcopy(self.state)
                     result = deal.plan(self.state, self.now)
-                    self.assertEqual(result["action_coverage"]["fee_period"], ["report-fee-period"])
                     self.assertEqual(self.fee_events(result), {})
                     self.assertTrue(any("три контрольные даты не рассчитаны" in warning for warning in result["warnings"]))
                     self.assertEqual(self.state, before)
@@ -1892,7 +1862,6 @@ class DealTests(unittest.TestCase):
                         self.assertIn("не считать этот план обязанностью", event["note"])
                         self.assertIn(before["schedule"]["deadline_terms"]["payment"]["source"], event["obligation_source"])
                         self.assertIn(deal.escape_ics(event["note"]), deal.ics(result, self.now).replace("\r\n ", ""))
-                    self.assertEqual(result["action_coverage"]["fee_period"], ["report-fee-period"])
                     self.assertFalse(any("три контрольные даты не рассчитаны" in warning for warning in result["warnings"]))
                     self.assertTrue(any("договорной дате платежа 2026-10-16" in warning for warning in result["warnings"]))
                     self.assertNotIn("payment", {event["id"] for event in result["events"]})
@@ -1915,7 +1884,6 @@ class DealTests(unittest.TestCase):
             "checked_at": "2026-07-01T10:00:00+03:00"}
         self.state["publication"]["actual_at"] = "2027-01-01T10:00:00+03:00"
         self.state["stage"] = "closing"
-        self.review_current_actions()
         current = deal.plan(self.state, deal.hours(self.now, 24), previous=first)
         self.assertEqual(events, self.fee_events(current))
 
@@ -1942,7 +1910,6 @@ class DealTests(unittest.TestCase):
                 self.state["schedule"]["deadline_terms"]["payment"] = term
                 result = deal.plan(self.state, self.now)
                 self.assertEqual(self.fee_events(result), {})
-                self.assertEqual(result["action_coverage"]["fee_period"], ["report-fee-period"])
 
     def test_preliminary_fee_keeps_past_dates_and_moves_only_after_payment_deadline_changes(self):
         self.relative_payment(requires=[])
@@ -1976,13 +1943,7 @@ class DealTests(unittest.TestCase):
                 self.exact_payment(at)
                 result = deal.plan(self.state, self.now)
                 self.assertEqual(self.fee_events(result), {})
-                self.assertEqual(result["action_coverage"]["fee_period"], ["report-fee-period"])
 
-    def test_preliminary_fee_dates_do_not_replace_action_for_actual_income_period(self):
-        self.relative_payment()
-        self.state["schedule"]["reporting_deadlines"] = planned_actions()[:-1]
-        with self.assertRaisesRegex(ValueError, "План неполон:.*fee_period"):
-            deal.plan(self.state, self.now)
 
     def test_fee_period_action_is_independent_of_publication_readiness_and_keeps_its_time(self):
         self.confirm_readiness()
@@ -1993,35 +1954,30 @@ class DealTests(unittest.TestCase):
                 self.state["stage"] = "inquiry"
                 self.state["schedule"]["reporting_deadlines"] = []
                 self.assertTrue(deal.check(self.state, self.now)["ready"])
-                with self.assertRaisesRegex(ValueError, "План неполон:.*fee_period"):
-                    deal.plan(self.state, self.now)
+                deal.plan(self.state, self.now)
                 action = dict(planned_actions()[-1], at="2026-11-12T11:00:00+03:00")
                 self.state["schedule"]["reporting_deadlines"] = [action]
                 first = deal.plan(self.state, self.now)
                 later = deal.plan(self.state, deal.hours(self.now, 24), previous=first)
                 self.assertEqual(first["events"], later["events"])
-                self.assertEqual(later["action_coverage"], {"fee_period": ["report-fee-period"]})
                 self.state["publication"]["actual_at"] = "2026-11-09T09:00:00+03:00"
                 self.state["stage"] = "closing"
-                self.assertEqual(deal.plan(self.state, self.now)["action_coverage"], later["action_coverage"])
+                current = deal.plan(self.state, self.now)
+                event = next(event for event in current["events"] if event["id"] == "report-fee-period")
+                self.assertEqual(event["at"], action["at"])
+                self.assertIn("fee_period", deal.unfinished_checks(self.state, self.now))
 
-    def test_confirmed_fee_period_cannot_hide_unknown_applicability(self):
-        proof = {"status": "confirmed", "source": "Участник ответил, но применимость и юридический период не установлены",
+    def test_confirmed_fee_period_does_not_establish_unknown_applicability(self):
+        proof = {"status": "confirmed", "source": "Участник ответил, но применимость ещё не установлена",
                  "checked_at": self.now.isoformat()}
-        for quarters in ([], ["2026-Q4"]):
-            with self.subTest(quarters=quarters):
-                self.state["schedule"]["fee_obligation"] = self.fee_settings("unknown", quarters)
-                self.state["schedule"]["reporting_deadlines"] = planned_actions()
-                self.state["checks"]["fee_period"] = proof
-                self.state["completed_events"]["report-fee-period"] = proof
-                with self.assertRaisesRegex(ValueError, "План неполон:.*fee_period"):
-                    deal.plan(self.state, self.now)
-                self.state["completed_events"]["report-fee-period"] = {"status": "pending"}
-                result = deal.plan(self.state, self.now)
-                self.assertEqual(result["action_coverage"]["fee_period"], ["report-fee-period"])
-                self.state["schedule"]["reporting_deadlines"] = planned_actions()[:-1]
-                with self.assertRaisesRegex(ValueError, "План неполон:.*fee_period"):
-                    deal.plan(self.state, self.now, previous=result)
+        self.state["schedule"]["fee_obligation"] = self.fee_settings("unknown", ["2026-Q4"])
+        self.state["checks"]["fee_period"] = proof
+        self.state["completed_events"]["report-fee-period"] = proof
+        result = deal.plan(self.state, self.now)
+        self.assertIn("fee_period", deal.unfinished_checks(self.state, self.now))
+        self.assertIn("report-fee-period", {event["id"] for event in result["completed"]})
+        self.assertTrue(all(event["applicability"] == "unknown" and event["payer"] is None
+                            for event in self.fee_events(result).values()))
 
     def test_preliminary_quarter_does_not_complete_removed_fee_action_from_confirmed_check(self):
         self.state["schedule"]["fee_obligation"] = self.fee_settings("unknown", ["2026-Q4"])
@@ -2030,12 +1986,9 @@ class DealTests(unittest.TestCase):
             "checked_at": self.now.isoformat()}
         issued = deal.plan(self.state, self.now)
         self.state["schedule"]["reporting_deadlines"] = planned_actions()[:-1]
-        current = deal._plan(self.state, self.now)
-        deal.retain_completed_actions(self.state, self.now, issued, current)
+        current = deal.plan(self.state, self.now, previous=issued)
         self.assertIn("fee_period", deal.unfinished_checks(self.state, self.now))
         self.assertNotIn("report-fee-period", {event["id"] for event in current["completed"]})
-        with self.assertRaisesRegex(ValueError, "План неполон:.*fee_period"):
-            deal.plan(self.state, self.now, previous=issued)
 
     def test_established_fee_applicability_does_not_require_open_period_action(self):
         for applicability, quarters in (("applicable", ["2026-Q4"]), ("not_applicable", [])):
@@ -2044,7 +1997,6 @@ class DealTests(unittest.TestCase):
                 self.state["schedule"]["reporting_deadlines"] = planned_actions()[:-1]
                 before = copy.deepcopy(self.state)
                 result = deal.plan(self.state, self.now)
-                self.assertNotIn("fee_period", result["action_coverage"])
                 self.assertEqual(len(self.fee_events(result)), 3 if applicability == "applicable" else 0)
                 self.assertEqual(self.state, before)
 
@@ -2053,7 +2005,6 @@ class DealTests(unittest.TestCase):
         self.state["schedule"]["reporting_deadlines"] = planned_actions()[:-1]
         result = deal.plan(self.state, self.now)
         self.assertEqual(self.fee_events(result), {})
-        self.assertNotIn("fee_period", result["action_coverage"])
         self.assertFalse(any("не установлены" in warning for warning in result["warnings"]))
         self.state["schedule"]["fee_obligation"]["source"] = None
         with self.assertRaisesRegex(ValueError, "основание применимости или неприменимости"):
@@ -2137,7 +2088,6 @@ class DealTests(unittest.TestCase):
                 self.assertFalse(result["ready"])
                 self.assertEqual(set(result["blockers"]), {"scheduled_message"})
                 self.assertIn("scheduled_message", deal.unfinished_checks(self.state, self.now))
-                self.assertEqual(deal.plan(self.state, self.now)["action_coverage"]["scheduled_message"], ["report-queue"])
                 self.assertEqual(self.state, before)
                 self.state["checks"]["scheduled_message"].update(
                     publication_at=self.state["schedule"]["publication_at"],
@@ -2232,11 +2182,8 @@ class DealTests(unittest.TestCase):
             with self.subTest(removed=removed):
                 if removed:
                     self.state["schedule"]["reporting_deadlines"].remove(action)
-                with self.assertRaisesRegex(ValueError, "План неполон:.*scheduled_message"):
-                    deal.plan(self.state, self.now, previous=issued)
+                current = deal.plan(self.state, self.now, previous=issued)
                 if removed:
-                    current = deal._plan(self.state, self.now)
-                    deal.retain_completed_actions(self.state, self.now, issued, current)
                     self.assertNotIn("report-queue", {event["id"] for event in current["completed"]})
 
     def test_readiness_requires_nonblank_text_source_for_each_confirmation(self):
@@ -2287,16 +2234,17 @@ class DealTests(unittest.TestCase):
                         self.assertEqual(uid in deal.ics(current, self.now), result is None)
             proof["source"] = original
 
-    def test_exchange_with_invalid_source_still_requires_an_action(self):
+    def test_exchange_with_invalid_source_stays_unconfirmed_without_blocking_plan(self):
         proof = {"status": "confirmed", "checked_at": self.now.isoformat(), "recovery_expected_on": None}
         self.state["checks"]["edo_exchange"] = proof
-        for source in (True, ["Свидетельство"], {"file": "proof.txt"}, 1, " \t\n"):
+        for source in (True, ["Свидетельство"], {"file": "proof.txt"}, 1, " "):
             with self.subTest(source=source):
                 proof["source"] = source
-                with self.assertRaisesRegex(ValueError, "План неполон:.*edo_exchange"):
-                    deal.plan(self.state, self.now)
-        proof["source"] = "  Квитанции отправки и получения  "
-        self.assertNotIn("edo_exchange", deal.plan(self.state, self.now)["action_coverage"])
+                result = deal.plan(self.state, self.now)
+                self.assertIn("edo_exchange", deal.unfinished_checks(self.state, self.now))
+                self.assertNotIn("edo-recovery", {event["id"] for event in result["completed"]})
+        proof["source"] = "Квитанции отправки и получения"
+        self.assertNotIn("edo_exchange", deal.unfinished_checks(self.state, self.now))
 
     def test_check_rejects_invalid_legacy_creative_links(self):
         self.assertIsNone(self.state["creative"].get("provenance"))

@@ -726,45 +726,6 @@ CHECK_LABELS = {
 EVENT_CHECKS = {"creative": ["creative_approval"], "payment": ["payment"], "erid": ["erid", "ord_creative"]}
 
 
-def action_context(state, linked):
-    """Факты связанных проверок; повторная отметка времени сама по себе не новый факт."""
-    checks = state.get("checks", {})
-    context = {}
-    for key in sorted(linked):
-        proof = checks.get(key)
-        context[key] = ({field: value for field, value in proof.items() if field != "checked_at"}
-                        if isinstance(proof, dict) else proof)
-    return hashlib.sha256(json.dumps(context, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-
-
-def action_text(item):
-    values = {key: item[key] for key in ("id", "title", "source")}
-    return hashlib.sha256(json.dumps(values, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-
-
-def action_review(state, item, reason, now=None):
-    """Зафиксировать осмысленный пересмотр конкретного действия без изменения его текста."""
-    if not isinstance(reason, str) or not reason.strip():
-        raise ValueError("review-action: укажите основание, почему title и source остаются актуальными")
-    if item.get("kind") != "organizational" or not item.get("checks"):
-        raise ValueError("review-action: требуется организационное действие со связанными checks")
-    now = effective_now(state, now)
-    return {"context_sha256": action_context(state, item["checks"]), "text_sha256": action_text(item),
-            "reason": reason.strip(), "reviewed_at": now.isoformat()}
-
-
-def review_action(state_path, action_id, reason, now=None):
-    state = read_json(state_path)
-    validate(state, state_path)
-    matching = [item for item in state.get("schedule", {}).get("reporting_deadlines", []) if item.get("id") == action_id]
-    if len(matching) != 1:
-        raise ValueError("review-action: укажите существующий уникальный reporting_deadlines.id")
-    item = matching[0]
-    item["context_review"] = action_review(state, item, reason, now)
-    write_state(state_path, state)
-    return {"id": action_id, **item["context_review"]}
-
-
 def calendar_date(value, field):
     if not isinstance(value, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
         raise ValueError(f"{field}: требуется календарная дата YYYY-MM-DD без выдуманного часа")
@@ -994,14 +955,7 @@ def _plan(state, now=None, state_path=None, strict_deadlines=False):
                 instructions.append("Сверить полный текст, все URL и медиа либо их отсутствие в карточке ОРД")
             note = ("Организационное действие; выбранный час не является договорным сроком. "
                     + "; ".join(instructions) + ". Основание и указания: " + item["source"])
-            metadata = {"kind": "organizational", "checks": sorted(linked), "source": item["source"],
-                        "context_sha256": action_context(state, linked)}
-            review = item.get("context_review")
-            if (isinstance(review, dict) and review.get("context_sha256") == metadata["context_sha256"]
-                    and review.get("text_sha256") == action_text(item)
-                    and isinstance(review.get("reason"), str) and review["reason"].strip()
-                    and review.get("reviewed_at") and stamp(review["reviewed_at"]) <= now):
-                metadata["context_review"] = review
+            metadata = {"kind": "organizational", "checks": sorted(linked), "source": item["source"]}
         add(f"report-{report_id}", item["title"], stamp(item["at"]).astimezone(zone), note, **metadata)
     recovery = state.get("checks", {}).get("edo_exchange", {})
     recovery_check_on = recovery.get("recovery_check_on") or recovery.get("recovery_expected_on")
@@ -1135,57 +1089,6 @@ def readiness_issues(state, now):
     return issues
 
 
-def action_coverage(state, now, plan_data):
-    """Покрыть открытые проверки действиями, не подтверждая их и не назначая часы."""
-    before_publication = (not state.get("publication", {}).get("actual_at")
-                          and state.get("stage") not in ("published", "closing", "closed", "cancelled", "paused"))
-    required = set(readiness_issues(state, now)) & CHECK_LABELS.keys() if before_publication else set()
-    if (state.get("stage") not in ("closed", "cancelled", "paused")
-            and "edo_exchange" in state.get("checks", {})
-            and not confirmed(state["checks"]["edo_exchange"], now)):
-        required.add("edo_exchange")
-    fee = fee_obligation(state["schedule"])
-    if (state.get("stage") not in ("closed", "cancelled", "paused")
-            and fee["applicability"] == "unknown"):
-        required.add("fee_period")
-    covered = {key: [] for key in sorted(required)}
-    publication = stamp(state["schedule"]["publication_at"])
-    for event in plan_data["events"]:
-        for key in event.get("checks", EVENT_CHECKS.get(event["id"], [])):
-            if key in covered and (key in ("edo_exchange", "fee_period") or stamp(event["at"]) <= publication):
-                covered[key].append(event["id"])
-    missing = [key for key, event_ids in covered.items() if not event_ids]
-    if missing:
-        raise ValueError("План неполон: нет активного действия для проверок " + ", ".join(missing)
-                         + ". Добавьте в schedule.reporting_deadlines конкретное действие, постоянные id/at, source, "
-                         "kind=organizational и checks; проверки публикации требуют действия не позже выхода. "
-                         "Unknown/pending допустимы: подтвердить нужно план действий, а не выдумать внешний факт. "
-                         "Общая readiness и выполненные события это действие не заменяют.")
-    return covered
-
-
-def validate_action_timing(state, now, plan_data):
-    """Условия без часа ограничивают день контроля, а не создают новый час оплаты."""
-    if state.get("stage") in ("closed", "cancelled", "paused"):
-        return
-    pending = unfinished_checks(state, now)
-    zone = ZoneInfo(state["schedule"]["timezone"])
-    today = now.astimezone(zone).date()
-    for control in plan_data["deadline_controls"]:
-        if control["check"] not in pending:
-            continue
-        last_day = max(date.fromisoformat(control["date"]), today)
-        required = {control["check"], *control["requires"]} & pending
-        covered = {key for event in plan_data["events"] if stamp(event["at"]).astimezone(zone).date() <= last_day
-                   for key in event.get("checks", EVENT_CHECKS.get(event["id"], []))}
-        missing = required - covered
-        if missing:
-            raise ValueError(f"План опаздывает по условию {control['check']} (дата {control['date']}): "
-                             f"нет активного организационного действия для {', '.join(sorted(missing))} не позже {last_day.isoformat()}. "
-                             "При наступившей дате нужна проверка выполнимости в оставшийся день; "
-                             "сохраните прежний ID, не придумывайте договорный час и не передвигайте прошлые действия молча")
-
-
 def unfinished_checks(state, now):
     """Незавершённые проверки с учётом версии, токена и времени доказательств."""
     pending = set(readiness_issues(state, now))
@@ -1238,50 +1141,7 @@ def plan(state, now=None, state_path=None, previous=None):
     result = _plan(state, now, state_path, strict_deadlines=True)
     if previous is not None:
         retain_completed_actions(state, now, previous, result)
-        preserve_action_ids(state, now, previous, result)
-        review_action_context(previous, result)
-    result["action_coverage"] = action_coverage(state, now, result)
-    validate_action_timing(state, now, result)
     return result
-
-
-def review_action_context(previous, current):
-    """Не переносить прежнее описание активного действия на новые факты молча."""
-    old_actions = {event["id"]: event for section in ("events", "completed") for event in previous.get(section, [])}
-    stale = []
-    for event in current["events"]:
-        old = old_actions.get(event["id"])
-        if not old or event.get("kind") != "organizational" or old.get("context_sha256") == event["context_sha256"]:
-            continue
-        if old.get("source") == event.get("source") and not event.get("context_review"):
-            stale.append(event["id"])
-    if stale:
-        raise ValueError("Изменился контекст активных действий без пересмотра title/source: " + ", ".join(stale)
-                         + ". Обновите существующие reporting_deadlines под прежними ID. Если обе формулировки всё ещё верны, "
-                         "выполните deal.py review-action --state … --id <reporting_deadlines.id> --reason <основание>. "
-                         "Новый дубль, перенос часа или внутренняя пересборка не заменяют пересмотр от последнего выданного плана")
-
-
-def preserve_action_ids(state, now, previous, current):
-    """Сохранять ID при том же полном наборе проверок или незавершённом остатке."""
-    pending = unfinished_checks(state, now)
-    previous_ids = {event["id"] for section in ("events", "completed") for event in previous.get(section, [])}
-    current_ids = {event["id"] for section in ("events", "completed") for event in current[section]}
-    created = [event for event in current["events"] if event["id"] not in previous_ids
-               and event.get("kind") == "organizational" and event.get("checks")]
-    for old in previous.get("events", []):
-        if old["id"] in current_ids or old.get("kind") != "organizational" or not old.get("checks"):
-            continue
-        old_checks = set(old["checks"])
-        remaining = old_checks & pending
-        for new in created:
-            same_checks = old_checks == set(new["checks"])
-            if same_checks or (remaining and remaining == set(new["checks"]) & pending):
-                label = "checks" if same_checks else "незавершённых checks"
-                matched = old_checks if same_checks else remaining
-                raise ValueError(f"Организационное действие {old['id']} заменено новым {new['id']} "
-                                 f"с тем же набором {label} ({', '.join(sorted(matched))}). "
-                                 "Сохраните прежний reporting_deadlines.id; меняйте срок, текст и источник существующего действия.")
 
 
 def validate_plan(state, plan_data, state_path=None):
@@ -1373,7 +1233,7 @@ def changes(previous, current):
 
     def content(entry):
         section, event = entry
-        # Просрочка меняется от хода часов; смысл даты, описание и статус — нет.
+        # Просрочка и прежние служебные отметки контекста не меняют календарное событие.
         return section, {key: value for key, value in event.items()
                          if key not in ("sequence", "overdue", "context_sha256", "context_review")}
 
@@ -1443,11 +1303,6 @@ def main():
     approver.add_argument("--source", required=True, type=Path, help="Существующий UTF-8 файл реплики пользователя")
     approver.add_argument("--quote", required=True, help="Дословная цитата о согласовании текущей версии")
     approver.add_argument("--now", help="Время фиксации с часовым поясом; в сцене должно совпадать с clock")
-    reviewer = sub.add_parser("review-action", help="Подтвердить актуальность прежних title/source действия после изменения связанных проверок")
-    reviewer.add_argument("--state", required=True, type=Path)
-    reviewer.add_argument("--id", required=True, help="Постоянный reporting_deadlines.id без префикса report-")
-    reviewer.add_argument("--reason", required=True, help="Почему обе формулировки остаются верными при текущих фактах")
-    reviewer.add_argument("--now", help="Время пересмотра с часовым поясом; в сцене должно совпадать с clock")
     for name in ("check", "plan", "fingerprint", "inspect-creative", "fee-payment-basis"):
         cmd = sub.add_parser(name)
         cmd.add_argument("--state", required=True, type=Path)
@@ -1480,9 +1335,6 @@ def main():
             return
         if args.command == "approve-creative":
             print(json.dumps(approve_creative(args.state, args.source, args.quote, args.now), ensure_ascii=False, indent=2))
-            return
-        if args.command == "review-action":
-            print(json.dumps(review_action(args.state, args.id, args.reason, args.now), ensure_ascii=False, indent=2))
             return
         state = read_json(args.state)
         validate_state_objects(state)
