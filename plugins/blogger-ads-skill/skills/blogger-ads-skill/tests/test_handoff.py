@@ -858,14 +858,15 @@ class HandoffTests(unittest.TestCase):
         _, _, plans = self.review_package()
         response = self.file('reply.txt', f'[План](<{plans[1]}>)')
         data = self.data()
-        data['responsibilities']['contract_author'] = 'Изменённое условие'
+        review_record = next(item for item in data['documents'] if item['path'].endswith('/review-input.json'))
+        review_record['current'] = False
         handoff.save(self.state, data)
         before = self.state.read_bytes()
         result = handoff.audit(self.state, response, record_issue=True)
         self.assertFalse(result['valid'])
         self.assertTrue(any('Сверка договора' in issue for issue in result['issues']))
         self.assertEqual(before, self.state.read_bytes())
-        data['responsibilities']['contract_author'] = None
+        review_record['current'] = True
         for malformed in (None, {}, ['plan.json'], [{'plan': {'path': 'missing.json'}}]):
             data['plan_issues'] = malformed
             handoff.save(self.state, data)
@@ -902,27 +903,15 @@ class HandoffTests(unittest.TestCase):
             'signature_matrix': [{'label': 'Учебный договор', 'source': {'document': 'contract', 'page': 1},
                                   'not_applicable': 'Учебный текст без подписной части; просмотрена вся страница.'}],
             'decisions': [{
-                'id': category, 'category': category, 'topic': topic,
+                'id': 'services', 'category': 'Общие условия', 'topic': 'Рекламные услуги',
                 'source': {'document': 'contract', 'clause': '1', 'page': 1, 'quote': 'The parties agree on advertising services.'},
                 'previous': {'source': {'kind': 'none', 'group': 'contract',
                              'reason': 'Первое полученное предложение, собственного проекта ещё не было.'}},
                 'status': 'pending',
                 'decision': {'action': 'defer', 'reason': 'Недостаточно условий для принятия',
                              'selected': 'Уточнить до принятия', 'plan': 'Запросить уточнение при согласовании договора'},
-                'implementation': {'kind': 'unresolved', 'reason': 'В учебной редакции конкретный порядок не определён',
-                                   'state': [{'path': '/responsibilities/contract_author', 'value': None}],
-                                   'plan': [{'id': 'report-contract', 'at': self.at}]}
-            } for category, topic in review.CATEGORIES.items()]
+            }]
         }
-        state = self.data()
-        for item in data['decisions']:
-            if item['category'] in review.TIMING_CATEGORIES:
-                item['implementation']['timing'] = {
-                    'subject': 'Учебное общее условие без срока', 'target': None, 'mode': 'not_applicable',
-                    'received_value': None, 'selected_value': None,
-                    'reason': 'В учебной фразе нет отдельных сроков этой категории.'}
-                state['schedule'].setdefault('reviewed_terms', {})[item['id']] = review.reviewed_timing_record(item)
-        handoff.save(self.state, state)
         plans = self.plan_package()
         handoff.register(self.state, plans, 'prepared', 'v1', self.at, group='plan')
         if with_changes:
@@ -1045,11 +1034,11 @@ class HandoffTests(unittest.TestCase):
         result = handoff.audit(self.state)
         self.assertTrue(result['valid'], result['issues'])
         state = self.data()
-        state['responsibilities']['contract_author'] = 'Другая сторона'
+        next(item for item in state['documents'] if item['path'].endswith('/review-input.json'))['current'] = False
         handoff.save(self.state, state)
         result = handoff.audit(self.state)
         self.assertFalse(result['valid'])
-        self.assertTrue(any('/responsibilities/contract_author' in issue for issue in result['issues']), result['issues'])
+        self.assertTrue(any('review-input.json' in issue for issue in result['issues']), result['issues'])
 
     def test_render_amendment_cli_uses_checked_review(self):
         _, folder, _ = self.review_package(with_changes=True)
@@ -1094,16 +1083,11 @@ class HandoffTests(unittest.TestCase):
 
     def test_handoff_cli_rejects_malformed_creative_and_related_containers_without_writes(self):
         original = self.data()
-        for field, value in (('creative', []), ('publication', []), ('reviewed_terms', []),
-                             ('reviewed_terms', {'payment': True})):
+        for field, value in (('creative', []), ('publication', [])):
             with self.subTest(field=field, value=value):
                 data = json.loads(json.dumps(original))
-                if field == 'reviewed_terms':
-                    data['schedule'][field] = value
-                    message = 'schedule.reviewed_terms'
-                else:
-                    data[field] = value
-                    message = field
+                data[field] = value
+                message = field
                 handoff.save(self.state, data)
                 response = self.file('reply.txt', 'Документы пока не подготовлены.')
                 before = {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
@@ -1233,35 +1217,6 @@ class HandoffTests(unittest.TestCase):
                 data['stage'] = stage
                 handoff.save(self.state, data)
                 self.assertTrue(handoff.audit(self.state)['valid'])
-
-    def test_literal_instruction_and_advice_are_distinguished_by_source(self):
-        source = self.file('user.txt', 'Ничего не отправляй. У меня пока нет новых данных по НДС.')
-        handoff.instruction(self.state, source, 'Ничего не отправляй.', self.at)
-        self.assertTrue(handoff.audit(self.state)['valid'])
-        before = self.state.read_bytes()
-        with self.assertRaisesRegex(ValueError, 'дословным'):
-            handoff.instruction(self.state, source, 'Проверить освобождение от НДС по статье 145.', self.at)
-        self.assertEqual(before, self.state.read_bytes())
-
-    def test_audit_rejects_manually_inserted_paraphrase_and_changed_source(self):
-        source = self.file('user.txt', 'Не публикуй пост.')
-        handoff.instruction(self.state, source, 'Не публикуй пост.', self.at)
-        data = self.data()
-        data['user_instructions'][0]['text'] = 'Не публиковать до проверки ОРД.'
-        handoff.save(self.state, data)
-        self.assertFalse(handoff.audit(self.state)['valid'])
-        data['user_instructions'][0]['text'] = 'Не публикуй пост.'
-        handoff.save(self.state, data)
-        source.write_text('Не публикуй пост. Дополненный источник.')
-        self.assertFalse(handoff.audit(self.state)['valid'])
-
-    def test_legacy_instruction_is_not_silently_treated_as_verified(self):
-        data = self.data()
-        data['user_instructions'] = ['Собственное правило агента; источник: сообщение пользователя']
-        handoff.save(self.state, data)
-        result = handoff.audit(self.state)
-        self.assertFalse(result['valid'])
-        self.assertIn('дословным', result['issues'][0])
 
     def test_superseding_preserves_prior_delivery_and_registers_pdf(self):
         old = self.file('old.docx')
@@ -1471,93 +1426,26 @@ class HandoffTests(unittest.TestCase):
         self.assertTrue(docs[contract.name]['current'])
         self.assertTrue(handoff.audit(self.state)['valid'])
 
-    def test_authored_source_note_expires_but_received_markdown_stays_original(self):
-        note = self.file('ord-ids.md', 'Назначение двух кодов ещё неизвестно.')
-        original = self.file('client-message.md', 'Полученное сообщение заказчика о кодах.')
-        handoff.register(self.state, [note], 'draft_for_review', 'v1', self.at, group='source')
-        handoff.register(self.state, [original], 'received', 'v1', self.at, group='evidence')
-        before = {p: p.read_bytes() for p in (note, original)}
+    def test_changed_facts_do_not_automatically_archive_advice_or_letters(self):
+        note = self.file('review.md', 'Срок оплаты нужно согласовать.')
+        letter = self.file('letter.txt', 'Предлагаем согласовать срок оплаты.')
         data = self.data()
-        data['checks']['erid']['source'] = 'Новое изображение: токен отдельно от ID.'
+        data['recommendations'] = [{'at': self.at, 'text': 'Согласовать срок оплаты'}]
+        data['history'].append({'at': self.at, 'text': 'Пользователь: ничего не отправлять.'})
         handoff.save(self.state, data)
-        result = handoff.audit(self.state)
-        self.assertTrue(any('прежних фактах' in issue for issue in result['issues']))
-        handoff.refresh(self.state, '2026-11-02T12:00:00+03:00')
-        records = self.registered()
-        self.assertFalse(records[note.resolve()]['current'])
-        self.assertTrue(records[original.resolve()]['current'])
-        self.assertEqual(before, {p: p.read_bytes() for p in before})
-        with self.assertRaisesRegex(ValueError, 'Основание прежнего'):
-            handoff.register(self.state, [note], 'draft_for_review', 'v2', self.at, group='source')
-
-    def test_changed_facts_archive_letters_and_advice_without_closing_checks(self):
-        letter = self.file('request.txt', 'Запросить подтверждение оплаты')
-        data = self.data()
-        data['recommendations'] = [{'at': self.at, 'text': 'Проверить оплату'}]
-        handoff.save(self.state, data)
+        handoff.register(self.state, [note], 'reviewed', 'v1', self.at, group='analysis')
         handoff.register(self.state, [letter], 'draft', 'v1', self.at, group='correspondence')
-        self.assertTrue(handoff.audit(self.state)['valid'])
         data = self.data()
-        later = '2026-11-02T12:00:00+03:00'
-        data['checks']['payment'] = {'status': 'confirmed', 'source': 'Сообщение получателя', 'checked_at': later}
-        data['recommendations'].append({'at': later, 'text': 'Оплата получена, проверить подписание'})
+        data['policy']['require_prepayment'] = False
         handoff.save(self.state, data)
-        self.assertFalse(handoff.audit(self.state)['valid'])
+        self.assertTrue(handoff.audit(self.state)['valid'])
+        later = '2026-11-02T12:00:00+03:00'
         handoff.refresh(self.state, later)
         after = self.data()
-        self.assertFalse(after['recommendations'][0]['current'])
-        self.assertTrue(after['recommendations'][1]['current'])
-        self.assertFalse(after['documents'][0]['current'])
-        self.assertEqual(after['recommendations'][0]['text'], 'Проверить оплату')
-        self.assertEqual(after['checks'], data['checks'])
+        self.assertEqual(after, data)
+        self.assertTrue(all(item['current'] for item in after['documents']))
+        handoff.register(self.state, [letter], 'draft', 'v1', later, group='correspondence')
         self.assertTrue(handoff.audit(self.state)['valid'])
-        before = self.state.read_bytes()
-        with self.assertRaisesRegex(ValueError, 'Основание прежнего письма'):
-            handoff.register(self.state, [letter], 'draft', 'v2', later, group='correspondence')
-        self.assertEqual(before, self.state.read_bytes())
-
-    def test_cancellation_and_payment_policy_changes_invalidate_current_letters(self):
-        original = self.data()
-        for field in ('stage', 'policy'):
-            with self.subTest(field=field):
-                handoff.save(self.state, json.loads(json.dumps(original)))
-                letter = self.file('letter.txt', 'Оплата требуется до выхода')
-                handoff.register(self.state, [letter], 'draft', 'v1', self.at, group='correspondence')
-                data = self.data()
-                if field == 'stage':
-                    data['stage'] = 'cancelled'
-                else:
-                    data['policy']['require_prepayment'] = False
-                handoff.save(self.state, data)
-                self.assertFalse(handoff.audit(self.state)['valid'])
-                handoff.refresh(self.state, self.at)
-                self.assertFalse(self.data()['documents'][0]['current'])
-                self.assertTrue(handoff.audit(self.state)['valid'])
-
-    def test_changed_facts_archive_analytical_notes_but_preserve_raw_evidence(self):
-        original = self.data()
-        for group in ('evidence', 'analysis'):
-            with self.subTest(group=group):
-                handoff.save(self.state, json.loads(json.dumps(original)))
-                note = self.file('creative-review.md', 'Токен и поступление оплаты ещё не подтверждены')
-                raw = self.file('received.txt', 'Исходное сообщение заказчика')
-                handoff.register(self.state, [raw], 'received', 'v1', self.at, group='source')
-                handoff.register(self.state, [note], 'reviewed', 'v1', self.at, group=group)
-                data = self.data()
-                later = '2026-11-02T12:00:00+03:00'
-                data['checks']['payment'] = {'status': 'confirmed', 'source': 'Сообщение получателя', 'checked_at': later}
-                handoff.save(self.state, data)
-                self.assertFalse(handoff.audit(self.state)['valid'])
-                handoff.refresh(self.state, later)
-                docs = {item['path']: item for item in self.data()['documents']}
-                self.assertFalse(docs[note.name]['current'])
-                self.assertTrue(docs[raw.name]['current'])
-                self.assertEqual(docs[note.name]['delivered_at'], self.at)
-                before = self.state.read_bytes()
-                with self.assertRaisesRegex(ValueError, 'Основание прежнего письма или заметки'):
-                    handoff.register(self.state, [note], 'reviewed', 'v2', later, group=group)
-                self.assertEqual(before, self.state.read_bytes())
-                self.assertTrue(handoff.audit(self.state)['valid'])
 
     def test_manual_multiple_current_versions_of_one_group_are_rejected(self):
         old = self.file('old-plan.md')
@@ -1704,16 +1592,9 @@ class HandoffTests(unittest.TestCase):
         self.assertFalse(result['valid'])
         self.assertTrue(any('исходник не зарегистрирован' in issue for issue in result['issues']))
 
-    def test_review_state_bindings_and_plan_are_rechecked_on_each_handoff(self):
+    def test_review_handoff_rechecks_plan_contents(self):
         _, _, plans = self.review_package()
         data = self.data()
-        data['responsibilities']['contract_author'] = 'customer'
-        handoff.save(self.state, data)
-        result = handoff.audit(self.state)
-        self.assertFalse(result['valid'])
-        self.assertTrue(any('/responsibilities/contract_author' in issue for issue in result['issues']))
-        data['responsibilities']['contract_author'] = None
-        handoff.save(self.state, data)
         plan = json.loads(plans[0].read_text())
         plan['events'][0]['title'] = 'Подменённое действие'
         plans[0].write_text(json.dumps(plan))
@@ -1804,27 +1685,14 @@ class HandoffTests(unittest.TestCase):
         original.write_bytes(original.read_bytes() + b'changed')
         self.assertFalse(handoff.audit(self.state)['valid'])
 
-    def test_unknown_publication_with_explicit_pending_plan_can_pass_review_guard(self):
-        import review
-        _, folder, _ = self.review_package()
+    def test_unknown_publication_allows_review_without_a_plan(self):
+        self.review_package()
         state = self.data()
         state['schedule']['publication_at'] = None
         for entry in state['documents']:
             if entry['group'] == 'plan':
                 entry['current'] = False
         handoff.save(self.state, state)
-        # Отсутствие даты не позволяет проигнорировать уже заявленные связи плана.
-        self.assertFalse(handoff.audit(self.state)['valid'])
-        decisions = json.loads((folder / 'review-input.json').read_text())
-        for item in decisions['decisions']:
-            item['implementation'].update(plan=[], plan_pending_reason='Дата публикации ещё не определена; расчёт после согласования.')
-            if 'timing' in item['implementation']:
-                state['schedule']['reviewed_terms'][item['id']] = review.reviewed_timing_record(item)
-        handoff.save(self.state, state)
-        source = self.file('decisions-v2.json', json.dumps(decisions))
-        second = self.root / 'review-v2'
-        review.build(source, second)
-        handoff.register(self.state, [second / name for name in handoff.REVIEW_FILES], 'reviewed', 'v2', self.at, group='review')
         result = handoff.audit(self.state)
         self.assertTrue(result['valid'], result['issues'])
         self.assertIsNone(self.data()['schedule']['publication_at'])

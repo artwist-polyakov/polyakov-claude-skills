@@ -8,7 +8,6 @@ import argparse
 import hashlib
 import importlib.util
 import json
-import math
 import re
 import tempfile
 from datetime import datetime, timezone
@@ -35,25 +34,7 @@ ACTIONS = {"replace": "Заменить", "append": "Добавить", "keep": 
            "defer": "Отложить решение", "reject": "Отклонить"}
 STATUSES = {"accepted": "Принято", "proposed": "Предложено", "pending": "Не согласовано",
             "rejected": "Отклонено"}
-CATEGORIES = {
-    "placement": "Предмет, площадка, время и длительность размещения",
-    "price_vat": "Цена, НДС и включение/доплата налога",
-    "fee": "Рекламные отчисления и распределение расходов",
-    "payment": "Оплата: сумма, основание и крайний срок",
-    "signing": "Порядок подписания и связь с оплатой",
-    "creative_delivery": "Срок передачи креатива, согласование и правила изменений",
-    "erid": "ERID: ответственный, срок и необходимые сведения",
-    "ord_reporting": "Отчётность ОРД: ответственный, состав и срок",
-    "client_reporting": "Ссылка и статистика заказчику: срок и начало отсчёта",
-    "acceptance": "Подтверждение услуги, приёмка и срок замечаний",
-    "closing": "УПД и закрывающие документы",
-    "exchange": "Обмен документами, адреса/чаты и сбой ЭДО",
-    "attachments": "Состав приложений и порядок изменения договора",
-    "liability": "Перенос, отмена, возврат, ответственность и прочие изменения",
-}
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".tif", ".tiff"}
-TIMED_CATEGORIES = {"placement", "payment", "signing", "creative_delivery", "erid",
-                    "ord_reporting", "client_reporting", "acceptance", "closing"}
 WORD_NAMESPACES = {"http://schemas.openxmlformats.org/wordprocessingml/2006/main",
                    "http://purl.oclc.org/ooxml/wordprocessingml/main"}
 
@@ -153,170 +134,6 @@ def previous_source(previous, base, soffice=None):
     return dict(source, path=str(path), sha256=sha256(raw))
 
 
-TIMING_CATEGORIES = {"erid", "client_reporting", "acceptance", "closing"}
-TIMING_TARGETS = {
-    "/schedule/link_after_publication_hours": ("client_reporting", "link"),
-    "/schedule/claims_after_end_hours": ("acceptance", "claims"),
-    "/schedule/closing_after_end_hours": ("closing", "closing"),
-    "/schedule/deadline_terms/erid": ("erid", "erid"),
-}
-
-
-def timing_value(target, value, where):
-    """Проверять представление срока, не пытаться извлекать его из русского текста."""
-    if target.endswith("_hours"):
-        if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
-            raise ValueError(f"{where}: неотрицательное число часов")
-    elif target == "/schedule/deadline_terms/erid":
-        if not isinstance(value, dict) or value.get("precision") not in ("relative", "date", "datetime"):
-            raise ValueError(f"{where}: сохраните ERID с precision relative/date/datetime, не unspecified")
-        string(value.get("condition"), where + ".condition")
-        string(value.get("source"), where + ".source")
-    else:
-        if not isinstance(value, dict):
-            raise ValueError(f"{where}: полная запись reporting_deadlines с id, at и source")
-        string(value.get("id"), where + ".id")
-        stamp(value.get("at"))
-        string(value.get("source"), where + ".source")
-
-
-def timing_implementation(item):
-    applied = item["implementation"]
-    timing = applied.get("timing")
-    if timing is None:
-        if item["category"] in TIMING_CATEGORIES:
-            raise ValueError(f"{item['id']}: нужен implementation.timing с предметом и целью срока; статус checks не заменяет срок")
-        return None
-    fields(timing, ("subject", "target", "mode", "received_value", "selected_value", "reason"),
-           ("agreement_source",), "implementation.timing")
-    string(timing["subject"], "timing.subject")
-    string(timing["reason"], "timing.reason")
-    mode, target = timing["mode"], timing["target"]
-    if mode not in ("provisional", "agreed", "deferred", "unresolved", "not_applicable"):
-        raise ValueError("timing.mode: provisional, agreed, deferred, unresolved или not_applicable")
-    if mode == "not_applicable":
-        if target is not None or timing["received_value"] is not None or timing["selected_value"] is not None:
-            raise ValueError("timing not_applicable: target и оба значения должны быть null; объясните, почему условие не задаёт срок")
-        return timing
-    if target not in TIMING_TARGETS and not (isinstance(target, str) and re.fullmatch(r"/schedule/reporting_deadlines/[0-9]+", target)):
-        raise ValueError("timing.target: поле срока schedule или конкретная запись /schedule/reporting_deadlines/N; checks.status не является сроком")
-    if target in TIMING_TARGETS and TIMING_TARGETS[target][0] != item["category"]:
-        raise ValueError(f"{item['id']}: timing.target не соответствует предмету категории")
-    if timing["received_value"] is not None:
-        timing_value(target, timing["received_value"], "timing.received_value")
-    if mode in ("provisional", "agreed"):
-        timing_value(target, timing["selected_value"], "timing.selected_value")
-        if applied["kind"] != "known":
-            raise ValueError("Извлечённый выбранный срок требует kind=known; отсутствие подписи означает provisional, а не неизвестный срок")
-        if not any(binding.get("path") == target and binding.get("value") == timing["selected_value"] for binding in applied.get("state", [])):
-            raise ValueError(f"{item['id']}: свяжите выбранный срок с {target}; проверка статуса не заменяет перенос срока")
-        if mode == "agreed":
-            string(timing.get("agreement_source"), "timing.agreement_source — источник принятия выбранного условия")
-    else:
-        if timing["selected_value"] is not None or applied["kind"] != "unresolved":
-            raise ValueError("Отложенное/неизвестное условие требует selected_value=null, kind=unresolved и отдельное действие")
-        if mode == "deferred" and timing["received_value"] is None:
-            raise ValueError("Отложенное известное предложение сохраните в timing.received_value")
-        if mode == "unresolved" and timing["received_value"] is not None:
-            raise ValueError("Известное предложение нельзя объявить неизвестным: выберите provisional либо объяснённое deferred")
-    if mode != "agreed" and "agreement_source" in timing:
-        raise ValueError("agreement_source задаётся только для mode=agreed")
-    return timing
-
-
-def reviewed_timing_record(item):
-    """Запись по ID решения; одна категория может содержать несколько разных условий."""
-    return dict(item["implementation"]["timing"], source=item["source"],
-                event_ids=[event["id"] for event in item["implementation"].get("plan", [])])
-
-
-def check_timing_state(item, state, events):
-    timing = item["implementation"].get("timing")
-    if timing is None:
-        return
-    record = state.get("schedule", {}).get("reviewed_terms", {}).get(item["id"])
-    if record != reviewed_timing_record(item):
-        raise ValueError(f"{item['id']}: сохраните актуальный timing, source и event_ids в schedule.reviewed_terms по ID решения")
-    mode, target = timing["mode"], timing["target"]
-    if mode == "not_applicable":
-        return
-    expected = item["implementation"]["plan"]
-    selected_events = [events[event["id"]] for event in expected if event["id"] in events]
-    if mode in ("deferred", "unresolved"):
-        try:
-            actual = pointer(state, target)
-        except ValueError:
-            actual = None
-        if actual is not None and not (isinstance(actual, dict) and actual.get("precision") == "unspecified"):
-            raise ValueError(f"{item['id']}: отложенный срок не должен становиться обязанностью в {target}; для сохранённого прежнего соглашения выберите agreed и selected_value")
-        if any(event.get("kind") != "organizational" for event in selected_events):
-            raise ValueError(f"{item['id']}: отложенный срок требует организационного действия")
-        return
-    if not state.get("schedule", {}).get("publication_at"):
-        return  # Содержание срока уже проверено; даты событий ещё нельзя рассчитать.
-    event_id = TIMING_TARGETS.get(target, (None, None))[1]
-    if event_id == "erid" and timing["selected_value"]["precision"] != "datetime":
-        precision = timing["selected_value"]["precision"]
-        if precision == "relative":
-            matched = any(any(control.get("check") == "erid" for control in event.get("deadline_controls", []))
-                          for event in selected_events)
-        else:
-            matched = any(event.get("kind") == "organizational" and "erid" in event.get("checks", [])
-                          for event in selected_events)
-    else:
-        if event_id is None:
-            event_id = "report-" + timing["selected_value"]["id"]
-        matched = any(event["id"] == event_id for event in selected_events)
-    if not matched:
-        raise ValueError(f"{item['id']}: план должен содержать соответствующее событие/контроль срока {target}; посторонняя проверка его не заменяет")
-    for event in selected_events:
-        if not any(row.get("id") == item["id"] and row.get("mode") == mode for row in event.get("reviewed_terms", [])):
-            raise ValueError(f"{item['id']}: пересоберите план с явным статусом {mode} извлечённого срока")
-
-
-def implementation(item):
-    value = item["implementation"]
-    fields(value, ("kind",), ("reason", "state", "plan", "plan_pending_reason", "timing"), "implementation")
-    timing = timing_implementation(item)
-    if value["kind"] == "no_state_change":
-        fields(value, ("kind", "reason"), ("timing",), "implementation")
-        string(value["reason"], "implementation.reason")
-        if item["category"] in TIMED_CATEGORIES and not (timing and timing["mode"] == "not_applicable"):
-            raise ValueError(f"{item['id']}: временная категория требует known или unresolved со связью состояния и плана")
-        return
-    if value["kind"] not in ("known", "unresolved"):
-        raise ValueError("implementation.kind: known, unresolved или no_state_change")
-    fields(value, ("kind", "state", "plan"), ("reason", "plan_pending_reason", "timing"), "implementation")
-    if value["kind"] == "unresolved":
-        string(value.get("reason"), "implementation.reason")
-    if not isinstance(value["state"], list) or not value["state"]:
-        raise ValueError("implementation.state: нужен непустой список проверяемых связей")
-    if not isinstance(value["plan"], list):
-        raise ValueError("implementation.plan: нужен список проверяемых связей")
-    if not value["plan"]:
-        if not isinstance(value.get("plan_pending_reason"), str) or not value["plan_pending_reason"].strip():
-            raise ValueError("implementation.plan: нужен непустой список, либо plan_pending_reason до установления даты публикации")
-    elif "plan_pending_reason" in value:
-        raise ValueError("plan_pending_reason допустим только при пустом plan и неизвестной дате публикации")
-    used = set()
-    for binding in value["state"]:
-        fields(binding, ("path", "value"), (), "implementation.state[]")
-        path = string(binding["path"], "implementation.state.path")
-        if not path.startswith("/") or path in used:
-            raise ValueError("implementation.state.path: уникальный JSON Pointer, начинающийся с /")
-        used.add(path)
-        if value["kind"] == "known" and binding["value"] in (None, "unspecified", "unknown", ""):
-            raise ValueError("Известный срок нельзя связать с null/unspecified/unknown; сохраните конкретное условие")
-        if (value["kind"] == "known" and isinstance(binding["value"], dict)
-                and binding["value"].get("precision") == "unspecified"):
-            raise ValueError("Известный срок требует precision relative/date/datetime, а не unspecified")
-    used = set()
-    for event in value["plan"]:
-        fields(event, ("id", "at"), (), "implementation.plan[]")
-        unique_id(event["id"], used, "implementation.plan.id")
-        stamp(event["at"])
-
-
 def stamp(value):
     result = datetime.fromisoformat(string(value, "Дата события").replace("Z", "+00:00"))
     if result.tzinfo is None:
@@ -357,14 +174,14 @@ def review_scope(data, base):
     if scope["mode"] == "full":
         if set(scope) != {"mode"}:
             raise ValueError("scope full охватывает все категории; categories/source не требуются")
-        return {"mode": "full", "categories": list(CATEGORIES)}
+        return {"mode": "full"}
     if scope["mode"] != "selected_terms":
         raise ValueError("scope.mode: full или selected_terms")
     selected = scope.get("categories")
     if (not isinstance(selected, list) or not selected
-            or any(not isinstance(category, str) or category not in CATEGORIES for category in selected)
+            or any(not isinstance(category, str) or not category.strip() for category in selected)
             or len(set(selected)) != len(selected)):
-        raise ValueError("scope.categories: непустой список известных категорий без повторов")
+        raise ValueError("scope.categories: непустой список предметов сверки без повторов")
     source = scope.get("source")
     fields(source, ("path", "quote"), (), "scope.source")
     path = (base / string(source["path"], "scope.source.path")).resolve()
@@ -595,14 +412,12 @@ def load_review(raw, base, soffice=None):
         sources.append(record)
     if not isinstance(data["decisions"], list) or not data["decisions"]:
         raise ValueError("decisions: нужен непустой список решений")
-    used, covered, citations, previous = set(), set(), [], []
+    used, citations, previous = set(), [], []
     by_id = {source["id"]: source for source in sources}
     for item in data["decisions"]:
-        fields(item, ("id", "category", "topic", "source", "previous", "status", "decision", "implementation"), ("received",), "decisions[]")
+        fields(item, ("id", "category", "topic", "source", "previous", "status", "decision"), ("received",), "decisions[]")
         unique_id(item["id"], used, "decisions[].id")
-        if item["category"] not in CATEGORIES:
-            raise ValueError(f"{item['id']}: неизвестная category; выберите из {', '.join(CATEGORIES)}")
-        covered.add(item["category"])
+        string(item["category"], "category")
         string(item["topic"], "topic")
         source = item["source"]
         fields(source, ("document", "clause", "page", "quote"), ("not_found_reason", "verification"), "source")
@@ -625,7 +440,6 @@ def load_review(raw, base, soffice=None):
             raise ValueError("comparison_at: при previous.source.kind=none/message укажите время начала сравнения с часовым поясом. "
                              "Оно отделяет ранее выданные документы от появившихся после сверки")
         previous.append(dict(proof, id=item["id"]))
-        implementation(item)
         if item["status"] not in STATUSES:
             raise ValueError(f"status: выберите {', '.join(STATUSES)}")
         decision = item["decision"]
@@ -646,10 +460,6 @@ def load_review(raw, base, soffice=None):
         if decision["action"] == "replace":
             citation["replacement_span"] = replacement_span(item, by_id[source["document"]], readers, citation)
         citations.append(citation)
-    missing, extra = set(scope["categories"]) - covered, covered - set(scope["categories"])
-    if missing or extra:
-        raise ValueError(f"Охват сверки: отсутствуют решения категорий {sorted(missing)}; вне выбранного охвата {sorted(extra)}. "
-                         "Для отсутствующего/неприменимого условия нужна полноценная запись с причиной, а не отметка о просмотре")
     signatures = signature_matrix(data, sources, scope, base, readers)
     correction_groups(data, sources, citations)
     return data, sources, {"scope": scope, "citations": citations, "previous": previous,
@@ -676,9 +486,9 @@ def render(data, sources, verification, output):
               "Перечень просмотренных страниц заполняет составитель; скрипт проверяет нумерацию и полноту перечня, а не факт просмотра. "
               "Визуальные проверки и отсутствие пункта помечены отдельно и остаются ответственностью составителя. Скрипт рассчитывает SHA-256 "
               "и связывает каждое решение с листом правок; согласование, подписи и исполнение он не подтверждает. "
-              "Сборка не подтверждает перенос условий в состояние: перед выдачей обязателен check-state с текущими состоянием и планом.")
+              "Полноту условий и их перенос в состояние проверяет составитель. check-state сверяет источники с реестром сделки и корректность файлов.")
     scope = verification["scope"]
-    scope_text = (f"Полная сверка: все {len(CATEGORIES)} категорий." if scope["mode"] == "full" else
+    scope_text = ("Полная сверка полученных документов." if scope["mode"] == "full" else
                   "Выборочная сверка: " + plain(", ".join(scope["categories"])) + ". Ограничение: «" +
                   cell(scope["source"]["quote"]) + "»; " + link("источник поручения", scope["source"]["path"]) +
                   f"; SHA-256: `{scope['source']['sha256']}`.")
@@ -737,21 +547,6 @@ def render(data, sources, verification, output):
                     f"Пункт: {cell(source['clause'])}; страница: {source['page']}<br>{check_text}")
         disposition = (f"{ACTIONS[decision['action']]}: {cell(decision['reason'])}<br>"
                        f"Выбранное условие: {cell(decision['selected'])}<br>План: {cell(decision['plan'])}")
-        applied = item["implementation"]
-        disposition += "<br>Перенос: " + cell(applied["kind"])
-        if applied.get("reason"):
-            disposition += " — " + cell(applied["reason"])
-        if "timing" in applied:
-            timing = applied["timing"]
-            disposition += "<br>Срок: " + cell(timing["subject"]) + "; " + cell(timing["mode"]) + ". " + cell(timing["reason"])
-            disposition += "<br>Извлечено: " + cell(json.dumps(timing["received_value"], ensure_ascii=False))
-            disposition += "; выбрано для плана: " + cell(json.dumps(timing["selected_value"], ensure_ascii=False))
-        if applied.get("plan_pending_reason"):
-            disposition += "<br>План до установления даты не рассчитан: " + cell(applied["plan_pending_reason"])
-        for binding in applied.get("state", []):
-            disposition += "<br>Состояние: " + cell(binding["path"]) + " = " + cell(json.dumps(binding["value"], ensure_ascii=False))
-        for event in applied.get("plan", []):
-            disposition += f"<br>Событие: {cell(event['id'])}; {cell(event['at'])}"
         if decision["action"] in ("replace", "append"):
             disposition += f"<br>{link('Точная правка ' + item['id'], output / 'corrections.md')} (ID {cell(item['id'])})"
         else:
@@ -811,7 +606,7 @@ def build(input_path, output, soffice=None):
     data, sources, verification = load_review(raw, input_path.parent, soffice=soffice)
     outputs = render(data, sources, verification, output)
     outputs["review-input.json"] = raw
-    manifest = {"format": 5, "created_at": datetime.now(timezone.utc).isoformat(),
+    manifest = {"format": 6, "created_at": datetime.now(timezone.utc).isoformat(),
                 "input_path": str(input_path), "sources": sources, "verification": verification,
                 "outputs": {name: sha256(content) for name, content in outputs.items()}}
     output.mkdir(parents=True, exist_ok=False)
@@ -826,8 +621,8 @@ def audit(directory, soffice=None):
     directory = Path(directory).resolve()
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     fields(manifest, ("format", "created_at", "input_path", "sources", "outputs", "verification"), (), "manifest")
-    if manifest["format"] != 5:
-        raise ValueError("Неподдерживаемая версия сверки: нужен формат 5. Сохраните прежний пакет без изменений; "
+    if manifest["format"] != 6:
+        raise ValueError("Неподдерживаемая версия сверки: нужен формат 6. Сохраните прежний пакет без изменений; "
                          "для новой выдачи подготовьте отдельную версию по текущей схеме")
     if set(manifest["outputs"]) != {"review-input.json", "terms-review.md", "corrections.md"}:
         raise ValueError("Неподдерживаемый или изменённый манифест")
@@ -881,18 +676,6 @@ def amendment_changes(directory, soffice=None):
         sections.append(text)
     return {"text": "\n\n".join(sections), "review_source": {
         "directory": str(directory), "manifest_sha256": sha256(manifest_raw), "input_sha256": sha256(input_raw)}}
-
-
-def pointer(data, path):
-    """JSON Pointer: точный путь в объекте/массиве, без поиска похожего поля."""
-    current = data
-    try:
-        for part in path[1:].split("/"):
-            key = part.replace("~1", "/").replace("~0", "~")
-            current = current[int(key)] if isinstance(current, list) else current[key]
-    except (KeyError, TypeError, ValueError, IndexError) as error:
-        raise ValueError(f"В состоянии отсутствует путь {path}") from error
-    return current
 
 
 def check_current_review_references(state, base, directory):
@@ -950,7 +733,7 @@ def check_current_review_references(state, base, directory):
 
 
 def check_state(directory, state_path, plan_path=None, soffice=None):
-    """Сверить ожидания таблицы с текущими файлами, ничего не изменяя."""
+    """Сверить источники с реестром и проверить текущие файлы состояния и плана."""
     result = audit(directory, soffice=soffice)
     directory, state_path = Path(directory).resolve(), Path(state_path).resolve()
     state_raw = state_path.read_bytes()
@@ -992,31 +775,11 @@ def check_state(directory, state_path, plan_path=None, soffice=None):
                 if status.lower().startswith(("draft", "proposed")) and old.get("current") is not False:
                     raise ValueError(f"{proof['id']}: прежний собственный проект {old['path']} ещё актуален. "
                                      "Снимите весь прежний пакет через handoff register --supersedes; сохраните файл и delivered_at")
-    publication_known = bool(state.get("schedule", {}).get("publication_at"))
-    has_plan_bindings = any(item["implementation"].get("plan") for item in data["decisions"])
-    if plan_path is None and (publication_known or has_plan_bindings):
-        raise ValueError("Известная дата публикации или плановые связи сверки требуют текущий план --plan")
     plan_data, plan_raw = None, None
     if plan_path is not None:
         plan_path = Path(plan_path).resolve()
         plan_raw = plan_path.read_bytes()
         plan_data = json.loads(plan_raw)
-    events = {event["id"]: event for section in ("events", "completed") for event in (plan_data or {}).get(section, [])}
-    for item in data["decisions"]:
-        applied = item["implementation"]
-        if publication_known and applied.get("plan_pending_reason"):
-            raise ValueError(f"{item['id']}: дата публикации уже известна; заполните плановые связи вместо plan_pending_reason")
-        for binding in applied.get("state", []):
-            actual = pointer(state, binding["path"])
-            if json.dumps(actual, sort_keys=True) != json.dumps(binding["value"], sort_keys=True):
-                raise ValueError(f"{item['id']}: состояние {binding['path']} = {actual!r}, таблица требует {binding['value']!r}")
-        for expected in applied.get("plan", []):
-            event = events.get(expected["id"])
-            if event is None or stamp(event["at"]) != stamp(expected["at"]):
-                raise ValueError(f"{item['id']}: нет ожидаемого события {expected['id']} на {expected['at']} в плане/истории выполнения")
-            if applied["kind"] == "unresolved" and event.get("kind") != "organizational":
-                raise ValueError(f"{item['id']}: неразрешённое условие требует отдельного организационного действия")
-        check_timing_state(item, state, events)
     if plan_data is None:
         deal.validate(state, state_path)
     else:

@@ -373,7 +373,7 @@ class ReviewProvenanceTests(unittest.TestCase):
         data["format"] = 4
         path.write_text(json.dumps(data))
         before = {p.name: p.read_bytes() for p in self.output.iterdir()}
-        with self.assertRaisesRegex(ValueError, "нужен формат 5.*без изменений"):
+        with self.assertRaisesRegex(ValueError, "нужен формат 6.*без изменений"):
             review.audit(self.output)
         self.assertEqual(before, {p.name: p.read_bytes() for p in self.output.iterdir()})
 

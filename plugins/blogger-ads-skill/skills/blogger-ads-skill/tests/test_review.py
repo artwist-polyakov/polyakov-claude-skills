@@ -59,9 +59,6 @@ class ReviewTests(unittest.TestCase):
                 "previous": {"source": {
                     "kind": "none", "group": "contract", "reason": "Первое поручение: проект ещё не выдавался."}},
                 "status": "proposed",
-                "implementation": {"kind": "unresolved", "reason": "Платёжный пункт не определяет связь с подписанием.",
-                                   "state": [{"path": "/schedule/payment_due_at", "value": None}],
-                                   "plan": [{"id": "report-clarify", "at": "2026-11-02T10:00:00+03:00"}]},
                 "decision": {"action": "replace", "reason": "Сохранить согласованную последовательность",
                              "selected": "Оплата после подписания", "plan": "Согласовать новую редакцию",
                              "target": "Договор, п. 5.2", "original": "The customer pays for the services in advance.",
@@ -132,17 +129,9 @@ class ReviewTests(unittest.TestCase):
                                           "not_applicable": "Учебный файл без подписной части; просмотрены все три страницы."}]
         template = self.data["decisions"][0]
         self.data["decisions"] = []
-        for category in review.CATEGORIES:
+        for category in ("payment", "signing"):
             item = copy.deepcopy(template)
-            item["id"] = category
-            item["category"] = category
-            item["topic"] = review.CATEGORIES[category]
-            if category in review.TIMING_CATEGORIES:
-                item["implementation"]["timing"] = {
-                    "subject": "Учебный пункт об оплате не содержит отдельного срока этой категории",
-                    "target": None, "mode": "not_applicable", "received_value": None, "selected_value": None,
-                    "reason": "В тестовом PDF только условие предоплаты; отдельного срока этой категории нет."}
-                self.state["schedule"].setdefault("reviewed_terms", {})[item["id"]] = review.reviewed_timing_record(item)
+            item.update(id=category, category=category)
             self.data["decisions"].append(item)
 
     def signature(self, label="Договор", document="contract", page=3):
@@ -187,7 +176,6 @@ class ReviewTests(unittest.TestCase):
         item['topic'] = payload
         item['source']['clause'] = payload
         item['previous']['source']['reason'] = payload
-        item['implementation']['reason'] = payload
         for key in ('reason', 'selected', 'plan', 'target'):
             item['decision'][key] = payload
         unchanged = copy.deepcopy(item)
@@ -479,22 +467,22 @@ class ReviewTests(unittest.TestCase):
         self.assertTrue(review.audit(self.output)["valid"])
         self.assertTrue(review.audit(second)["valid"])
 
-    def test_full_scope_requires_all_fourteen_categories_with_complete_decisions(self):
+    def test_full_review_does_not_require_rows_for_every_checklist_category(self):
         self.full_scope()
-        self.assertEqual(len(self.data["decisions"]), 14)
-        removed = next(item for item in self.data["decisions"] if item["category"] == "exchange")
-        self.data["decisions"].remove(removed)
-        self.assertEqual(removed["category"], "exchange")
-        with self.assertRaisesRegex(ValueError, "отсутствуют решения категорий.*exchange"):
-            self.build()
-        self.assertFalse(self.output.exists())
-        self.data["decisions"].append({"id": "exchange", "category": "exchange", "reviewed": True})
-        with self.assertRaisesRegex(ValueError, "отсутствуют поля"):
-            self.build()
-        self.data["decisions"][-1] = removed
+        self.data["decisions"] = self.data["decisions"][:1]
         self.build()
-        self.assertIn("все 14 категорий", (self.output / "terms-review.md").read_text())
         self.assertTrue(review.audit(self.output)["valid"])
+        self.assertIn("Полная сверка полученных документов", (self.output / "terms-review.md").read_text())
+
+    def test_review_checks_sources_without_requiring_a_plan_for_each_decision(self):
+        self.build()
+        self.save_state_plan()
+        before = {path: path.read_bytes() for path in [self.state_path, *self.output.iterdir()]}
+        result = review.check_state(self.output, self.state_path)
+        self.assertTrue(result["state_checked"])
+        self.assertIsNone(result["plan"])
+        self.assertEqual(before, {path: path.read_bytes() for path in before})
+        self.assertFalse(review.audit(self.output)["state_checked"])
 
     def test_full_scope_requires_complete_page_list_for_each_pdf(self):
         self.full_scope()
@@ -548,27 +536,11 @@ class ReviewTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "всех страниц PDF"):
                 check()
 
-    def test_ord_reporting_does_not_cover_creative_delivery_or_report_to_client(self):
-        self.full_scope()
-        original = copy.deepcopy(self.data)
-        for category in ("creative_delivery", "client_reporting"):
-            with self.subTest(missing=category):
-                self.data = copy.deepcopy(original)
-                self.data["decisions"] = [item for item in self.data["decisions"] if item["category"] != category]
-                self.assertTrue(any(item["category"] == "ord_reporting" for item in self.data["decisions"]))
-                with self.assertRaisesRegex(ValueError, "отсутствуют решения категорий.*" + category):
-                    self.build()
-                self.assertFalse(self.output.exists())
-
-    def test_selected_scope_requires_literal_user_limit_and_complete_selected_categories(self):
+    def test_selected_scope_requires_literal_user_limit(self):
         self.data["scope"]["source"]["quote"] = "Удобнее проверить лишь оплату."
         with self.assertRaisesRegex(ValueError, "ограничения поручения нет"):
             self.build()
         self.data["scope"]["source"]["quote"] = "Проверь только порядок оплаты."
-        self.data["scope"]["categories"].append("exchange")
-        with self.assertRaisesRegex(ValueError, "exchange"):
-            self.build()
-        self.data["scope"]["categories"] = ["payment"]
         self.build()
         table = (self.output / "terms-review.md").read_text()
         self.assertIn("Выборочная сверка: payment", table)
@@ -712,101 +684,6 @@ class ReviewTests(unittest.TestCase):
         self.assertNotIn("Цитата автоматически найдена", table)
         self.assertIn(source["quote"], (self.output / "corrections.md").read_text())
         self.assertTrue(review.audit(self.output)["valid"])
-
-    def test_timing_category_cannot_skip_binding_or_declare_known_deadline_unknown(self):
-        item = self.data["decisions"][0]
-        original = copy.deepcopy(item["implementation"])
-        item["implementation"] = {"kind": "no_state_change", "reason": "Договор пока не подписан."}
-        with self.assertRaisesRegex(ValueError, "временная категория"):
-            self.build()
-        for value in (None, "unspecified", {"precision": "unspecified", "condition": None}):
-            item["implementation"] = dict(copy.deepcopy(original), kind="known")
-            item["implementation"]["state"][0]["value"] = value
-            with self.assertRaisesRegex(ValueError, "Известный срок"):
-                self.build()
-        item["implementation"] = original
-        item["implementation"]["plan"] = []
-        with self.assertRaisesRegex(ValueError, "непустой список"):
-            self.build()
-        self.assertFalse(self.output.exists())
-
-    def test_claims_24_hours_cannot_remain_null_or_use_an_old_plan(self):
-        item = self.data["decisions"][0]
-        item["implementation"] = {"kind": "known", "state": [
-            {"path": "/schedule/claims_after_end_hours", "value": 24}], "plan": [
-            {"id": "claims", "at": "2026-11-12T09:00:00+03:00"}]}
-        self.build()
-        self.save_state_plan()
-        with self.assertRaisesRegex(ValueError, "claims_after_end_hours.*таблица требует 24"):
-            self.check()
-        self.state["schedule"]["claims_after_end_hours"] = 24
-        self.state_path.write_text(json.dumps(self.state), encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "нет ожидаемого события claims"):
-            self.check()
-        self.save_state_plan()
-        before = {path: path.read_bytes() for path in [self.state_path, self.plan_path, *self.output.iterdir()]}
-        result = self.check()
-        self.assertTrue(result["state_checked"])
-        self.assertEqual(result["state"]["sha256"], hashlib.sha256(self.state_path.read_bytes()).hexdigest())
-        self.assertEqual(before, {path: path.read_bytes() for path in before})
-        self.assertIn(review.plain("/schedule/claims_after_end_hours = 24"), (self.output / "terms-review.md").read_text())
-        self.assertFalse(review.audit(self.output)["state_checked"])
-
-    def test_relative_erid_condition_must_survive_in_state_without_inventing_hour(self):
-        term = {"precision": "relative", "condition": "ERID за один рабочий день до публикации",
-                "source": "Полученный договор п.4.1, предварительное условие до принятия",
-                "calculation": {"kind": "business_days_before_publication", "days": 1, "requires": []}}
-        self.data["decisions"][0]["implementation"] = {"kind": "known", "state": [
-            {"path": "/schedule/deadline_terms/erid", "value": term}], "plan": [
-            {"id": "report-clarify", "at": "2026-11-02T10:00:00+03:00"}]}
-        self.build()
-        self.save_state_plan()
-        with self.assertRaisesRegex(ValueError, "deadline_terms/erid"):
-            self.check()
-        self.state["schedule"]["deadline_terms"]["erid"] = term
-        self.save_state_plan()
-        self.assertTrue(self.check()["state_checked"])
-        self.assertIsNone(json.loads(self.state_path.read_text())["schedule"]["erid_due_at"])
-
-    def test_client_reporting_keeps_previous_24_hours_and_checks_new_one_hour(self):
-        self.prior_document()
-        self.data["scope"]["categories"] = ["client_reporting"]
-        self.user_source.write_text("Проверь только передачу ссылки заказчику.", encoding="utf-8")
-        self.data["scope"]["source"]["quote"] = self.user_source.read_text()
-        item = self.data["decisions"][0]
-        item.update(id="link", category="client_reporting", topic="Ссылка заказчику")
-        item["implementation"] = {"kind": "known", "state": [
-            {"path": "/schedule/link_after_publication_hours", "value": 1}], "plan": [
-            {"id": "link", "at": "2026-11-09T10:00:00+03:00"}], "timing": {
-                "subject": "Передача ссылки после публикации", "target": "/schedule/link_after_publication_hours",
-                "mode": "provisional", "received_value": 1, "selected_value": 1,
-                "reason": "Предварительный план по полученному сроку до отдельного принятия."}}
-        self.state["schedule"]["reviewed_terms"] = {item["id"]: review.reviewed_timing_record(item)}
-        self.build()
-        self.state["schedule"]["link_after_publication_hours"] = 24
-        self.save_state_plan()
-        with self.assertRaisesRegex(ValueError, "link_after_publication_hours.*таблица требует 1"):
-            self.check()
-        self.state["schedule"]["link_after_publication_hours"] = 1
-        self.save_state_plan()
-        self.assertTrue(self.check()["state_checked"])
-        self.assertIn("Report within 24 hours after publication.", (self.output / "terms-review.md").read_text())
-
-    def test_unresolved_requires_reason_and_concrete_organizational_action(self):
-        applied = self.data["decisions"][0]["implementation"]
-        reason = applied.pop("reason")
-        with self.assertRaisesRegex(ValueError, "reason"):
-            self.build()
-        applied["reason"] = reason
-        applied["plan"] = [{"id": "publication", "at": "2026-11-09T09:00:00+03:00"}]
-        self.build()
-        plan = self.save_state_plan()
-        # Обычное событие публикации не заменяет уточнение неизвестного условия.
-        publication = next(event for event in plan["events"] if event["at"] == "2026-11-09T09:00:00+03:00")
-        publication["id"] = "publication"
-        self.plan_path.write_text(json.dumps(plan))
-        with self.assertRaisesRegex(ValueError, "организационного действия"):
-            self.check()
 
     def test_recalculation_detects_stale_plan_even_with_same_revision_and_expected_event(self):
         self.build()
@@ -1389,44 +1266,6 @@ class ReviewTests(unittest.TestCase):
         self.data["documents"][0].update(original_path=path.name, original_sha256="0" * 64)
         with self.assertRaisesRegex(ValueError, "неизвестные поля"):
             self.build()
-
-    def test_unknown_publication_allows_no_plan_only_with_explicit_pending_reason(self):
-        applied = self.data["decisions"][0]["implementation"]
-        applied["plan"] = []
-        with self.assertRaisesRegex(ValueError, "plan_pending_reason"):
-            self.build()
-        applied["plan_pending_reason"] = "Дата публикации ещё не установлена; расчёт после её согласования."
-        self.build()
-        self.state["schedule"]["publication_at"] = None
-        self.state["documents"] = [{"path": self.source.name, "sha256": review.sha256(self.source.read_bytes()), "status": "received"}]
-        self.state_path.write_text(json.dumps(self.state))
-        result = review.check_state(self.output, self.state_path)
-        self.assertTrue(result["state_checked"])
-        self.assertIsNone(result["plan"])
-        self.assertIsNone(json.loads(self.state_path.read_text())["schedule"]["publication_at"])
-        # Состояние по-прежнему проверяется, хотя расписание ещё не рассчитано.
-        self.state["schedule"].pop("payment_due_at")
-        self.state_path.write_text(json.dumps(self.state))
-        with self.assertRaisesRegex(ValueError, "отсутствует путь"):
-            review.check_state(self.output, self.state_path)
-
-    def test_pending_plan_cannot_bypass_known_publication_or_existing_bindings(self):
-        self.build()
-        self.save_state_plan()
-        with self.assertRaisesRegex(ValueError, "требуют текущий план"):
-            review.check_state(self.output, self.state_path)
-        self.state["schedule"]["publication_at"] = None
-        self.state_path.write_text(json.dumps(self.state))
-        with self.assertRaisesRegex(ValueError, "плановые связи"):
-            review.check_state(self.output, self.state_path)
-        applied = self.data["decisions"][0]["implementation"]
-        applied.update(plan=[], plan_pending_reason="Дата пока неизвестна")
-        self.output = self.base / "review-v2"
-        self.build()
-        self.state["schedule"]["publication_at"] = "2026-11-09T09:00:00+03:00"
-        self.save_state_plan()
-        with self.assertRaisesRegex(ValueError, "дата публикации уже известна"):
-            self.check()
 
 
 if __name__ == "__main__":

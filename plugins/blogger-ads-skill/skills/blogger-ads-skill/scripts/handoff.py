@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["pypdf>=5,<7", "pymupdf>=1.26,<2", "markdown-it-py>=3,<5"]
 # ///
-"""Учёт выдачи, дословные поручения и проверка файлов перед ответом. Без сети."""
+"""Учёт версий и техническая проверка выдаваемых файлов. Без сети."""
 import argparse
 import hashlib
 import json
@@ -294,19 +294,6 @@ def save(path, data):
     deal.write_state(path, data)
 
 
-def fact_basis(state):
-    fields = ('stage', 'policy', 'user_role', 'parties', 'channel', 'checks', 'commercial', 'responsibilities', 'schedule', 'publication', 'creative')
-    return hashlib.sha256(json.dumps({key: state.get(key) for key in fields}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-
-
-def fact_bound(item):
-    """Письма и авторские заметки описывают факты на момент составления."""
-    if received_status(item.get('status')):
-        return False
-    return item.get('group') in {'correspondence', 'analysis'} or (
-        item.get('group') in {'evidence', 'source'} and Path(item.get('path', '')).suffix.lower() == '.md')
-
-
 def link_report_source(path):
     """Связь отчёта inspect_links с исходником; прочие JSON сюда не относятся."""
     if path.suffix.lower() != '.json':
@@ -564,32 +551,14 @@ def layout_issues(documents, soffice=None):
     return issues
 
 
-def refresh_records(state, at):
-    """Советы и письма — снимки фактов; архивирование не завершает действия сделки."""
-    deal.stamp(at)
-    basis = fact_basis(state)
-    for index, item in enumerate(state.get('recommendations', [])):
-        if not isinstance(item, dict):
-            state['recommendations'][index] = {'text': str(item), 'current': False,
-                                               'archive_reason': 'Старая заметка без даты и проверяемого основания'}
-            continue
-        if item.get('at') == at and item.get('current') is not False and item.get('basis_sha256', basis) == basis:
-            item.update(current=True, basis_sha256=basis)
-        else:
-            item.update(current=False, archive_reason='Совет относится к прежнему состоянию; актуальные действия см. в проверках и плане')
-    for item in state.get('documents', []):
-        if fact_bound(item) and item.get('basis_sha256') != basis:
-            item.update(current=False, archive_reason='Письмо или аналитическая заметка составлены до изменения фактов сделки')
-
-
 def refresh(state_path, at):
     state_path = Path(state_path).resolve()
     state = deal.read_json(state_path)
-    refresh_records(state, at)
+    deal.stamp(at)
     archive_link_reports(state, state_path.parent)
     archive_layout_manifests(state, state_path.parent)
     save(state_path, state)
-    return {'refreshed_at': at, 'note': 'Прежние советы и устаревшие письма сохранены как исторические; проверки и обязательства не закрывались'}
+    return {'refreshed_at': at, 'note': 'Отчёты ссылок и вёрстки заменённых документов отмечены историческими'}
 
 
 def contract_snapshot(documents):
@@ -639,8 +608,6 @@ def register(state_path, files, status, version, at, supersedes=(), group='docum
         if digest in received_digests and not received_status(status):
             raise ValueError(f'Полученный оригинал или его точная копия {path}: сохраните статус received или received_*. '
                              'Подписи и согласование учитываются в checks, а не заменой статуса получения')
-        if previous and fact_bound(previous) and previous.get('basis_sha256') != fact_basis(state):
-            raise ValueError(f'Основание прежнего письма или заметки изменилось: {path}. Подготовьте актуальную редакцию отдельным файлом; повторная регистрация не обновляет его содержание')
         kind = document_kind if document_kind is not None else (previous or {}).get('document_kind')
         reason = kind_reason if kind_reason is not None else ((previous or {}).get('kind_reason') if kind == 'other' else None)
         document_classification(kind, reason, path.suffix.lower() in {'.pdf', '.docx'})
@@ -661,7 +628,6 @@ def register(state_path, files, status, version, at, supersedes=(), group='docum
     if set(replaced) & {p for p, *_ in prepared}:
         raise ValueError('Нельзя одновременно выдать и заменить один файл')
     previous_contracts = contract_snapshot(documents)
-    refresh_records(state, at)
     for item in documents:
         if item.get('group') == group and item.get('version') != version:
             item['current'] = False
@@ -676,8 +642,6 @@ def register(state_path, files, status, version, at, supersedes=(), group='docum
                 item['kind_reason'] = reason
             else:
                 item.pop('kind_reason', None)
-        if fact_bound(item):
-            item['basis_sha256'] = fact_basis(state)
         if exported_from:
             item['source_docx'] = exported_from
         if review_source is not None:
@@ -697,7 +661,6 @@ def register(state_path, files, status, version, at, supersedes=(), group='docum
             'at': at, 'action': 'register_documents',
             'previous_contract_documents': previous_contracts, 'contract_documents': current_contracts,
             'invalidated_checks': {'contract': dict(proof)}})
-        refresh_records(state, at)
     archive_link_reports(state, base)
     archive_layout_manifests(state, base)
     save(state_path, state)
@@ -764,22 +727,6 @@ def check_amendments(documents, state_path, plan_path, review_dir, soffice=None)
             raise ValueError(f'{source}: зарегистрируйте текущую карту .fields.json вместе с DOCX допсоглашения')
         import render_contract
         render_contract.verify_review_document(source, review_dir, soffice=soffice)
-
-
-def instruction(state_path, source, quote, at):
-    state_path = Path(state_path).resolve()
-    source = Path(source).resolve()
-    deal.stamp(at)
-    if not quote.strip() or quote not in source.read_text(encoding='utf-8'):
-        raise ValueError('Поручение должно быть дословным фрагментом сообщения пользователя; пересказ и собственный совет не подходят')
-    state = deal.read_json(state_path)
-    record = {'text': quote, 'source': relative(state_path.parent, source),
-              'source_sha256': sha(source), 'recorded_at': at}
-    entries = state.setdefault('user_instructions', [])
-    if not any(isinstance(item, dict) and item.get('text') == quote and item.get('source') == record['source'] for item in entries):
-        entries.append(record)
-    save(state_path, state)
-    return record
 
 
 MONTHS = dict(zip(('января февраля марта апреля мая июня июля августа сентября октября ноября декабря').split(), range(1, 13)))
@@ -988,23 +935,6 @@ def audit(state_path, response=None, historical=(), record_issue=False, soffice=
                 check_history_hashes(item, f'{path}[{index}]')
 
     check_history_hashes(state.get('history', []), 'history')
-    basis = fact_basis(state)
-    for index, item in enumerate(state.get('recommendations', []), 1):
-        if not isinstance(item, dict) or not isinstance(item.get('current'), bool):
-            issues.append(f'recommendations[{index}]: выполните refresh с временем текущей реплики, чтобы отделить исторические советы')
-        elif item['current'] and item.get('basis_sha256') != basis:
-            issues.append(f'recommendations[{index}]: факты изменились после совета; обновите его либо выполните refresh для архивирования')
-    for index, item in enumerate(state.get('user_instructions', []), 1):
-        try:
-            if not isinstance(item, dict) or not item.get('text') or not item.get('source'):
-                raise ValueError('нужны text с дословным поручением и source, а не пересказ')
-            path = resolve(base, item['source'])
-            if sha(path) != item.get('source_sha256'):
-                raise ValueError('не совпадает контрольная сумма исходного сообщения')
-            if item['text'] not in path.read_text(encoding='utf-8'):
-                raise ValueError('такого дословного поручения нет в источнике')
-        except (ValueError, OSError, TypeError) as error:
-            issues.append(f'user_instructions[{index}]: {error}')
     documents = {}
     current_groups = {}
     for index, item in enumerate(state.get('documents', []), 1):
@@ -1023,8 +953,6 @@ def audit(state_path, response=None, historical=(), record_issue=False, soffice=
                     raise ValueError('для выданного документа нужна постоянная group без номера версии')
             if item.get('current') and item.get('group'):
                 current_groups.setdefault(item['group'], set()).add(item.get('version'))
-                if fact_bound(item) and item.get('basis_sha256') != basis:
-                    raise ValueError('письмо или аналитическая заметка основаны на прежних фактах; выполните refresh и подготовьте новую версию при необходимости')
             if item.get('current') and path.suffix.lower() in {'.pdf', '.docx'}:
                 document_classification(item.get('document_kind'), item.get('kind_reason'), required=True)
             documents[path] = item
@@ -1188,10 +1116,6 @@ def main():
     reg.add_argument('--document-kind', choices=sorted(DOCUMENT_KINDS), help='Вид PDF/DOCX по содержанию; обязателен для собственных и полученных документов')
     reg.add_argument('--kind-reason', help='Обоснование document-kind=other')
     reg.add_argument('--source-docx', type=Path, help='Зарегистрированный исходный DOCX собственного PDF-допсоглашения; качество экспорта проверяется визуально')
-    ins = sub.add_parser('instruction')
-    ins.add_argument('--source', type=Path, required=True)
-    ins.add_argument('--quote', required=True)
-    ins.add_argument('--at', required=True)
     change_date = sub.add_parser('contract-date-change', help='Подтверждённая пользователем смена известной даты основного договора')
     change_date.add_argument('--number', required=True)
     change_date.add_argument('--from-date', required=True)
@@ -1211,15 +1135,13 @@ def main():
     restore_cmd.add_argument('--save-current', type=Path, help='Новый файл для сохранения текущих правок перед восстановлением; обязателен, если исходник изменён')
     refresh_cmd = sub.add_parser('refresh')
     refresh_cmd.add_argument('--at', required=True)
-    for command in (reg, ins, check, refresh_cmd, restore_cmd, change_date):
+    for command in (reg, check, refresh_cmd, restore_cmd, change_date):
         command.add_argument('--state', type=Path, required=True)
     args = parser.parse_args()
     try:
         if args.command == 'register':
             result = register(args.state, args.files, args.status, args.version, args.at, args.supersedes, args.group,
                               args.document_kind, args.kind_reason, args.source_docx)
-        elif args.command == 'instruction':
-            result = instruction(args.state, args.source, args.quote, args.at)
         elif args.command == 'contract-date-change':
             result = contract_date_change(args.state, args.number, args.from_date, args.to_date,
                                           args.source, args.quote, args.at)

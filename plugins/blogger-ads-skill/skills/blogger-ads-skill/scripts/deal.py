@@ -602,12 +602,6 @@ def validate(state, state_path=None):
         if not isinstance(policy.get(key), bool):
             raise ValueError(f"policy.{key}: требуется true или false")
     schedule = state.get("schedule", {})
-    reviewed = schedule.get("reviewed_terms", {})
-    if not isinstance(reviewed, dict):
-        raise ValueError("schedule.reviewed_terms: требуется объект")
-    for key, term in reviewed.items():
-        if not isinstance(term, dict):
-            raise ValueError(f"schedule.reviewed_terms.{key}: требуется объект условия")
     if isinstance(state.get("commercial"), dict) and "payment_received" in state["commercial"]:
         raise ValueError("commercial.payment_received дублирует статус оплаты: удалите этот флаг и используйте только checks.payment. "
                          "Сумму, дату поступления и источник подтверждения можно сохранить отдельно; не создавайте второй статус оплаты")
@@ -859,26 +853,6 @@ def _plan(state, now=None, state_path=None, strict_deadlines=False):
         if related:
             note += " " + " ".join(control["note"] for control in related)
             metadata["deadline_controls"] = related
-        reviewed = []
-        for decision_id, term in schedule.get("reviewed_terms", {}).items():
-            if key not in term.get("event_ids", []) or term.get("mode") == "not_applicable":
-                continue
-            mode = term["mode"]
-            labels = {"provisional": "Предварительное условие; принятие не подтверждено",
-                      "agreed": "Согласованное условие", "deferred": "Решение по предложенному сроку отложено",
-                      "unresolved": "Срок требует уточнения"}
-            note += " " + labels[mode] + ": " + term["subject"] + ". " + term["reason"]
-            value = term["selected_value"] if term["selected_value"] is not None else term["received_value"]
-            if isinstance(value, dict) and value.get("condition"):
-                note += " Условие: " + value["condition"]
-            elif type(value) in (int, float):
-                note += f" Значение срока: {value} ч."
-            if mode == "agreed":
-                note += " Источник принятия: " + term["agreement_source"]
-            reviewed.append({"id": decision_id, "mode": mode, "subject": term["subject"],
-                             "received_value": term["received_value"], "selected_value": term["selected_value"]})
-        if reviewed:
-            metadata["reviewed_terms"] = reviewed
         event = {"id": key, "uid": f"{state['deal_id']}-{key}@blogger-ads-skill",
                  "title": title, "at": at.isoformat(), "overdue": at < now,
                  "note": note, "sequence": revision, **metadata}
@@ -900,11 +874,8 @@ def _plan(state, now=None, state_path=None, strict_deadlines=False):
             instruction = ("Проверить получение оплаты по согласованным условиям и сохранить подтверждение получателя."
                            if key == "payment" else
                            "Получить токен ОРД и сверить полный текст, все URL и медиа либо их отсутствие в зарегистрированной карточке с утверждённым материалом; сохранить доказательства обеих проверок.")
-            provisional = any(row.get("mode") == "provisional" and row.get("target") == f"/schedule/deadline_terms/{key}"
-                              for row in schedule.get("reviewed_terms", {}).values())
-            deadline_label = "Предварительный срок" if provisional else "Согласованный срок"
             add(key, title, stamp(schedule[key + "_due_at"]).astimezone(zone),
-                sentence(f"{deadline_label}: {term['condition']}") + " "
+                sentence(f"Срок: {term['condition']}") + " "
                 + sentence(f"Основание: {term['source']}") + " " + instruction)
     add("readiness", "Проверить готовность размещения", hours(publication, -readiness),
         "Проверить договор, оплату по согласованным условиям, маркировку, полный материал ОРД, "
@@ -1089,47 +1060,19 @@ def readiness_issues(state, now):
     return issues
 
 
-def unfinished_checks(state, now):
-    """Незавершённые проверки с учётом версии, токена и времени доказательств."""
-    pending = set(readiness_issues(state, now))
-    checks = state.get("checks", {})
-    pending.update(key for key in CHECK_LABELS if not confirmed(checks.get(key, {}), now))
-    token = checks.get("erid", {}).get("token")
-    pending.update(key for key in ("erid", "ord_creative", "marking", "erir")
-                   if not valid_token(token) or checks.get(key, {}).get("token") != token)
-    fee = fee_obligation(state["schedule"])
-    if fee["applicability"] == "unknown":
-        pending.add("fee_period")
-    return pending
-
-
 def retain_completed_actions(state, now, previous, current):
     """Снятое напоминание сохраняет подтверждённое выполнение в истории плана."""
     if previous.get("deal_id") != current["deal_id"]:
         raise ValueError("Предыдущий план относится к другой сделке")
     present = {event["id"] for section in ("events", "completed") for event in current[section]}
-    pending = unfinished_checks(state, now)
-    checks = state.get("checks", {})
     for section in ("events", "completed"):
         for old in previous.get(section, []):
             if old["id"] in present:
                 continue
-            explicit = old["id"] in state.get("completed_events", {})
-            if explicit and not confirmed(state["completed_events"][old["id"]], now):
-                # Явное возобновление или отзыв выполнения важнее прежних checks.
-                continue
-            linked = old.get("checks", [])
-            # Связанные проверки должны быть актуальны и при явной записи выполнения.
-            valid = all(key in CHECK_LABELS and key not in pending for key in linked)
             proof = completion(state, old["id"], now)
-            if proof and (not valid or ("creative_sha256" in proof and proof["creative_sha256"] != digest(state.get("creative", {})))):
-                proof = None
-            if not proof and not explicit and old.get("kind") == "organizational" and linked and valid:
-                proof = {"checked_at": max((checks[key]["checked_at"] for key in linked), key=stamp),
-                         "source": "; ".join(f"{CHECK_LABELS[key]}: {checks[key]['source']}" for key in linked)}
             if proof:
                 event = dict(old, overdue=False)
-                if section != "completed" or explicit:
+                if section != "completed" or old["id"] in state.get("completed_events", {}):
                     event.update(completed_at=proof["checked_at"], completion_source=proof["source"])
                 current["completed"].append(event)
                 present.add(old["id"])
