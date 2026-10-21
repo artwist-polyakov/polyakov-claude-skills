@@ -6,11 +6,10 @@
 """Счёт и УПД для услуг рекламы российских ИП/ЮЛ. Ничего не отправляет в ЭДО."""
 
 import argparse
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
 from html import escape
 import json
-from hashlib import sha256
 from pathlib import Path
 import re
 from string import Template
@@ -342,7 +341,6 @@ def render_html(data, command):
             table.append("<tr>" + "".join(f"<td>{escape(cell)}</td>" for cell in cells) + "</tr>")
         raw = {"upd_rows": "".join(table)}
         template = "upd.html"
-    raw["demo_notice"] = '<p style="border:2px solid #900;padding:10px"><strong>ОБРАЗЕЦ. ВЫМЫШЛЕННЫЕ ДАННЫЕ. НЕ ДЛЯ ОПЛАТЫ И ПОДПИСАНИЯ.</strong></p>' if data.get("demo") else ""
     return Template((ASSETS / template).read_text(encoding="utf-8")).substitute({**{k: escape(str(v)) for k, v in values.items()}, **raw})
 
 
@@ -388,11 +386,7 @@ def validate_xml(xml, filename):
         raise ValueError("Имя XML-файла не совпадает с ИдФайл")
 
 
-def render_xml(data, *, training=False):
-    if training and data.get("demo") is not True:
-        raise ValueError("Учебный XML требует demo=true; не меняйте учебные реквизиты на рабочие")
-    if not training and data.get("demo"):
-        raise ValueError("Рабочий XML не создаётся с demo=true. Для учебной проверки используйте upd-xml-demo с отдельным новым каталогом")
+def render_xml(data):
     validate_data(data, "upd-xml")
     rows, totals = calculate(data)
     taxed = data["vat"]["rate"] != "none"
@@ -449,33 +443,9 @@ def write_new(path, payload):
         stream.write(payload)
 
 
-def write_training_bundle(data, output):
-    """Учебные XML остаются demo=true и всегда сопровождаются явным манифестом."""
-    filename, xml = render_xml(data, training=True)
-    source = (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-    manifest = {
-        "never_send": True, "not_a_real_deal": True, "demo": True,
-        "notice": "Учебный XML. Не отправлять, не импортировать в рабочий ЭДО, не подписывать.",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "document_generated_at": data["document"]["generated_at"],
-        "document_uuid": data["edo"]["document_uuid"],
-        "direction": {"sender": {"side": "seller", "id": data["seller"]["edo_id"]},
-                      "receiver": {"side": "buyer", "id": data["buyer"]["edo_id"]}},
-        "function": "ДОП" if data["vat"]["rate"] == "none" else "СЧФДОП",
-        "xsd_valid": True, "schema_sha256": sha256(SCHEMA.read_bytes()).hexdigest(),
-        "files": {filename: sha256(xml).hexdigest(), "data.json": sha256(source).hexdigest()},
-    }
-    # Существующий каталог нельзя превратить в учебный или затереть повторной сборкой.
-    output.mkdir(parents=True, exist_ok=False)
-    write_new(output / "manifest.json", (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
-    write_new(output / "data.json", source)
-    write_new(output / filename, xml)
-    return output / filename
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("invoice", "upd-print", "upd-xml", "upd-xml-demo"))
+    parser.add_argument("command", choices=("invoice", "upd-print", "upd-xml"))
     parser.add_argument("--data", required=True, type=Path, help="Файл JSON с реквизитами")
     parser.add_argument("--output", required=True, type=Path, help="Для HTML — новый файл; для XML — каталог")
     args = parser.parse_args()
@@ -483,22 +453,16 @@ def main():
         data = json.loads(args.data.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ValueError("Корень JSON должен быть объектом")
-        if args.command == "upd-xml-demo":
-            output = write_training_bundle(data, args.output)
-        elif args.command == "upd-xml":
+        if args.command == "upd-xml":
             filename, payload = render_xml(data)
             output = args.output / filename
         else:
             payload = render_html(data, args.command).encode("utf-8")
             output = args.output
-        if args.command != "upd-xml-demo":
-            write_new(output, payload)
+        write_new(output, payload)
         print(output.resolve())
-        if args.command in ("upd-xml", "upd-xml-demo"):
+        if args.command == "upd-xml":
             print(f"ЭДО: продавец {data['seller']['edo_id']} → покупатель {data['buyer']['edo_id']}", file=sys.stderr)
-        if args.command == "upd-xml-demo":
-            print("УЧЕБНЫЙ XML: XSD пройдена. Не отправлять и не подписывать; см. manifest.json.", file=sys.stderr)
-        elif args.command == "upd-xml":
             print("XSD ФНС: пройдено. Создан неподписанный титул продавца; импорт, контроль оператора и подписание ещё не выполнены.", file=sys.stderr)
     except (ValueError, KeyError, TypeError, InvalidOperation, OSError) as exc:
         parser.exit(2, f"Ошибка: {exc}\n")

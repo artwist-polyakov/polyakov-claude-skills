@@ -693,51 +693,6 @@ class ReviewTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "не воспроизводится"):
             self.check()
 
-    def test_scene_time_checks_current_plan_without_invalidating_previous_sources(self):
-        previous_contract = self.prior_document()
-        first_at = self.data["comparison_at"]
-        self.state["clock"] = {"mode": "scenario", "entries": [
-            {"at": first_at, "source": "Пользователь: сейчас 1 ноября, 12:00 МСК"}]}
-        previous = self.save_state_plan()
-        previous_plan = self.base / "issued-plan-v1.json"
-        previous_plan.write_bytes(self.plan_path.read_bytes())
-        self.state["documents"].append({"path": previous_plan.name,
-            "sha256": hashlib.sha256(previous_plan.read_bytes()).hexdigest(),
-            "status": "prepared", "version": "v1", "group": "plan", "current": False,
-            "delivered_at": first_at})
-        self.state_path.write_text(json.dumps(self.state), encoding="utf-8")
-        current_at = "2026-11-01T15:00:00+03:00"
-        deal.set_scene_time(self.state_path, current_at, "Пользователь: теперь 1 ноября, 15:00 МСК")
-        self.state = json.loads(self.state_path.read_text())
-        self.data["comparison_at"] = current_at
-        prior_plan_decision = copy.deepcopy(self.data["decisions"][0])
-        prior_plan_decision["id"] = "previous-plan"
-        prior_plan_decision["previous"] = {"source": {
-            "kind": "document", "group": "plan", "path": previous_plan.name,
-            "clause": "generated_at", "quote": first_at}}
-        self.data["decisions"].append(prior_plan_decision)
-        self.build()
-        current = deal.plan(self.state, state_path=self.state_path, previous=previous)
-        self.plan_path.write_text(json.dumps(current), encoding="utf-8")
-        preserved = {path: path.read_bytes() for path in [
-            self.state_path, previous_contract, previous_plan, *self.output.iterdir()]}
-
-        self.assertTrue(self.check()["state_checked"])
-        self.assertEqual(current["generated_at"], current_at)
-        table = (self.output / "terms-review.md").read_text()
-        self.assertIn(str(previous_contract), table)
-        self.assertIn(str(previous_plan), table)
-        self.assertIn("Report within 24 hours after publication.", table)
-        for generated_at in (first_at, "2026-11-01T17:00:00+03:00"):
-            with self.subTest(generated_at=generated_at):
-                changed = dict(current, generated_at=generated_at)
-                self.plan_path.write_text(json.dumps(changed), encoding="utf-8")
-                with self.assertRaisesRegex(ValueError, "не совпадает с текущим временем сцены"):
-                    self.check()
-                self.assertEqual(preserved, {path: path.read_bytes() for path in preserved})
-        self.plan_path.write_text(json.dumps(current), encoding="utf-8")
-        self.assertTrue(self.check()["state_checked"])
-
     def test_actual_previous_docx_quote_and_delivery_registry_are_required(self):
         path = self.prior_document()
         self.build()

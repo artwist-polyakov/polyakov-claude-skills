@@ -493,10 +493,9 @@ class HandoffTests(unittest.TestCase):
         self.register_plan(fixed)
         self.assertTrue(handoff.audit(self.state)['valid'])
 
-    def test_scene_time_advance_preserves_issued_plan_as_historical_baseline(self):
+    def test_later_plan_preserves_issued_plan_as_historical_baseline(self):
         self.scheduled_state()
         first_at = self.at
-        handoff.deal.set_scene_time(self.state, first_at, 'Пользователь: сейчас 1 ноября, 12:00 МСК')
         first = self.plan_package()
         self.register_plan(first)
         response = self.issue_plan(first)
@@ -504,7 +503,6 @@ class HandoffTests(unittest.TestCase):
         first_issue = self.data()['plan_issues'][0]
 
         self.at = '2026-11-01T15:00:00+03:00'
-        handoff.deal.set_scene_time(self.state, self.at, 'Пользователь: теперь 1 ноября, 15:00 МСК')
         current = self.plan_package('plan-v2', first[0])
         self.register_plan(current)
         self.issue_plan(current, 'reply-v2.txt')
@@ -518,35 +516,6 @@ class HandoffTests(unittest.TestCase):
         self.assertTrue(all(not self.registered()[path.resolve()]['current'] for path in first))
         self.assertTrue(all(self.registered()[path.resolve()]['current'] for path in current))
         self.assertEqual(original_files, {path: path.read_bytes() for path in original_files})
-
-    def test_scene_time_rejects_current_plan_with_old_or_unconfirmed_generation_time(self):
-        self.scheduled_state()
-        handoff.deal.set_scene_time(self.state, self.at, 'Пользователь: сейчас 1 ноября, 12:00 МСК')
-        first = self.plan_package()
-        self.register_plan(first)
-        self.issue_plan(first)
-        self.at = '2026-11-01T15:00:00+03:00'
-        handoff.deal.set_scene_time(self.state, self.at, 'Пользователь: теперь 1 ноября, 15:00 МСК')
-
-        # Повторная регистрация не превращает старое время выдачи в текущее.
-        self.register_plan(first)
-        response = self.file('reply-stale.txt', f'[План](<{first[1]}>)')
-        before = self.state.read_bytes()
-        result = handoff.audit(self.state, response, record_issue=True)
-        self.assertFalse(result['valid'])
-        self.assertTrue(any('не совпадает с текущим временем сцены' in issue for issue in result['issues']))
-        self.assertEqual(before, self.state.read_bytes())
-
-        current = self.plan_package('plan-v2', first[0])
-        self.rewrite_plan(current, lambda plan: plan.update(generated_at='2026-11-01T17:00:00+03:00'))
-        self.register_plan(current)
-        response = self.file('reply-unconfirmed.txt', f'[План](<{current[1]}>)')
-        before = self.state.read_bytes()
-        result = handoff.audit(self.state, response, record_issue=True)
-        self.assertFalse(result['valid'])
-        self.assertTrue(any('не совпадает с текущим временем сцены' in issue for issue in result['issues']))
-        self.assertEqual(before, self.state.read_bytes())
-        self.assertEqual(len(self.data()['plan_issues']), 1)
 
     def test_multiple_internal_rebuilds_cannot_replace_the_issued_baseline(self):
         self.scheduled_state()
@@ -570,7 +539,7 @@ class HandoffTests(unittest.TestCase):
         self.assertTrue(result['valid'], result['issues'])
         self.assertEqual(len(self.data()['plan_issues']), 2)
         self.assertEqual(self.data()['plan_issues'][0]['plan']['path'], 'plan-v1/plan.json')
-        # Все регистрации и выдачи имели одинаковое время сцены; порядок задан журналом.
+        # Все регистрации и выдачи имели одинаковое время; порядок задан журналом.
         self.assertTrue(all(item['delivered_at'] == self.at for item in self.data()['documents']))
 
     def test_wrong_changes_fail_even_when_sequences_are_correct(self):

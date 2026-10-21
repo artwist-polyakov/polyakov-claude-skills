@@ -2477,7 +2477,7 @@ class CreativeImportTests(unittest.TestCase):
         current["history"] = before["history"]
         self.assertEqual(current, before)
 
-    def test_approve_cli_uses_scene_time_and_state_relative_snapshot(self):
+    def test_approve_cli_uses_supplied_time_and_state_relative_snapshot(self):
         self.import_source()
         source = self.approval_message()
         result = subprocess.run(

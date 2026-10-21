@@ -3,8 +3,6 @@
 import copy
 from decimal import Decimal, ROUND_HALF_UP
 import importlib.util
-import json
-from hashlib import sha256
 from pathlib import Path
 import tempfile
 import unittest
@@ -190,7 +188,7 @@ class AccountingTests(unittest.TestCase):
                 self.assertEqual(advance.get("РеквДопСведДок"), f"ИспАСЧФ №1 от {rendered_date}")
                 self.assertIn(f"исправление № 1 от {rendered_date}", accounting.render_html(data, "upd-print"))
 
-    def test_advance_invoice_correction_outside_date_bounds_rejects_upd_without_output(self):
+    def test_advance_invoice_correction_outside_date_bounds_rejects_upd(self):
         data = fixture()
         data["vat"]["rate"] = "22"
         data["had_advance"] = True
@@ -206,11 +204,6 @@ class AccountingTests(unittest.TestCase):
                     accounting.render_xml(data)
                 with self.assertRaisesRegex(ValueError, message):
                     accounting.render_html(data, "upd-print")
-                with tempfile.TemporaryDirectory() as temporary:
-                    output = Path(temporary) / "training"
-                    with self.assertRaisesRegex(ValueError, message):
-                        accounting.write_training_bundle({**data, "demo": True}, output)
-                    self.assertFalse(output.exists())
 
     def test_invoice_unit_price_preserves_precision_and_reconciles_line_amount(self):
         from lxml import etree
@@ -334,13 +327,6 @@ class AccountingTests(unittest.TestCase):
                 accounting.write_new(path, b"replacement")
             self.assertEqual(path.read_text(encoding="utf-8"), "Ручная правка")
 
-    def test_demo_cannot_be_sent_as_xml(self):
-        data = fixture()
-        data["demo"] = True
-        self.assertIn("НЕ ДЛЯ ОПЛАТЫ", accounting.render_html(data, "invoice"))
-        with self.assertRaisesRegex(ValueError, "demo"):
-            accounting.render_xml(data)
-
     def test_printed_table_columns_align(self):
         from lxml import etree
         data = fixture()
@@ -371,29 +357,6 @@ class AccountingTests(unittest.TestCase):
         filename, xml = accounting.render_xml(data)
         self.assertTrue(filename.startswith("ON_NSCHFDOPPR_2BM-TEST-IP_2BM-TEST-COMPANY_"))
         self.assertEqual(ET.fromstring(xml).find(".//СвПрод/ИдСв/СвЮЛУч").get("ИННЮЛ"), data["seller"]["inn"])
-
-    def test_training_bundle_keeps_demo_and_real_command_guard(self):
-        from lxml import etree
-        data = fixture()
-        data["demo"] = True
-        with tempfile.TemporaryDirectory() as temporary:
-            output = Path(temporary) / "training"
-            path = accounting.write_training_bundle(data, output)
-            saved = json.loads((output / "data.json").read_text())
-            manifest = json.loads((output / "manifest.json").read_text())
-            self.assertIs(saved["demo"], True)
-            self.assertTrue(manifest["never_send"] and manifest["not_a_real_deal"])
-            self.assertEqual(manifest["direction"]["sender"]["id"], data["seller"]["edo_id"])
-            self.assertEqual(manifest["files"][path.name], sha256(path.read_bytes()).hexdigest())
-            etree.XMLSchema(etree.parse(str(accounting.SCHEMA))).assertValid(etree.parse(str(path)))
-            self.assertEqual(accounting.render_xml(data, training=True)[1], path.read_bytes())
-            with self.assertRaises(FileExistsError):
-                accounting.write_training_bundle(data, output)
-            with self.assertRaisesRegex(ValueError, "demo=true"):
-                accounting.render_xml(saved)
-            with self.assertRaisesRegex(ValueError, "demo=true"):
-                accounting.write_training_bundle(fixture(), Path(temporary) / "not-training")
-            self.assertFalse((Path(temporary) / "not-training").exists())
 
     def test_paid_archive_requires_confirmed_full_payment_and_has_no_demand(self):
         data = fixture()

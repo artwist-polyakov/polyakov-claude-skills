@@ -3,7 +3,6 @@
 <style>
 @page {size:A4 portrait;margin:18mm} * {box-sizing:border-box} body{font:11pt Arial,sans-serif;color:#111;margin:0 auto;max-width:180mm;padding:12mm 0} h1{font-size:18pt;margin:24px 0 18px} p{margin:10px 0;line-height:1.45} table{border-collapse:collapse;width:100%;margin:14px 0} th,td{border:1px solid #333;padding:7px;vertical-align:top} th{font-weight:600;text-align:left} .num{text-align:right;white-space:nowrap} .total{font-size:14pt;text-align:right} .muted{font-size:9pt;color:#555} .signature{margin-top:30px} @media print{body{padding:0;max-width:none} tr{break-inside:avoid} h1{break-after:avoid}}
 </style></head><body>
-$demo_notice
 <table aria-label="Банковские реквизиты"><tr><td colspan="2">$bank_name<br><span class="muted">Банк получателя</span></td><td>БИК $bank_bik<br>К/с $bank_correspondent</td></tr><tr><td>ИНН $seller_inn</td><td>КПП $seller_kpp</td><td rowspan="2">Р/с $bank_account</td></tr><tr><td colspan="2">$seller_name<br><span class="muted">Получатель</span></td></tr></table>
 <h1>$invoice_title № $number от $date</h1>
 <p><strong>Исполнитель:</strong> $seller_details</p>

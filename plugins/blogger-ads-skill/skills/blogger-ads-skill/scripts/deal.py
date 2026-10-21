@@ -81,60 +81,11 @@ def validate_state_objects(state):
             raise ValueError(f"{key}: требуется объект")
 
 
-def scene_clock_entries(state):
-    validate_state_objects(state)
-    clock = state.get("clock")
-    if clock is None:
-        return []
-    if not isinstance(clock, dict) or clock.get("mode") != "scenario":
-        raise ValueError("clock.mode: поддерживается scenario; для обычной сделки clock не нужен")
-    entries = clock.get("entries")
-    if not isinstance(entries, list) or not entries:
-        raise ValueError("clock.entries: нужен непустой список явно заданных времён сцены и их источников")
-    for entry in entries:
-        if not isinstance(entry, dict):
-            raise ValueError("clock.entries: каждая запись содержит at и source")
-        stamp(entry.get("at"))
-        if not isinstance(entry.get("source"), str) or not entry["source"].strip():
-            raise ValueError("clock.entries.source: укажите реплику пользователя и её точную фразу о времени сцены")
-    return entries
-
-
-def validate_scene_clock(state):
-    entries = scene_clock_entries(state)
-    if entries:
-        known = {stamp(entry["at"]) for entry in entries}
-        for index, entry in enumerate(state.get("history", [])):
-            if isinstance(entry, dict) and "scene_at" in entry and stamp(entry["scene_at"]) not in known:
-                raise ValueError(f"history[{index}].scene_at: время отсутствует в clock.entries; "
-                                 "сохраните последнее явно заданное время сцены, не время исследования или компьютера")
-    return entries
-
-
-def effective_now(state, supplied=None):
-    """В сцене время берётся только из состояния; обычные сделки работают как прежде."""
-    entries = validate_scene_clock(state)
-    requested = stamp(supplied.isoformat() if isinstance(supplied, datetime) else supplied) if supplied is not None else None
-    if entries:
-        current = stamp(entries[-1]["at"])
-        if requested is not None and requested != current:
-            raise ValueError(f"Время {requested.isoformat()} не совпадает с текущим временем сцены {current.isoformat()}. "
-                             "Без новой явно заданной даты используйте сохранённое время; при новой реплике вызовите set-scene-time с источником")
-        return current
-    return requested if requested is not None else datetime.now(timezone.utc)
-
-
-def set_scene_time(state_path, at, source):
-    state_path = Path(state_path)
-    state = read_json(state_path)
-    entry = {"at": stamp(at).isoformat(), "source": source}
-    entries = scene_clock_entries(state)
-    state["clock"] = {"mode": "scenario", "entries": entries + [entry]}
-    validate_scene_clock(state)
-    if entries and stamp(entries[-1]["at"]) == stamp(entry["at"]):
-        return {"state": str(state_path), "clock": {"mode": "scenario", "entries": entries}, "changed": False}
-    write_state(state_path, state)
-    return {"state": str(state_path), "clock": state["clock"], "changed": True}
+def current_time(supplied=None):
+    """Текущее время или явно переданный момент с часовым поясом."""
+    if supplied is None:
+        return datetime.now(timezone.utc)
+    return stamp(supplied.isoformat() if isinstance(supplied, datetime) else supplied)
 
 
 def sentence(value):
@@ -265,7 +216,7 @@ def approve_creative(state_path, source_path, quote, now=None):
     """Записать согласование текущей версии, не подтверждая маркировку и выход."""
     state_path = Path(state_path).resolve()
     state = validate(read_json(state_path), state_path)
-    checked_at = effective_now(state, now).isoformat()
+    checked_at = current_time(now).isoformat()
     creative = state.get("creative", {})
     if not creative.get("provenance") or not isinstance(creative.get("text"), str) or not creative["text"].strip():
         raise ValueError("Для согласования нужен непустой креатив из import-creative")
@@ -294,7 +245,7 @@ def import_creative(state_path, text_path, links_path, now=None, media_paths=Non
     state_path = Path(state_path).resolve()
     state = read_json(state_path)
     validate_checks(state)
-    now = effective_now(state, now)
+    now = current_time(now)
     previous = state.get("creative", {})
     previous_digest = digest(previous)
     previous_import_digest = previous_digest
@@ -583,7 +534,7 @@ def validate_checks(state):
 
 
 def validate(state, state_path=None):
-    validate_scene_clock(state)
+    validate_state_objects(state)
     if state.get("schema_version") != 1:
         raise ValueError("Поддерживается schema_version: 1")
     stages = ("inquiry", "terms", "creative", "ready", "published", "closing", "closed", "paused", "cancelled")
@@ -799,7 +750,7 @@ def completion(state, event_id, now):
 
 
 def _plan(state, now=None, state_path=None, strict_deadlines=False):
-    now = effective_now(state, now)
+    now = current_time(now)
     validate(state, state_path)
     schedule = state["schedule"]
     zone = ZoneInfo(schedule["timezone"])
@@ -1080,7 +1031,7 @@ def retain_completed_actions(state, now, previous, current):
 
 
 def plan(state, now=None, state_path=None, previous=None):
-    now = effective_now(state, now)
+    now = current_time(now)
     result = _plan(state, now, state_path, strict_deadlines=True)
     if previous is not None:
         retain_completed_actions(state, now, previous, result)
@@ -1127,7 +1078,7 @@ def validate_plan(state, plan_data, state_path=None):
 
 
 def check(state, now=None, state_path=None):
-    now = effective_now(state, now)
+    now = current_time(now)
     validate(state, state_path)
     if state.get("schedule", {}).get("publication_at"):
         _plan(state, now, state_path)
@@ -1228,24 +1179,18 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     init = sub.add_parser("init", help="Создать незаполненный файл состояния")
     init.add_argument("--output", required=True, type=Path)
-    init.add_argument("--scene-at", help="Явно заданное пользователем время учебной сцены с часовым поясом")
-    init.add_argument("--scene-source", help="Реплика пользователя и точная фраза о времени сцены; файл не обязателен")
-    scene = sub.add_parser("set-scene-time", help="Сохранить новое явно заданное время учебной сцены")
-    scene.add_argument("--state", required=True, type=Path)
-    scene.add_argument("--at", required=True)
-    scene.add_argument("--source", required=True, help="Новая реплика пользователя и её точная фраза о времени сцены")
     importer = sub.add_parser("import-creative", help="Дословно импортировать текст и исходную JSON-карту ссылок с якорями; согласование не подтверждается")
     importer.add_argument("--state", required=True, type=Path)
     importer.add_argument("--text", required=True, type=Path)
     importer.add_argument("--links", required=True, type=Path)
     importer.add_argument("--media", nargs="*", type=Path,
                           help="Полный список медиа в порядке публикации; без путей — удалить медиа; без аргумента — сохранить прежние копии")
-    importer.add_argument("--now", help="Время импорта с часовым поясом; в сцене должно совпадать с clock")
+    importer.add_argument("--now", help="Время импорта с часовым поясом; по умолчанию текущее")
     approver = sub.add_parser("approve-creative", help="Согласовать текущий импортированный креатив по дословной реплике пользователя; ОРД и публикация не подтверждаются")
     approver.add_argument("--state", required=True, type=Path)
     approver.add_argument("--source", required=True, type=Path, help="Существующий UTF-8 файл реплики пользователя")
     approver.add_argument("--quote", required=True, help="Дословная цитата о согласовании текущей версии")
-    approver.add_argument("--now", help="Время фиксации с часовым поясом; в сцене должно совпадать с clock")
+    approver.add_argument("--now", help="Время фиксации с часовым поясом; по умолчанию текущее")
     for name in ("check", "plan", "fingerprint", "inspect-creative", "fee-payment-basis"):
         cmd = sub.add_parser(name)
         cmd.add_argument("--state", required=True, type=Path)
@@ -1261,17 +1206,9 @@ def main():
         if args.command == "init":
             initial = read_json(Path(__file__).resolve().parent.parent / "assets/deal.example.json")
             initial["deal_id"] = "deal-" + uuid4().hex
-            if (args.scene_at is None) != (args.scene_source is None):
-                raise ValueError("init: для учебной сцены нужны вместе --scene-at и --scene-source")
-            if args.scene_at is not None:
-                initial["clock"] = {"mode": "scenario", "entries": [{"at": stamp(args.scene_at).isoformat(), "source": args.scene_source}]}
-                validate_scene_clock(initial)
             with args.output.open("x", encoding="utf-8") as file:
                 file.write(json.dumps(initial, ensure_ascii=False, indent=2) + "\n")
             print(args.output)
-            return
-        if args.command == "set-scene-time":
-            print(json.dumps(set_scene_time(args.state, args.at, args.source), ensure_ascii=False, indent=2))
             return
         if args.command == "import-creative":
             print(json.dumps(import_creative(args.state, args.text, args.links, args.now, args.media), ensure_ascii=False, indent=2))
@@ -1290,7 +1227,7 @@ def main():
         if args.command == "inspect-creative":
             print(json.dumps(inspect_creative(state, args.state, args.expect_literal), ensure_ascii=False, indent=2))
             return
-        now = effective_now(state, args.now)
+        now = current_time(args.now)
         if args.command == "check":
             result = check(state, now, args.state)
             print(json.dumps(result, ensure_ascii=False, indent=2))
