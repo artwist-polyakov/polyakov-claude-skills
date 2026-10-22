@@ -10,7 +10,6 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import handoff
-from test_docx_layout import make_layout_fixture
 
 
 class ContractDateTests(unittest.TestCase):
@@ -38,8 +37,6 @@ class ContractDateTests(unittest.TestCase):
         values = {'CONTRACT_NUMBER': number, 'CONTRACT_DATE': date} | fields
         sidecar = self.file(version + '.docx.fields.json', json.dumps({'output_sha256': handoff.sha(path), 'fields': values}))
         handoff.register(self.state, [path, sidecar], 'draft', version, self.at, group=group, document_kind=kind)
-        manifest = make_layout_fixture(path, self.root / ('layout-' + version))
-        handoff.register(self.state, [manifest], 'checked', version, self.at, group='layout-' + group)
         return path
 
     def reply(self, path, name=None):
@@ -78,7 +75,7 @@ class ContractDateTests(unittest.TestCase):
                             AMENDMENT_DATE='20.10.2026', SIGNATURE_DATE='18.10.2026')
         self.issue(new)
 
-    def test_contract_audit_does_not_change_files(self):
+    def test_docx_without_pdf_passes_audit_without_changing_state(self):
         path = self.document('v1')
         response = self.reply(path)
         before = self.state.read_bytes()
@@ -167,8 +164,6 @@ class ContractDateTests(unittest.TestCase):
         render_contract.render(ROOT / 'assets/templates/contract.docx', fields, source)
         sidecar = source.with_suffix('.docx.fields.json')
         handoff.register(self.state, [source, sidecar], 'draft', 'v1', self.at, group='contract', document_kind='contract')
-        manifest = make_layout_fixture(source, self.root / 'layout-original')
-        handoff.register(self.state, [manifest], 'checked', 'v1', self.at, group='layout-contract')
         self.issue(source)
         preserved = {path: path.read_bytes() for path in (source, sidecar)}
         changes = self.file('patch.json', json.dumps({'source_sha256': handoff.sha(source), 'replacements': [
@@ -185,8 +180,6 @@ class ContractDateTests(unittest.TestCase):
             text = ''.join(node.text or '' for node in xml.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t'))
             self.assertIn('14.10.2026', text)
         handoff.register(self.state, [patched], 'draft', 'v2', self.at, group='contract', document_kind='contract')
-        manifest = make_layout_fixture(patched, self.root / 'layout-patched')
-        handoff.register(self.state, [manifest], 'checked', 'v2', self.at, group='layout-contract')
         response = self.reply(patched)
         before = self.capture()
         result = handoff.audit(self.state, response, record_issue=True)

@@ -384,65 +384,13 @@ def link_report_issues(documents, expected_urls, *, expected_link_map=None):
     return issues
 
 
-def layout_manifest_source(path):
-    """Только manifest от render_docx; прочие JSON не загружают модуль проверки."""
-    if path.suffix.lower() != '.json':
-        return None
-    try:
-        value = deal.read_json(path)
-    except ValueError:
-        return None
-    if not isinstance(value, dict) or value.get('kind') != 'docx_layout':
-        return None
-    import render_docx
-    return render_docx.source_reference(path, value)
-
-
-def archive_layout_manifests(state, base):
-    documents = {resolve(base, item['path']): item for item in state.get('documents', [])}
-    for path, item in documents.items():
-        if not item.get('current'):
-            continue
-        source = layout_manifest_source(path)
-        if source and source[0] in documents and not documents[source[0]].get('current'):
-            item.update(current=False, archive_reason='DOCX заменён; PDF и PNG относятся к его исторической версии')
-
-
-def layout_issues(documents):
-    issues, covered = [], set()
-    for path, item in documents.items():
-        if not item.get('current'):
-            continue
-        try:
-            source = layout_manifest_source(path)
-            if source:
-                original, digest = source
-                record = documents.get(original, {})
-                if (not record.get('current') or received_status(record.get('status'))
-                        or record.get('sha256') != digest):
-                    raise ValueError(f'{path}: PDF и PNG относятся к незарегистрированному, полученному '
-                                     'или историческому DOCX; зарегистрируйте текущий собственный исходник')
-                import render_docx
-                render_docx.check(path)
-                covered.add((original, digest))
-        except (ValueError, OSError, TypeError) as error:
-            issues.append(f'Проверка вёрстки {path}: {error}')
-    for path, item in documents.items():
-        if (item.get('current') and not received_status(item.get('status')) and path.suffix.lower() == '.docx'
-                and (path, item['sha256']) not in covered):
-            issues.append(f'{path}: нет актуального PDF и PNG окончательного DOCX. '
-                          'Выполните render_docx.py render в новую папку и зарегистрируйте manifest.json')
-    return issues
-
-
 def refresh(state_path, at):
     state_path = Path(state_path).resolve()
     state = deal.read_json(state_path)
     deal.stamp(at)
     archive_link_reports(state, state_path.parent)
-    archive_layout_manifests(state, state_path.parent)
     save(state_path, state)
-    return {'refreshed_at': at, 'note': 'Отчёты ссылок и вёрстки заменённых документов отмечены историческими'}
+    return {'refreshed_at': at, 'note': 'Отчёты ссылок заменённых документов отмечены историческими'}
 
 
 def contract_snapshot(documents):
@@ -523,7 +471,6 @@ def register(state_path, files, status, version, at, supersedes=(), group='docum
             'previous_contract_documents': previous_contracts, 'contract_documents': current_contracts,
             'invalidated_checks': {'contract': dict(proof)}})
     archive_link_reports(state, base)
-    archive_layout_manifests(state, base)
     save(state_path, state)
     return {'registered': [relative(base, p) for p, *_ in prepared], 'replaced': [relative(base, p) for p in replaced]}
 
@@ -645,7 +592,6 @@ def audit(state_path, response=None, historical=(), record_issue=False):
             issues.append(f'documents: группа {group} содержит несколько актуальных версий; прежние версии должны быть историческими')
     issues.extend(link_report_issues(documents, state.get('creative', {}).get('links', []),
                                     expected_link_map=state.get('creative', {}).get('link_map')))
-    issues.extend(layout_issues(documents))
     try:
         check_contract_fields(documents)
     except (ValueError, KeyError, TypeError, OSError) as error:
@@ -653,9 +599,7 @@ def audit(state_path, response=None, historical=(), record_issue=False):
     plan_path = None
     plan_files = {path for path, item in documents.items()
                   if item.get('current') and item.get('group') == 'plan' and item.get('delivered_at')}
-    plan_required = state.get('schedule', {}).get('publication_at') and (
-        state.get('stage') not in ('closed', 'cancelled', 'paused'))
-    if plan_required or any(path.suffix.lower() == '.json' for path in plan_files):
+    if plan_files:
         candidates = []
         for path in plan_files:
             if path.suffix.lower() == '.json':
@@ -666,7 +610,7 @@ def audit(state_path, response=None, historical=(), record_issue=False):
                 except (ValueError, OSError) as error:
                     issues.append(f'План {path}: {error}')
         if len(candidates) != 1:
-            issues.append('Дата размещения известна: нужен один актуальный локальный план JSON, Markdown и ICS в группе plan. Постройте deal.py plan и зарегистрируйте пакет; подготовка не устанавливает напоминания')
+            issues.append('План: в группе plan нужен один актуальный пакет — JSON, plan.md и reminders.ics. Пересоберите и зарегистрируйте пакет через deal.py plan')
         else:
             path, plan_data = candidates[0]
             try:

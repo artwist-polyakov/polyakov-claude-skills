@@ -489,7 +489,7 @@ def audit_parts(parts, documents, expected_font="Montserrat"):
     if emoji and "word/fonts/blogger-emoji.odttf" not in parts:
         issues.append({"problem": "Отсутствует встроенный Noto Emoji"})
     return {"ok": not issues, "expected_font": expected_font, "issues": issues,
-            "emoji": sorted(emoji), "pdf_visual_check_required": True}
+            "emoji": sorted(emoji)}
 
 
 def audit_document(path, expected_font="Montserrat"):
