@@ -837,13 +837,25 @@ class HandoffTests(unittest.TestCase):
         self.register_plan(files)
         self.issue_plan(files)
 
-    def test_plan_package_must_include_readable_plan_and_calendar(self):
+    def test_plan_package_must_contain_only_json_readable_plan_and_calendar(self):
         self.scheduled_state()
         files = self.plan_package()
         handoff.register(self.state, files[:1], 'prepared', 'v1', self.at, group='plan')
         result = handoff.audit(self.state)
         self.assertFalse(result['valid'])
         self.assertTrue(any('plan.md и reminders.ics' in issue for issue in result['issues']))
+
+        stale = self.file('old-plan.md', 'Предыдущая редакция плана')
+        handoff.register(self.state, [*files, stale], 'prepared', 'v1', self.at, group='plan')
+        response = self.file('reply.txt', f'[План](<{files[1]}>) [Старый план](<{stale}>)')
+        before = self.state.read_bytes()
+        result = handoff.audit(self.state, response, record_issue=True)
+        self.assertFalse(result['valid'], result['issues'])
+        self.assertTrue(any('plan.md и reminders.ics' in issue for issue in result['issues']))
+        self.assertEqual(self.state.read_bytes(), before)
+
+        handoff.register(self.state, files, 'prepared', 'v2', self.at, group='plan')
+        self.issue_plan(files)
 
     def test_current_plan_must_match_state_and_calendar_even_with_correct_file_hashes(self):
         self.scheduled_state()

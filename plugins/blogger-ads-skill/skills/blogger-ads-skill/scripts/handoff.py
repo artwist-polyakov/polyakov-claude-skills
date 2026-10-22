@@ -670,9 +670,9 @@ def audit(state_path, response=None, historical=(), record_issue=False):
             try:
                 deal.validate_plan(state, plan_data, state_path)
                 check_plan_issue_basis(state, state_path, path, plan_data, history)
-                companion_paths = {path.parent / 'plan.md', path.parent / 'reminders.ics'}
-                if not companion_paths <= plan_files:
-                    raise ValueError('Зарегистрируйте вместе с JSON читаемый plan.md и reminders.ics той же версии')
+                package_paths = {path, path.parent / 'plan.md', path.parent / 'reminders.ics'}
+                if plan_files != package_paths:
+                    raise ValueError('В группе plan оставьте ровно три актуальных файла: JSON, plan.md и reminders.ics из одной папки; прежние файлы отметьте историческими')
                 if (path.parent / 'plan.md').read_bytes() != deal.markdown(plan_data).encode('utf-8'):
                     raise ValueError('plan.md не соответствует текущему плану JSON; пересоберите пакет')
                 expected_ics = deal.ics(plan_data, deal.stamp(plan_data['generated_at'])).encode('utf-8')
