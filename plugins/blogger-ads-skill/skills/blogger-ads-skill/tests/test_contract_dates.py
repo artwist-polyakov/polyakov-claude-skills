@@ -57,31 +57,21 @@ class ContractDateTests(unittest.TestCase):
     def capture(self):
         return {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
 
-    def assert_date_error(self, path):
-        response = self.reply(path)
-        before = self.capture()
-        result = handoff.audit(self.state, response, record_issue=True)
-        self.assertFalse(result['valid'])
-        self.assertTrue(any('CONTRACT_DATE' in issue for issue in result['issues']), result['issues'])
-        self.assertEqual(before, self.capture())
-        return result
-
     def test_project_with_deferred_date_passes(self):
         self.issue(self.document('v1', '«___» __________ 2026 г.'))
 
-    def test_same_date_in_russian_or_iso_format_passes(self):
-        self.issue(self.document('v1'))
-        for index, date in enumerate(('«14» октября 2026 г.', '2026-10-14', '14/10/2026'), 2):
-            self.issue(self.document('v' + str(index), date))
+    def test_date_in_russian_or_iso_format_passes(self):
+        for value in ('14.10.2026', '«14» октября 2026 г.', '2026-10-14', '14/10/2026'):
+            with self.subTest(value=value):
+                self.assertEqual(handoff.contract_date(value), '2026-10-14')
 
-    def test_received_document_is_not_compared(self):
+    def test_received_original_preserves_source_files(self):
         self.issue(self.document('v1'))
         source = self.file('received.docx', 'Договор контрагента с иной датой')
         sidecar = self.file('received.docx.fields.json', json.dumps({'fields': {'CONTRACT_NUMBER': 'A-1', 'CONTRACT_DATE': '20.10.2026'}}))
         handoff.register(self.state, [source, sidecar], 'received', 'v1', self.at, group='received', document_kind='contract')
         before = self.capture()
-        current = handoff.check_contract_dates(self.records())
-        self.assertNotIn(source, current)
+        handoff.check_contract_fields(self.records())
         self.assertEqual(before, self.capture())
 
     def test_amendment_date_and_actual_signature_dates_are_independent(self):
@@ -101,13 +91,6 @@ class ContractDateTests(unittest.TestCase):
         self.assertTrue(handoff.audit(self.state, response, record_issue=True)['valid'])
         self.assertEqual(before, self.state.read_bytes())
 
-    def test_current_documents_need_complete_matching_dates(self):
-        old = self.document('v1')
-        for index, value in enumerate(('Неизвестна', '16.10.2026')):
-            with self.subTest(date=value):
-                self.document(f'terms-v{index}', value, kind='placement_terms', group='terms')
-                self.assert_date_error(old)
-
     def test_current_map_must_match_exact_document_bytes(self):
         old = self.document('v1')
         self.issue(old)
@@ -117,7 +100,28 @@ class ContractDateTests(unittest.TestCase):
         data['output_sha256'] = handoff.sha(old)
         sidecar.write_text(json.dumps(data))
         with self.assertRaisesRegex(ValueError, 'точную карту'):
-            handoff.check_contract_dates(self.records())
+            handoff.check_contract_fields(self.records())
+        records = self.records()
+        records[sidecar]['sha256'] = handoff.sha(sidecar)
+        with self.assertRaisesRegex(ValueError, 'output_sha256'):
+            handoff.check_contract_fields(records)
+
+    def test_current_map_requires_fields_and_string_values(self):
+        path = self.document('v1')
+        sidecar = path.with_suffix('.docx.fields.json')
+        for fields, error in (
+            ([], 'нужна карта fields'),
+            ({'CONTRACT_DATE': '14.10.2026'}, 'нужны CONTRACT_NUMBER и CONTRACT_DATE'),
+            ({'CONTRACT_NUMBER': 'A-1'}, 'нужны CONTRACT_NUMBER и CONTRACT_DATE'),
+            ({'CONTRACT_NUMBER': 1, 'CONTRACT_DATE': '14.10.2026'}, 'CONTRACT_NUMBER: нужна строка'),
+            ({'CONTRACT_NUMBER': 'A-1', 'CONTRACT_DATE': 2026}, 'CONTRACT_DATE: нужна строка'),
+        ):
+            with self.subTest(fields=fields):
+                sidecar.write_text(json.dumps({'output_sha256': handoff.sha(path), 'fields': fields}))
+                records = self.records()
+                records[sidecar]['sha256'] = handoff.sha(sidecar)
+                with self.assertRaisesRegex(ValueError, error):
+                    handoff.check_contract_fields(records)
 
     def plan_package(self, version, previous=None):
         state = self.data()
@@ -144,13 +148,13 @@ class ContractDateTests(unittest.TestCase):
         result = handoff.audit(self.state, reply1, record_issue=True)
         self.assertTrue(result['valid'], result['issues'])
         self.assertTrue(result['plan_issue_recorded'])
-        new = self.document('v2', 'Подпись пока не получена')
-        self.document('terms-v2', kind='placement_terms', group='terms')
+        new = self.document('v2', '31.02.2026')
         plan2 = self.plan_package('plan-v2', plan1[0])
         reply2 = self.file('issued2.txt', f'[Документ]({new}) [План]({plan2[1]})')
         before = self.capture()
         result = handoff.audit(self.state, reply2, record_issue=True)
         self.assertFalse(result['valid'])
+        self.assertTrue(any('недопустимая дата' in issue for issue in result['issues']), result['issues'])
         self.assertEqual(before, self.capture())
         self.assertEqual(len(self.data()['plan_issues']), 1)
 
@@ -187,9 +191,6 @@ class ContractDateTests(unittest.TestCase):
         before = self.capture()
         result = handoff.audit(self.state, response, record_issue=True)
         self.assertTrue(result['valid'], result['issues'])
-        self.assertEqual(len(result['contract_date_unchecked']), 1)
-        self.assertEqual(result['contract_date_unchecked'][0]['path'], str(patched))
-        self.assertIn('автоматически не проверена', result['contract_date_unchecked'][0]['reason'])
         self.assertEqual(before, self.capture())
         self.assertEqual(preserved, {path: path.read_bytes() for path in preserved})
 
@@ -203,11 +204,6 @@ class ContractDateTests(unittest.TestCase):
         self.assertFalse(result['valid'])
         self.assertTrue(any('.fields.json' in issue and 'утрачен' in issue for issue in result['issues']))
         self.assertEqual(before, self.capture())
-
-    def test_contract_number_keeps_embedded_underscore(self):
-        self.assertEqual(handoff.contract_number('№ AD_2026_001'), 'AD_2026_001')
-        self.assertIsNone(handoff.contract_number('_____'))
-        self.assertIsNone(handoff.contract_number('{{CONTRACT_NUMBER}}'))
 
     def test_invalid_calendar_date_is_not_a_placeholder(self):
         with self.assertRaisesRegex(ValueError, 'недопустимая дата'):

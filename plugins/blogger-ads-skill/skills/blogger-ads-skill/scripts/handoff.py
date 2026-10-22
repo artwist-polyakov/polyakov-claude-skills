@@ -555,53 +555,32 @@ def contract_date(value):
         raise ValueError(f'CONTRACT_DATE: недопустимая дата {value}') from error
 
 
-def contract_number(value):
-    if not isinstance(value, str):
-        raise ValueError('CONTRACT_NUMBER: нужна строка')
-    value = value.strip().removeprefix('№').strip()
-    return value if value and not re.fullmatch(r'_+|\{\{[^{}]+\}\}|\[[^\[\]]+\]', value) else None
-
-
-def own_contract_identity(path, documents):
+def check_contract_fields(documents):
     """Карта относится к точным байтам DOCX, а не к соседней версии."""
-    item = documents.get(path, {})
-    if path.suffix.lower() != '.docx' or received_status(item.get('status')):
-        return None
-    sidecar = path.with_suffix(path.suffix + '.fields.json')
-    if not sidecar.is_file():
-        return None  # --patch и ручные документы не имеют достоверной карты полной регенерации.
-    saved = deal.read_json(sidecar)
-    if not isinstance(saved, dict) or not isinstance(saved.get('fields'), dict):
-        raise ValueError(f'{sidecar}: нужна карта fields')
-    fields = saved['fields']
-    if not {'CONTRACT_NUMBER', 'CONTRACT_DATE'} <= fields.keys():
-        if item.get('document_kind') in CONTRACT_KINDS:
-            raise ValueError(f'{sidecar}: нужны CONTRACT_NUMBER и CONTRACT_DATE основного договора')
-        return None
-    record = documents.get(sidecar, {})
-    if record and record.get('sha256') != sha(sidecar):
-        raise ValueError(f'{path}: сохраните точную карту .fields.json; зарегистрированный SHA должен совпадать с файлом')
-    if saved.get('output_sha256') != sha(path) and item.get('document_kind') == 'creative':
-        return None  # После ручной правки текст сверяется отдельно; старая карта не доказывает дату.
-    if saved.get('output_sha256') != sha(path):
-        raise ValueError(f'{path}: сохраните точную карту .fields.json; зарегистрированный SHA и output_sha256 должны совпадать с файлами')
-    number = contract_number(fields['CONTRACT_NUMBER'])
-    value = contract_date(fields['CONTRACT_DATE'])
-    return {'number': number, 'date': value}
-
-
-def check_contract_dates(documents):
-    current = {}
     for path, item in documents.items():
-        if item.get('current'):
-            identity = own_contract_identity(path, documents)
-            if identity:
-                current[path] = identity
-    for number in {item['number'] for item in current.values()} - {None}:
-        dates = {item['date'] for item in current.values() if item['number'] == number}
-        if len(dates) > 1:
-            raise ValueError(f'CONTRACT_DATE договора № {number}: текущие собственные документы содержат разные даты; обновите или архивируйте прежнюю редакцию')
-    return current
+        if not item.get('current') or path.suffix.lower() != '.docx' or received_status(item.get('status')):
+            continue
+        sidecar = path.with_suffix(path.suffix + '.fields.json')
+        if not sidecar.is_file():
+            continue  # --patch и ручные документы не имеют достоверной карты полной регенерации.
+        saved = deal.read_json(sidecar)
+        if not isinstance(saved, dict) or not isinstance(saved.get('fields'), dict):
+            raise ValueError(f'{sidecar}: нужна карта fields')
+        fields = saved['fields']
+        if not {'CONTRACT_NUMBER', 'CONTRACT_DATE'} <= fields.keys():
+            if item.get('document_kind') in CONTRACT_KINDS:
+                raise ValueError(f'{sidecar}: нужны CONTRACT_NUMBER и CONTRACT_DATE основного договора')
+            continue
+        record = documents.get(sidecar, {})
+        if record and record.get('sha256') != sha(sidecar):
+            raise ValueError(f'{path}: сохраните точную карту .fields.json; зарегистрированный SHA должен совпадать с файлом')
+        if saved.get('output_sha256') != sha(path):
+            if item.get('document_kind') == 'creative':
+                continue  # После ручной правки текст сверяется отдельно; старая карта не доказывает дату.
+            raise ValueError(f'{path}: сохраните точную карту .fields.json; зарегистрированный SHA и output_sha256 должны совпадать с файлами')
+        if not isinstance(fields['CONTRACT_NUMBER'], str):
+            raise ValueError('CONTRACT_NUMBER: нужна строка')
+        contract_date(fields['CONTRACT_DATE'])
 
 
 def audit(state_path, response=None, historical=(), record_issue=False, soffice=None):
@@ -665,23 +644,10 @@ def audit(state_path, response=None, historical=(), record_issue=False, soffice=
     issues.extend(link_report_issues(documents, state.get('creative', {}).get('links', []),
                                     expected_link_map=state.get('creative', {}).get('link_map')))
     issues.extend(layout_issues(documents, soffice=soffice))
-    contract_documents = {}
-    unchecked_contract_dates = [
-        {'path': str(path), 'reason': 'Нет сохранённой карты .fields.json: дата основного договора автоматически не проверена. '
-         'Сверьте её с предыдущей выданной редакцией вручную; не создавайте фиктивную карту и не пересобирайте ручные правки из старых полей.'}
-        for path, item in documents.items() if item.get('current') and not received_status(item.get('status'))
-        and path.suffix.lower() == '.docx' and item.get('document_kind') in CONTRACT_KINDS
-        and not path.with_suffix(path.suffix + '.fields.json').is_file()]
     try:
-        contract_documents = check_contract_dates(documents)
+        check_contract_fields(documents)
     except (ValueError, KeyError, TypeError, OSError) as error:
-        issues.append(f'Дата договора: {error}')
-    unchecked_contract_dates += [
-        {'path': str(path), 'reason': 'Сохранённая карта прежней версии не подтверждает дату после ручной правки приложения. '
-         'Сверьте номер, дату и текст поста по документу.'}
-        for path, item in documents.items() if item.get('current') and not received_status(item.get('status'))
-        and item.get('document_kind') == 'creative' and path.suffix.lower() == '.docx'
-        and path not in contract_documents and path.with_suffix(path.suffix + '.fields.json').is_file()]
+        issues.append(f'Карта полей договора: {error}')
     plan_path = None
     plan_files = {path for path, item in documents.items()
                   if item.get('current') and item.get('group') == 'plan' and item.get('delivered_at')}
@@ -764,10 +730,9 @@ def audit(state_path, response=None, historical=(), record_issue=False, soffice=
         else:
             save(state_path, state)
     result = {'valid': not issues, 'issues': issues,
-            'contract_date_unchecked': unchecked_contract_dates,
             'checks': {key: {field: value.get(field) for field in ('status', 'source', 'checked_at')}
                        for key, value in state.get('checks', {}).items() if isinstance(value, dict)},
-            'note': 'Проверены ссылки, контрольные суммы, даты и схема. Это не проверка подписей, права, внешних фактов или готовности публикации.'}
+            'note': 'Проверены ссылки, контрольные суммы, форматы значений и схема. Это не проверка подписей, права, внешних фактов или готовности публикации.'}
     if record_issue:
         result['plan_issue_recorded'] = recorded
         result['plan_issue_count'] = len(state.get('plan_issues', [])) if isinstance(state.get('plan_issues', []), list) else 0
