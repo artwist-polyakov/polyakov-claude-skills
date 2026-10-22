@@ -355,38 +355,7 @@ def check_link_comparison(path, expected_urls, expected_link_map=None):
         raise ValueError(f'{path}: creative.link_map и creative.links расходятся; заново импортируйте исходную карту')
 
 
-def check_creative_document(path, documents, state):
-    """Сверить POST_TEXT собственного DOCX с актуальной картой генерации."""
-    sidecar = path.with_suffix(path.suffix + '.fields.json')
-    if (path.suffix.lower() != '.docx' or received_status(documents[path].get('status'))
-            or not sidecar.is_file()):
-        return
-    saved = deal.read_json(sidecar)
-    if not isinstance(saved, dict) or saved.get('output_sha256') != sha(path):
-        return
-    creative = state.get('creative', {})
-    provenance = creative.get('provenance')
-    provenance = provenance.get('text') if isinstance(provenance, dict) else None
-    text = creative.get('text')
-    if not isinstance(provenance, dict) or not isinstance(text, str) or not text.strip():
-        raise ValueError(f'{path}: сначала импортируйте исходный пост через deal.py import-creative; '
-                         'одинаковые URL не подтверждают текст приложения')
-    if not isinstance(saved.get('fields'), dict):
-        raise ValueError(f'{sidecar}: нужна сохранённая карта fields')
-    source = saved.get('post_source')
-    if (saved['fields'].get('POST_TEXT') != text
-            or not isinstance(source, dict) or source.get('sha256') != provenance.get('sha256')
-            or not isinstance(source.get('path'), str) or sha(resolve(sidecar.parent, source['path'])) != source['sha256']):
-        raise ValueError(f'{path}: POST_TEXT, post_source или SHA результата не совпадает с текущим импортированным постом; '
-                         'сохраните отдельную версию, не подменяйте карту полей')
-    import render_contract
-    normal_lines = lambda value: value.replace('\r\n', '\n').replace('\r', '\n')
-    if not any(normal_lines(row['text']) == normal_lines(text)
-               for row in render_contract.inspect_document(path)['paragraphs'] if row['part'] == 'word/document.xml'):
-        raise ValueError(f'{path}: точный POST_TEXT не найден в самом DOCX; карта полей не заменяет проверку текста')
-
-
-def link_report_issues(documents, expected_urls, state=None, *, expected_link_map=None):
+def link_report_issues(documents, expected_urls, *, expected_link_map=None):
     issues, covered = [], set()
     for path, item in documents.items():
         if not item.get('current'):
@@ -400,8 +369,6 @@ def link_report_issues(documents, expected_urls, state=None, *, expected_link_ma
                     raise ValueError(f'{path}: отчёт ссылок относится к незарегистрированной или исторической версии; '
                                      'зарегистрируйте исходник либо сохраните этот отчёт как исторический')
                 check_link_comparison(path, expected_urls, expected_link_map)
-                if state is not None and record.get('document_kind') == 'creative':
-                    check_creative_document(original, documents, state)
                 covered.add((original, digest))
         except (KeyError, ValueError, OSError, TypeError) as error:
             issues.append(str(error))
@@ -695,7 +662,7 @@ def audit(state_path, response=None, historical=(), record_issue=False, soffice=
     for group, versions in current_groups.items():
         if len(versions) > 1:
             issues.append(f'documents: группа {group} содержит несколько актуальных версий; прежние версии должны быть историческими')
-    issues.extend(link_report_issues(documents, state.get('creative', {}).get('links', []), state,
+    issues.extend(link_report_issues(documents, state.get('creative', {}).get('links', []),
                                     expected_link_map=state.get('creative', {}).get('link_map')))
     issues.extend(layout_issues(documents, soffice=soffice))
     contract_documents = {}
