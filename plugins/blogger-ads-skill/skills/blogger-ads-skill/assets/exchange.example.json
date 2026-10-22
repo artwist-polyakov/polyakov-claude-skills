@@ -1,0 +1,12 @@
+{
+  "channel": "unknown",
+  "channel_name": null,
+  "contractor_contact": null,
+  "customer_contact": null,
+  "agreement": "unknown",
+  "closing_document": null,
+  "closing_sender": "unknown",
+  "closing_deadline": null,
+  "followup_method": "unknown",
+  "followup_deadline": null
+}
