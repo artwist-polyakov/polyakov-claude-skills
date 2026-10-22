@@ -179,7 +179,7 @@ def local_response_links(text):
         if target.lower().startswith('file:'):
             issues.append(f'Локальная ссылка {target}: используйте абсолютный путь без file://')
             continue
-        if re.match(r'^[A-Za-z][A-Za-z0-9+.-]*://', target) or target.startswith(('#', 'mailto:')):
+        if re.match(r'^[A-Za-z][A-Za-z0-9+.-]*:', target) or target.startswith('#'):
             continue
         # Query/fragment относятся к URI; буквальные ?/# в имени должны быть закодированы.
         target = unquote(re.sub(r':\d+$', '', re.split(r'[?#]', target, maxsplit=1)[0]))
@@ -537,6 +537,8 @@ def contract_date(value):
         raise ValueError('CONTRACT_DATE: нужна строка')
     value = re.sub(r'[«»"“”]', '', value.strip().lower())
     value = re.sub(r'\s+(?:г\.?|года)$', '', value).strip()
+    if re.fullmatch(r'_+|_+\s+_+\s+\d{4}', value):
+        return None
     match = re.fullmatch(r'(\d{4})-(\d{1,2})-(\d{1,2})', value)
     if match:
         year, month, day = map(int, match.groups())
@@ -547,7 +549,7 @@ def contract_date(value):
         else:
             match = re.fullmatch(r'(\d{1,2})\s+([а-я]+)\s+(\d{4})', value)
             if not match or match[2] not in MONTHS:
-                return None
+                raise ValueError('CONTRACT_DATE: неподдерживаемый формат даты; укажите полную дату, например 20.10.2026')
             day, month, year = int(match[1]), MONTHS[match[2]], int(match[3])
     try:
         return date(year, month, day).isoformat()

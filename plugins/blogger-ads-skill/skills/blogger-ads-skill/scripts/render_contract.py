@@ -331,6 +331,10 @@ def read_documents(path):
         parts = {name: package.read(name) for name in package.namelist()}
     documents = {name: minidom.parseString(data) for name, data in parts.items()
                  if re.fullmatch(r"word/(document|header\d*|footer\d*)\.xml", name)}
+    for name, doc in documents.items():
+        if doc.documentElement.namespaceURI != W:
+            raise ValueError(f"{name}: неподдерживаемый формат DOCX; проверка не выполнена. "
+                             "Сохраните отдельную копию в обычном формате DOCX (не Strict).")
     return parts, documents
 
 

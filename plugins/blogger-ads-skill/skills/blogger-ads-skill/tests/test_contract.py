@@ -29,10 +29,10 @@ class ContractTests(unittest.TestCase):
     def render(self, name="contract"):
         return module.render(ROOT / "assets/templates" / (name + ".docx"), self.fields, self.output)
 
-    def synthetic(self, xml):
+    def synthetic(self, xml, namespace=module.W):
         path = Path(self.temp.name) / "synthetic.docx"
         with ZipFile(path, "w") as package:
-            package.writestr("word/document.xml", '<w:document xmlns:w="' + module.W + '"><w:body>' + xml + '</w:body></w:document>')
+            package.writestr("word/document.xml", '<w:document xmlns:w="' + namespace + '"><w:body>' + xml + '</w:body></w:document>')
             package.writestr("word/styles.xml", b"unchanged opaque part")
         return path
 
@@ -506,6 +506,19 @@ class ContractTests(unittest.TestCase):
             z.writestr("manual-edit.txt", "changed")
         with self.assertRaisesRegex(ValueError, "изменён после сборки"):
             module.revise_document(target, {"CONTRACT_CITY": "Другой"}, target.with_name("revision-3.docx"))
+
+    def test_strict_docx_is_rejected_before_inspection_audit_or_patch(self):
+        source = self.synthetic("<w:p><w:r><w:t>Текст без шрифта</w:t></w:r></w:p>",
+                                namespace="http://purl.oclc.org/ooxml/wordprocessingml/main")
+        changes = {"source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                   "replacements": [{"find": "Текст", "replace": "Новый текст"}]}
+        with self.assertRaisesRegex(ValueError, "неподдерживаемый формат DOCX"):
+            module.inspect_document(source)
+        with self.assertRaisesRegex(ValueError, "неподдерживаемый формат DOCX"):
+            module.audit_document(source)
+        with self.assertRaisesRegex(ValueError, "неподдерживаемый формат DOCX"):
+            module.patch_document(source, changes, self.output)
+        self.assertFalse(self.output.exists())
 
     def test_audit_detects_the_observed_lost_run_font(self):
         self.render()

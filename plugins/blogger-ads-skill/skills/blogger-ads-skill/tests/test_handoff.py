@@ -1591,7 +1591,8 @@ class HandoffLinkCheckTests(unittest.TestCase):
         return result, json.loads(result.stdout)
 
     def test_unregistered_accounting_files_are_checked_without_deal_state(self):
-        self.response.write_text(f'Учебный [счёт](<{self.artifact}>) и [справка](https://example.com/guide).')
+        self.response.write_text(f'Учебный [счёт](<{self.artifact}>), [справка](https://example.com/guide), '
+                                 '[телефон](tel:+79991234567) и [почта](MAILTO:info@example.com).')
         result, data = self.run_check()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(data['valid'])

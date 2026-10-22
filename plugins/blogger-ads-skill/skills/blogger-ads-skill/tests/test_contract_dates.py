@@ -54,7 +54,9 @@ class ContractDateTests(unittest.TestCase):
         return {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
 
     def test_project_with_deferred_date_passes(self):
-        self.issue(self.document('v1', '«___» __________ 2026 г.'))
+        for index, value in enumerate(('«___» __________ 2026 г.', '____')):
+            with self.subTest(value=value):
+                self.issue(self.document(f'draft-{index}', value))
 
     def test_date_in_russian_or_iso_format_passes(self):
         for value in ('14.10.2026', '«14» октября 2026 г.', '2026-10-14', '14/10/2026'):
@@ -111,6 +113,8 @@ class ContractDateTests(unittest.TestCase):
             ({'CONTRACT_NUMBER': 'A-1'}, 'нужны CONTRACT_NUMBER и CONTRACT_DATE'),
             ({'CONTRACT_NUMBER': 1, 'CONTRACT_DATE': '14.10.2026'}, 'CONTRACT_NUMBER: нужна строка'),
             ({'CONTRACT_NUMBER': 'A-1', 'CONTRACT_DATE': 2026}, 'CONTRACT_DATE: нужна строка'),
+            ({'CONTRACT_NUMBER': 'A-1', 'CONTRACT_DATE': 'tomorrow'}, 'CONTRACT_DATE: неподдерживаемый формат даты'),
+            ({'CONTRACT_NUMBER': 'A-1', 'CONTRACT_DATE': ''}, 'CONTRACT_DATE: неподдерживаемый формат даты'),
         ):
             with self.subTest(fields=fields):
                 sidecar.write_text(json.dumps({'output_sha256': handoff.sha(path), 'fields': fields}))
