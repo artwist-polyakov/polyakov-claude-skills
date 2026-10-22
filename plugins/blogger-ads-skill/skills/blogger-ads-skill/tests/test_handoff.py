@@ -30,12 +30,6 @@ class HandoffTests(unittest.TestCase):
         path.write_text(text)
         return path
 
-    def layout(self, source):
-        from test_docx_layout import make_layout_fixture
-        manifest = make_layout_fixture(source, self.root / ('layout-' + source.stem))
-        handoff.register(self.state, [manifest], 'checked', 'v1', self.at, group='layout-' + source.stem)
-        return manifest
-
     def fixture_hash(self, data, path):
         # Для проверки содержательных связей создаём согласованные технические SHA тестового файла.
         item = next(item for item in data['documents'] if handoff.resolve(self.root, item['path']) == path.resolve())
@@ -181,7 +175,6 @@ class HandoffTests(unittest.TestCase):
             writer.write(output)
         handoff.register(self.state, [docx, pdf], 'draft_for_review', 'v1', self.at,
                          group='creative', document_kind='creative')
-        self.layout(docx)
         response = self.file('reply.txt', f'[Приложение](<{docx}>) и [PDF](<{pdf}>)')
         result = handoff.audit(self.state, response)
         self.assertFalse(result['valid'])
@@ -1110,7 +1103,6 @@ class HandoffTests(unittest.TestCase):
         new = self.file('new.docx')
         handoff.register(self.state, [old], 'draft', 'v1', self.at, document_kind='contract')
         handoff.register(self.state, [new], 'draft', 'v2', self.at, [old], document_kind='contract')
-        self.layout(new)
         response = self.file('reply.txt', f'[Прежняя версия]({old})')
         self.assertFalse(handoff.audit(self.state, response)['valid'])
         self.assertTrue(handoff.audit(self.state, response, [old])['valid'])
@@ -1145,7 +1137,6 @@ class HandoffTests(unittest.TestCase):
         new = self.file('new-plan.md')
         contract = self.file('contract.docx')
         handoff.register(self.state, [contract], 'draft', 'v1', self.at, group='contract', document_kind='contract')
-        self.layout(contract)
         handoff.register(self.state, [old, old_calendar], 'draft', 'v1', self.at, group='plan')
         handoff.register(self.state, [new], 'draft', 'v2', '2026-11-02T12:00:00+03:00', group='plan')
         docs = {item['path']: item for item in self.data()['documents']}
@@ -1196,15 +1187,12 @@ class HandoffTests(unittest.TestCase):
                 self.assertEqual(self.state.read_bytes(), before)
         path = self.file('own-draft.docx')
         handoff.register(self.state, [path], 'draft_for_review', 'v1', self.at, group='contract', document_kind='contract')
-        self.layout(path)
         self.assertTrue(handoff.audit(self.state)['valid'])
 
     def test_own_pdf_docx_without_kind_cannot_bypass_audit_or_require_creative_report_for_other_kinds(self):
         for suffix in ('.pdf', '.docx'):
             path = self.file('own' + suffix)
             handoff.register(self.state, [path], 'draft', 'v1', self.at, group=suffix, document_kind='contract')
-            if suffix == '.docx':
-                self.layout(path)
             for kind in ('contract', 'payment', 'other'):
                 with self.subTest(suffix=suffix, kind=kind):
                     reason = 'Описание продукта без договорных условий.' if kind == 'other' else None
