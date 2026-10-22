@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pypdf>=5,<7", "pymupdf>=1.26,<2", "markdown-it-py>=3,<5"]
+# dependencies = []
 # ///
-"""Заполнить отдельный DOCX с сохранением OOXML и проверкой исходной сверки."""
+"""Заполнить отдельный DOCX с сохранением OOXML и проверкой полей."""
 import argparse
 import json
 import hashlib
@@ -153,39 +153,6 @@ def expand_links(doc, fields):
         row.parentNode.removeChild(row)
 
 
-def review_changes(directory, soffice=None):
-    spec = importlib.util.spec_from_file_location("contract_review", Path(__file__).with_name("review.py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.amendment_changes(directory, soffice=soffice)
-
-
-def verify_review_document(source, directory=None, soffice=None):
-    """Проверить связь собственного DOCX со сверкой, не исправляя документ."""
-    source = Path(source).resolve()
-    saved = json.loads(source.with_suffix(source.suffix + ".fields.json").read_text(encoding="utf-8"))
-    if not isinstance(saved, dict):
-        raise ValueError("Карта .fields.json должна быть JSON-объектом")
-    proof = saved.get("review_source")
-    if not isinstance(proof, dict):
-        raise ValueError("Допсоглашение требует сборки --template amendment --review DIR; ручной пересказ поправок не подходит")
-    review_dir = Path(proof["directory"]).resolve()
-    if directory is not None and review_dir != Path(directory).resolve():
-        raise ValueError("Допсоглашение связано с прежней сверкой; подготовьте отдельную версию по текущему review")
-    expected = review_changes(review_dir, soffice=soffice)
-    if proof != expected["review_source"]:
-        raise ValueError("SHA исходной сверки допсоглашения не совпадает; сохраните новую версию")
-    if saved.get("output_sha256") != hashlib.sha256(source.read_bytes()).hexdigest():
-        raise ValueError("DOCX допсоглашения изменён после сборки; ручные изменения не перезаписываются")
-    text = expected["text"]
-    if saved.get("fields", {}).get("AMENDMENT_CHANGES") != text:
-        raise ValueError("AMENDMENT_CHANGES не совпадает с точными поправками review")
-    _, documents = read_documents(source)
-    if not any(paragraph_text(paragraph) == "1. " + text for doc in documents.values() for paragraph in nodes(doc, "p")):
-        raise ValueError("Текст допсоглашения не содержит точные поправки review в пункте 1")
-    return proof
-
-
 def scan_exchange_fields(data):
     """Два пункта из одного выбранного канала; неизвестные сведения не угадываются."""
     required = {"channel", "channel_name", "contractor_contact", "customer_contact", "agreement",
@@ -239,12 +206,10 @@ def scan_exchange_fields(data):
             "CLOSING_DOCUMENTS_CLAUSE": f"{sender} {document}. Срок направления: {deadline}. {common}"}
 
 
-def render(template, fields, output, force=False, post_file=None, review_dir=None, links_file=None, exchange_file=None, soffice=None):
+def render(template, fields, output, force=False, post_file=None, links_file=None, exchange_file=None):
     template, output = Path(template), Path(output)
     if template.resolve() == output.resolve():
         raise ValueError("Шаблон нельзя перезаписать даже с --force")
-    if output.exists() and review_dir is not None:
-        raise ValueError("Файл уже существует; для --review выберите новую версию, перезапись запрещена")
     if output.exists() and not force:
         raise ValueError("Файл уже существует; выберите новую версию или укажите --force")
     validate_values(fields)
@@ -269,15 +234,6 @@ def render(template, fields, output, force=False, post_file=None, review_dir=Non
                     raise ValueError(f"{key} противоречит --exchange-file; удалите ручное поле: оба пункта формируются из общего канала и отдельных условий")
             fields = fields | generated
             exchange_source = {"path": str(exchange_file.resolve()), "sha256": hashlib.sha256(raw).hexdigest()}
-    review_source = None
-    if review_dir is not None:
-        if template.resolve() != (TEMPLATES / "amendment.docx").resolve():
-            raise ValueError("--review применяется только к собственному шаблону amendment")
-        changes = review_changes(review_dir, soffice=soffice)
-        if "AMENDMENT_CHANGES" in fields and fields["AMENDMENT_CHANGES"] != changes["text"]:
-            raise ValueError("Удалите ручной AMENDMENT_CHANGES: с --review текст поправок формируется из проверенной сверки без пересказа")
-        fields = fields | {"AMENDMENT_CHANGES": changes["text"]}
-        review_source = changes["review_source"]
     if template.resolve() == (TEMPLATES / "contract.docx").resolve():
         if "CLAIMS_CLAUSE" in fields:
             raise ValueError("CLAIMS_CLAUSE больше не используется в собственном шаблоне договора. "
@@ -337,7 +293,7 @@ def render(template, fields, output, force=False, post_file=None, review_dir=Non
         if not audit["ok"]:
             raise ValueError("Проверка шрифтов не пройдена: " + json.dumps(audit["issues"], ensure_ascii=False))
     sidecar = output.with_suffix(output.suffix + ".fields.json")
-    if sidecar.exists() and (not force or review_dir is not None):
+    if sidecar.exists() and not force:
         raise ValueError("Карта полей результата уже существует; выберите новую версию")
     write_package(parts, output, force)
     sidecar.write_text(json.dumps({
@@ -347,7 +303,6 @@ def render(template, fields, output, force=False, post_file=None, review_dir=Non
         "fields": fields,
         "post_source": post_source,
         "links_source": links_source,
-        "review_source": review_source,
         "exchange_source": exchange_source,
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -644,7 +599,7 @@ def write_package(parts, output, force=False):
                 package.writestr(name, data)
 
 
-def revise_document(source, changes, output, post_file=None, review_dir=None, links_file=None, exchange_file=None, soffice=None):
+def revise_document(source, changes, output, post_file=None, links_file=None, exchange_file=None):
     source = Path(source)
     saved = json.loads(source.with_suffix(source.suffix + ".fields.json").read_text(encoding="utf-8"))
     if saved["output_sha256"] != hashlib.sha256(source.read_bytes()).hexdigest():
@@ -677,13 +632,7 @@ def revise_document(source, changes, output, post_file=None, review_dir=None, li
     if exchange_file is not None:
         previous_fields = {key: value for key, value in previous_fields.items() if key not in EXCHANGE_FIELDS}
     fields = previous_fields | changes
-    if saved.get("review_source"):
-        verify_review_document(source, soffice=soffice)
-        if review_dir is None:
-            review_dir = saved["review_source"]["directory"]
-    if review_dir is not None and "AMENDMENT_CHANGES" not in changes:
-        fields.pop("AMENDMENT_CHANGES", None)
-    return render(template, fields, output, post_file=post_file, review_dir=review_dir, links_file=links_file, exchange_file=exchange_file, soffice=soffice)
+    return render(template, fields, output, post_file=post_file, links_file=links_file, exchange_file=exchange_file)
 
 
 def main():
@@ -696,8 +645,6 @@ def main():
     parser.add_argument("--post-file", type=Path, help="Дословный UTF-8 исходник POST_TEXT; несовпадение с картой полей останавливает сборку")
     parser.add_argument("--links-file", type=Path, help="Исходная JSON-карта ссылок: заполнить якоря и URL в исходном порядке; ручные расхождения запрещены")
     parser.add_argument("--exchange-file", type=Path, help="JSON обмена сканами: единый канал, контакты, согласование, закрывающие и последующий обмен для собственного contract")
-    parser.add_argument("--review", type=Path, help="Проверенный каталог review: точные AMENDMENT_CHANGES для собственного amendment")
-    parser.add_argument("--soffice", help="LibreOffice для проверки исходного DOCX в --review; иначе поиск в PATH")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--list-fields", action="store_true")
     parser.add_argument("--inspect", action="store_true", help="SHA256 и номера абзацев, включая таблицы")
@@ -708,8 +655,8 @@ def main():
     args = parser.parse_args()
     try:
         if args.input:
-            if args.post_file or args.review or args.links_file or args.exchange_file:
-                parser.error("--post-file/--links-file/--exchange-file/--review применяются с --template или --revise")
+            if args.post_file or args.links_file or args.exchange_file:
+                parser.error("--post-file/--links-file/--exchange-file применяются с --template или --revise")
             if args.force:
                 parser.error("--force не применяется к существующим документам")
             if args.inspect:
@@ -727,14 +674,14 @@ def main():
         if args.revise:
             if args.force or not args.fields or not args.output:
                 parser.error("Для --revise нужны --fields и --output; --force запрещён")
-            print(revise_document(args.revise, json.loads(args.fields.read_text(encoding="utf-8")), args.output, args.post_file, args.review, args.links_file, args.exchange_file, soffice=args.soffice)); return
+            print(revise_document(args.revise, json.loads(args.fields.read_text(encoding="utf-8")), args.output, args.post_file, args.links_file, args.exchange_file)); return
         template = TEMPLATES / f"{args.template}.docx" if args.template in {"contract", "placement-terms", "creative", "amendment"} else Path(args.template)
         if args.list_fields:
             print(json.dumps(list_fields(template), ensure_ascii=False, indent=2)); return
         if not args.fields or not args.output:
             parser.error("Для заполнения требуются --fields и --output")
         fields = json.loads(args.fields.read_text(encoding="utf-8"))
-        print(render(template, fields, args.output, force=args.force, post_file=args.post_file, review_dir=args.review, links_file=args.links_file, exchange_file=args.exchange_file, soffice=args.soffice))
+        print(render(template, fields, args.output, force=args.force, post_file=args.post_file, links_file=args.links_file, exchange_file=args.exchange_file))
     except (OSError, ValueError, KeyError) as error:
         parser.exit(2, f"Ошибка: {error}\n")
 

@@ -8,7 +8,7 @@ from unittest.mock import patch
 from pathlib import Path
 from zipfile import ZipFile
 
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +16,6 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 spec = importlib.util.spec_from_file_location('handoff', ROOT / 'scripts/handoff.py')
 handoff = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(handoff)
-
 
 class HandoffTests(unittest.TestCase):
     def setUp(self):
@@ -101,18 +100,6 @@ class HandoffTests(unittest.TestCase):
         handoff.deal.import_creative(self.state, post, links, self.at)
         return post
 
-    def creative_review(self, report, citations):
-        note = self.file(report.stem + '-text-review.md', 'Весь текст поста сопоставлен с указанными страницами/абзацами приложения.')
-        handoff.register(self.state, [note], 'reviewed', 'v1', self.at, group='analysis')
-        data = json.loads(report.read_text())
-        data['creative_review'] = {'creative_sha256': handoff.deal.fingerprint(self.data(), self.state),
-                                   'source': note.name, 'citations': citations}
-        if data['format'] == 'pdf':
-            original = handoff.resolve(report.parent, data['source']['path'])
-            data['creative_review']['viewed_pages'] = list(range(1, len(PdfReader(original).pages) + 1))
-        report.write_text(json.dumps(data))
-        return note
-
     def link_issues(self):
         creative = self.data()['creative']
         return handoff.link_report_issues(self.registered(), creative['links'],
@@ -137,15 +124,6 @@ class HandoffTests(unittest.TestCase):
     def register_link_report(self, report):
         handoff.register(self.state, [report], 'checked', 'v1', self.at, group='link-evidence')
 
-    def resolved_links(self, report):
-        note = self.file('link-resolution.md', 'Адрес в печатной таблице повторён: якоря проверены на странице 1.')
-        handoff.register(self.state, [note], 'reviewed', 'v1', self.at, group='analysis')
-        data = json.loads(report.read_text())
-        data['resolution'] = {'result': 'accepted', 'notes': 'Дополнительная ссылка относится к печатной таблице.',
-                              'source': note.name}
-        report.write_text(json.dumps(data))
-        return note
-
     def registered(self):
         return {handoff.resolve(self.root, item['path']): item for item in self.data()['documents']}
 
@@ -162,10 +140,9 @@ class HandoffTests(unittest.TestCase):
         handoff.register(self.state, [received_report], 'checked', 'v1', self.at, group='received-evidence')
         self.assertEqual(self.link_issues(), [])
 
-    def test_received_link_report_with_matching_urls_and_resolved_anchors_passes_readonly(self):
+    def test_received_link_report_with_matching_urls_passes_readonly(self):
         urls = ['https://example.test/?b=2&a=1', 'https://example.test/?a=1&b=2'] * 2
         source, report = self.received_links(urls, urls)
-        self.resolved_links(report)
         self.register_link_report(report)
         before = {path: path.read_bytes() for path in (self.state, source, report)}
         self.assertEqual(self.link_issues(), [])
@@ -178,9 +155,7 @@ class HandoffTests(unittest.TestCase):
         source = self.received_pdf(text=text)
         handoff.register(self.state, [source], 'draft', 'v1', self.at, group='received', document_kind='creative')
         report = self.link_report(source)
-        self.creative_review(report, [{'page': 1, 'quote': text}])
-        # Собственный PDF не требует договорной сверки. Отчёт с comparison
-        # позволяет выдачу, замена на отчёт без comparison блокирует её.
+        # Отчёт с comparison позволяет выдачу, отсутствие comparison блокирует её.
         handoff.register(self.state, [source], 'draft', 'v1', self.at, group='received')
         self.register_link_report(report)
         self.assertTrue(handoff.audit(self.state)['valid'])
@@ -221,7 +196,6 @@ class HandoffTests(unittest.TestCase):
             self.assertTrue(any(str(path) in issue and 'нет актуального отчёта' in issue for issue in result['issues']))
 
         docx_report = self.link_report(docx, 'docx-links.json', [url])
-        self.creative_review(docx_report, [{'paragraph': 1, 'quote': 'Продукт'}])
         self.register_link_report(docx_report)
         result = handoff.audit(self.state, response)
         self.assertFalse(result['valid'])
@@ -229,9 +203,6 @@ class HandoffTests(unittest.TestCase):
         self.assertFalse(any(str(docx) in issue and 'нет актуального отчёта' in issue for issue in result['issues']))
 
         pdf_report = self.link_report(pdf, 'pdf-links.json', [url])
-        self.creative_review(pdf_report, [{'page': 1, 'quote': 'Продукт',
-                                          'verification': {'method': 'visual', 'basis': 'Учебная страница без текстового слоя.'}}])
-        self.resolved_links(pdf_report)
         handoff.register(self.state, [docx_report, pdf_report], 'checked', 'v1', self.at, group='link-evidence')
         before = {path: path.read_bytes() for path in (self.state, docx, pdf, docx_report, pdf_report)}
         result = handoff.audit(self.state, response)
@@ -253,24 +224,7 @@ class HandoffTests(unittest.TestCase):
         handoff.save(self.state, data)
         self.assertTrue(any('comparison.expected_urls' in issue for issue in self.link_issues()))
 
-    def test_received_link_differences_require_explicit_resolution(self):
-        urls = ['https://example.test/product', 'https://example.test/pricing']
-        _, report = self.received_links(urls, urls[::-1])
-        # Числа одинаковы, но изменённый порядок тоже нужно разобрать по якорям.
-        self.assertEqual(json.loads(report.read_text())['comparison']['differences'], [])
-        self.register_link_report(report)
-        self.assertTrue(any('не разобраны' in issue for issue in self.link_issues()))
-
-    def test_extra_table_link_with_registered_resolution_passes(self):
-        url = 'https://example.test/product'
-        _, report = self.received_links([url], [url, url])
-        note = self.resolved_links(report)
-        self.register_link_report(report)
-        before = {path: path.read_bytes() for path in (self.state, report, note)}
-        self.assertEqual(self.link_issues(), [])
-        self.assertEqual(before, {path: path.read_bytes() for path in before})
-
-    def test_received_link_warnings_require_resolution_even_when_lists_match(self):
+    def test_report_cannot_hide_extracted_link_warnings(self):
         from pypdf.annotations import Link
         source = self.root / 'warning.pdf'
         writer = PdfWriter()
@@ -284,11 +238,10 @@ class HandoffTests(unittest.TestCase):
         data = json.loads(report.read_text())
         self.assertTrue(data['warnings'])
         self.register_link_report(report)
-        self.assertTrue(any('не разобраны' in issue for issue in self.link_issues()))
         data['warnings'] = []
         report.write_text(json.dumps(data))
         with self.assertRaisesRegex(ValueError, 'warnings не совпадает'):
-            handoff.check_link_comparison(report, self.registered(), [])
+            handoff.check_link_comparison(report, [])
 
     def test_report_cannot_replace_actual_pdf_docx_links_or_anchors_with_invented_rows(self):
         import inspect_links
@@ -340,7 +293,7 @@ class HandoffTests(unittest.TestCase):
                         altered['format'] = 'docx' if suffix == 'pdf' else 'pdf'
                     report.write_text(json.dumps(altered))
                     with self.assertRaisesRegex(ValueError, 'не совпадает с извлечением'):
-                        handoff.check_link_comparison(report, self.registered(), [wanted])
+                        handoff.check_link_comparison(report, [wanted])
                 report.write_bytes(before[report])
 
     def test_link_audit_reports_damaged_pdf_zip_and_xml_without_traceback(self):
@@ -389,35 +342,13 @@ class HandoffTests(unittest.TestCase):
                 mutate(data)
                 report.write_text(json.dumps(data))
                 with self.assertRaises(ValueError):
-                    handoff.check_link_comparison(report, self.registered(), [url])
+                    handoff.check_link_comparison(report, [url])
 
     def test_link_report_rejects_malformed_current_expected_map(self):
         _, report = self.received_links([], [])
         for invalid in (None, {}, '', [True], [{}], ['not-a-url']):
             with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, 'creative.links'):
-                handoff.check_link_comparison(report, self.registered(), invalid)
-
-    def test_link_resolution_requires_current_unchanged_registered_review(self):
-        url = 'https://example.test/product'
-        source, report = self.received_links([url], [url, url])
-        note = self.resolved_links(report)
-        original = json.loads(report.read_text())
-        for change in ({'result': 'pending'}, {'notes': ' '}, {'notes': []}, {'source': {}},
-                       {'source': 'missing.md'}, {'source': source.name}, {'source': report.name}):
-            with self.subTest(change=change):
-                data = json.loads(json.dumps(original))
-                data['resolution'].update(change)
-                report.write_text(json.dumps(data))
-                with self.assertRaises(ValueError):
-                    handoff.check_link_comparison(report, self.registered(), [url])
-        report.write_text(json.dumps(original))
-        records = self.registered()
-        for change in ({'current': False}, {'sha256': '0' * 64}, {'group': 'source'}):
-            with self.subTest(change=change):
-                changed = {path: dict(item) for path, item in records.items()}
-                changed[note.resolve()].update(change)
-                with self.assertRaisesRegex(ValueError, 'resolution.source'):
-                    handoff.check_link_comparison(report, changed, [url])
+                handoff.check_link_comparison(report, invalid)
 
     def test_replacing_document_archives_its_link_report_across_groups(self):
         old = self.received_pdf('old.pdf')
@@ -823,19 +754,12 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(record['plan']['sha256'], handoff.sha(files[0]))
         self.assertEqual(record['response']['sha256'], handoff.sha(response))
 
-    def test_issue_waits_for_contract_review_and_rejects_malformed_history(self):
-        _, _, plans = self.review_package()
+    def test_issue_rejects_malformed_history(self):
+        self.scheduled_state()
+        plans = self.plan_package()
+        self.register_plan(plans)
         response = self.file('reply.txt', f'[План](<{plans[1]}>)')
         data = self.data()
-        review_record = next(item for item in data['documents'] if item['path'].endswith('/review-input.json'))
-        review_record['current'] = False
-        handoff.save(self.state, data)
-        before = self.state.read_bytes()
-        result = handoff.audit(self.state, response, record_issue=True)
-        self.assertFalse(result['valid'])
-        self.assertTrue(any('Сверка договора' in issue for issue in result['issues']))
-        self.assertEqual(before, self.state.read_bytes())
-        review_record['current'] = True
         for malformed in (None, {}, ['plan.json'], [{'plan': {'path': 'missing.json'}}]):
             data['plan_issues'] = malformed
             handoff.save(self.state, data)
@@ -859,55 +783,7 @@ class HandoffTests(unittest.TestCase):
             writer.write(output)
         return path
 
-    def review_package(self, source=None, with_changes=False):
-        import review
-        self.scheduled_state()
-        source = source or self.received_pdf()
-        handoff.register(self.state, [source], 'received', 'v1', self.at, group='source', document_kind='contract')
-        data = {
-            'title': 'Учебная сверка полученного договора', 'scope': {'mode': 'full'},
-            'comparison_at': self.at,
-            'review_basis': {'edition': 'received', 'reason': 'Предварительный план по полученной редакции.'},
-            'documents': [{'id': 'contract', 'label': 'Полученный договор', 'path': source.name, 'viewed_pages': [1]}],
-            'signature_matrix': [{'label': 'Учебный договор', 'source': {'document': 'contract', 'page': 1},
-                                  'not_applicable': 'Учебный текст без подписной части; просмотрена вся страница.'}],
-            'decisions': [{
-                'id': 'services', 'category': 'Общие условия', 'topic': 'Рекламные услуги',
-                'source': {'document': 'contract', 'clause': '1', 'page': 1, 'quote': 'The parties agree on advertising services.'},
-                'previous': {'source': {'kind': 'none', 'group': 'contract',
-                             'reason': 'Первое полученное предложение, собственного проекта ещё не было.'}},
-                'status': 'pending',
-                'decision': {'action': 'defer', 'reason': 'Недостаточно условий для принятия',
-                             'selected': 'Уточнить до принятия', 'plan': 'Запросить уточнение при согласовании договора'},
-            }]
-        }
-        plans = self.plan_package()
-        handoff.register(self.state, plans, 'prepared', 'v1', self.at, group='plan')
-        if with_changes:
-            data['decisions'][0]['decision'].update(action='replace', target='Договор, пункт 1',
-                                                   original='agree', text='agree in writing')
-        input_path = self.file('review-decisions.json', json.dumps(data))
-        folder = self.root / 'review-v1'
-        review.build(input_path, folder)
-        handoff.register(self.state, [folder / name for name in handoff.REVIEW_FILES], 'reviewed', 'v1', self.at, group='review')
-        return source, folder, plans
-
-    def amendment_package(self, review_dir=None, version='v1'):
-        import render_contract
-        schema = json.loads((ROOT / 'assets/template-fields.json').read_text())
-        fields = {key: item['example'] for key, item in schema['fields'].items() if '<N>' not in key}
-        if review_dir:
-            fields.pop('AMENDMENT_CHANGES')
-        path = self.root / (version + '-unrelated-name.docx')
-        render_contract.render(ROOT / 'assets/templates/amendment.docx', fields, path, review_dir=review_dir)
-        sidecar = path.with_suffix('.docx.fields.json')
-        handoff.register(self.state, [path, sidecar], 'draft_for_review', version, self.at,
-                         group='amendment', document_kind='amendment')
-        self.layout(path)
-        return path, sidecar
-
-    def test_received_review_requires_classification_of_own_docx_without_name_guessing(self):
-        self.review_package()
+    def test_own_docx_requires_classification_without_name_guessing(self):
         own = self.file('unrelated.docx', 'Проект документа')
         handoff.register(self.state, [own], 'draft_for_review', 'v1', self.at, group='own', document_kind='contract')
         data = self.data()
@@ -917,127 +793,6 @@ class HandoffTests(unittest.TestCase):
         self.assertFalse(result['valid'])
         self.assertTrue(any('document_kind' in issue for issue in result['issues']))
         self.assertEqual(own.read_text(), 'Проект документа')
-
-    def test_received_review_rejects_manual_amendment_but_standalone_still_works(self):
-        self.amendment_package()
-        self.assertTrue(handoff.audit(self.state)['valid'])
-        self.review_package(with_changes=True)
-        result = handoff.audit(self.state)
-        self.assertFalse(result['valid'])
-        self.assertTrue(any('требует сборки' in issue and '--review' in issue for issue in result['issues']))
-
-    def test_bound_amendment_and_explicit_pdf_source_pass_without_changing_files(self):
-        _, folder, _ = self.review_package(with_changes=True)
-        docx, sidecar = self.amendment_package(folder)
-        pdf = self.received_pdf('export-with-another-name.pdf', 'Our amendment with agreed corrections.')
-        handoff.register(self.state, [pdf], 'draft_for_review', 'v1', self.at, group='amendment',
-                         document_kind='amendment', source_docx=docx)
-        paths = [self.state, docx, sidecar, pdf, *folder.iterdir()]
-        before = {path: path.read_bytes() for path in paths}
-        result = handoff.audit(self.state)
-        self.assertTrue(result['valid'], result['issues'])
-        self.assertEqual(before, {path: path.read_bytes() for path in paths})
-        record = next(item for item in self.data()['documents'] if item['path'] == pdf.name)
-        self.assertEqual(record['source_docx'], {'path': docx.name, 'sha256': handoff.sha(docx)})
-
-    def test_pdf_amendment_requires_explicit_current_source_and_matching_hash(self):
-        _, folder, _ = self.review_package(with_changes=True)
-        docx, _ = self.amendment_package(folder)
-        pdf = self.received_pdf('export.pdf', 'Our amendment with agreed corrections.')
-        handoff.register(self.state, [pdf], 'draft_for_review', 'v1', self.at, group='amendment', document_kind='amendment')
-        self.assertTrue(any('--source-docx' in issue for issue in handoff.audit(self.state)['issues']))
-        handoff.register(self.state, [pdf], 'draft_for_review', 'v1', self.at, group='amendment',
-                         document_kind='amendment', source_docx=docx)
-        state = self.data()
-        next(item for item in state['documents'] if item['path'] == pdf.name)['source_docx']['sha256'] = '0' * 64
-        handoff.save(self.state, state)
-        self.assertTrue(any('SHA не совпадает' in issue for issue in handoff.audit(self.state)['issues']))
-
-    def test_amendment_requires_current_registered_sidecar_and_detects_manual_document_change(self):
-        _, folder, _ = self.review_package(with_changes=True)
-        docx, sidecar = self.amendment_package(folder)
-        initial = self.data()
-        state = self.data()
-        next(item for item in state['documents'] if item['path'] == sidecar.name)['current'] = False
-        handoff.save(self.state, state)
-        self.assertTrue(any('карту .fields.json' in issue for issue in handoff.audit(self.state)['issues']))
-        handoff.save(self.state, initial)
-        docx.write_bytes(docx.read_bytes() + b'human-change')
-        before = docx.read_bytes()
-        state = self.data()
-        self.fixture_hash(state, docx)
-        handoff.save(self.state, state)
-        self.assertTrue(any('DOCX допсоглашения изменён' in issue for issue in handoff.audit(self.state)['issues']))
-        self.assertEqual(docx.read_bytes(), before)
-
-    def test_new_review_requires_new_amendment_preserving_old_delivery(self):
-        import review
-        _, folder, _ = self.review_package(with_changes=True)
-        old, old_sidecar = self.amendment_package(folder)
-        before = old.read_bytes(), old_sidecar.read_bytes()
-        data = json.loads((folder / 'review-input.json').read_text())
-        data['decisions'][0]['decision']['text'] = 'agree after written approval'
-        input_path = self.file('review-v2-input.json', json.dumps(data))
-        second = self.root / 'review-v2'
-        review.build(input_path, second)
-        handoff.register(self.state, [second / name for name in handoff.REVIEW_FILES], 'reviewed', 'v2', self.at, group='review')
-        self.assertTrue(any('прежней сверкой' in issue for issue in handoff.audit(self.state)['issues']))
-        self.amendment_package(second, 'v2')
-        result = handoff.audit(self.state)
-        self.assertTrue(result['valid'], result['issues'])
-        self.assertEqual((old.read_bytes(), old_sidecar.read_bytes()), before)
-        for entry in self.data()['documents']:
-            if entry['path'] in (old.name, old_sidecar.name):
-                self.assertFalse(entry['current'])
-                self.assertEqual(entry['delivered_at'], self.at)
-
-    def test_bound_amendment_keeps_review_check_after_received_source_is_archived(self):
-        state = self.data()
-        state['stage'] = 'closed'
-        handoff.save(self.state, state)
-        source, folder, _ = self.review_package(with_changes=True)
-        self.amendment_package(folder)
-        state = self.data()
-        next(item for item in state['documents'] if item['path'] == source.name)['current'] = False
-        handoff.save(self.state, state)
-        result = handoff.audit(self.state)
-        self.assertTrue(result['valid'], result['issues'])
-        state = self.data()
-        next(item for item in state['documents'] if item['path'].endswith('/review-input.json'))['current'] = False
-        handoff.save(self.state, state)
-        result = handoff.audit(self.state)
-        self.assertFalse(result['valid'])
-        self.assertTrue(any('review-input.json' in issue for issue in result['issues']), result['issues'])
-
-    def test_render_amendment_cli_uses_checked_review(self):
-        _, folder, _ = self.review_package(with_changes=True)
-        schema = json.loads((ROOT / 'assets/template-fields.json').read_text())
-        fields = {key: item['example'] for key, item in schema['fields'].items() if '<N>' not in key and key != 'AMENDMENT_CHANGES'}
-        field_file = self.file('fields.json', json.dumps(fields))
-        output = self.root / 'cli.docx'
-        command = [sys.executable, str(ROOT / 'scripts/render_contract.py'), '--template', 'amendment',
-                   '--review', str(folder), '--fields', str(field_file), '--output', str(output)]
-        result = subprocess.run(command, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        sidecar = output.with_suffix('.docx.fields.json')
-        handoff.register(self.state, [output, sidecar], 'draft_for_review', 'v1', self.at,
-                         group='amendment', document_kind='amendment')
-        self.layout(output)
-        self.assertTrue(handoff.audit(self.state)['valid'])
-
-    def test_registered_amendment_cannot_drop_review_provenance_after_source_is_archived(self):
-        source, folder, _ = self.review_package(with_changes=True)
-        _, sidecar = self.amendment_package(folder)
-        saved = json.loads(sidecar.read_text())
-        saved['review_source'] = None
-        sidecar.write_text(json.dumps(saved))
-        state = self.data()
-        next(item for item in state['documents'] if item['path'] == source.name)['current'] = False
-        next(item for item in state['documents'] if item['path'] == sidecar.name)['sha256'] = handoff.sha(sidecar)
-        handoff.save(self.state, state)
-        result = handoff.audit(self.state)
-        self.assertFalse(result['valid'])
-        self.assertTrue(any('сохранённая в реестре связь' in issue for issue in result['issues']))
 
     def test_known_date_requires_a_registered_plan_but_unknown_date_does_not(self):
         self.assertTrue(handoff.audit(self.state)['valid'])
@@ -1466,7 +1221,7 @@ class HandoffTests(unittest.TestCase):
             record['current'] = False
             handoff.save(self.state, data)
 
-    def test_other_needs_reason_and_payment_does_not_require_contract_review(self):
+    def test_other_needs_reason_and_payment_keeps_classification(self):
         path = self.file('received.pdf', 'Подтверждение поступления оплаты')
         for kind, reason in [('other', None), ('other', ' '), ('invalid', None), ('payment', 'Причина лишняя')]:
             before = self.state.read_bytes()
@@ -1494,75 +1249,10 @@ class HandoffTests(unittest.TestCase):
         handoff.save(self.state, data)
         self.assertTrue(any('kind_reason' in issue for issue in handoff.audit(self.state)['issues']))
 
-    def test_contract_review_cannot_be_replaced_by_freeform_note_or_just_json(self):
+    def test_handoff_rechecks_plan_contents(self):
         self.scheduled_state()
-        source = self.received_pdf()
-        handoff.register(self.state, [source], 'received', 'v1', self.at, group='source', document_kind='contract')
-        handoff.register(self.state, self.plan_package(), 'prepared', 'v1', self.at, group='plan')
-        note = self.file('freeform.md', 'Всё проверено, договор подходит.')
-        fake_input = self.file('fake-review.json', '{"reviewed":true}')
-        handoff.register(self.state, [note, fake_input], 'reviewed', 'v1', self.at, group='review')
-        result = handoff.audit(self.state)
-        self.assertFalse(result['valid'])
-        self.assertTrue(any('Произвольная заметка' in issue for issue in result['issues']))
-
-    def test_real_registered_review_passes_without_mutating_state_or_sources(self):
-        source, folder, plans = self.review_package()
-        paths = [self.state, source, *folder.iterdir(), *plans]
-        before = {path: path.read_bytes() for path in paths}
-        result = handoff.audit(self.state)
-        self.assertTrue(result['valid'], result['issues'])
-        self.assertEqual(before, {path: path.read_bytes() for path in paths})
-
-    def test_each_review_file_must_be_current_registered_and_same_package(self):
-        _, folder, _ = self.review_package()
-        original = self.data()
-        for name in handoff.REVIEW_FILES:
-            data = json.loads(json.dumps(original))
-            entry = next(item for item in data['documents'] if item['path'] == f'review-v1/{name}')
-            entry['current'] = False
-            handoff.save(self.state, data)
-            with self.subTest(name=name):
-                result = handoff.audit(self.state)
-                self.assertFalse(result['valid'])
-                self.assertTrue(any('пакет review' in issue or 'Пакет review' in issue for issue in result['issues']))
-        handoff.save(self.state, original)
-        table = folder / 'terms-review.md'
-        table.write_text('Ручная заметка вместо таблицы')
-        data = self.data()
-        self.fixture_hash(data, table)
-        handoff.save(self.state, data)
-        self.assertTrue(any('Изменён сохранённый файл' in issue for issue in handoff.audit(self.state)['issues']))
-
-    def test_uncovered_received_contractual_source_blocks_existing_valid_review(self):
-        self.review_package()
-        attachment = self.received_pdf('new-terms.pdf', 'New placement terms.')
-        handoff.register(self.state, [attachment], 'received', 'v1', self.at, group='new-source', document_kind='placement_terms')
-        result = handoff.audit(self.state)
-        self.assertFalse(result['valid'])
-        self.assertTrue(any('не охватывает' in issue and str(attachment) in issue for issue in result['issues']))
-
-    def test_identical_source_copy_is_covered_by_sha_but_original_stays_registered(self):
-        text = 'The parties agree on advertising services.'
-        self.import_post(text)
-        source, _, _ = self.review_package()
-        copied = self.root / 'renamed.pdf'
-        copied.write_bytes(source.read_bytes())
-        handoff.register(self.state, [copied], 'received', 'v1', self.at, group='copy', document_kind='creative')
-        report = self.link_report(copied)
-        self.creative_review(report, [{'page': 1, 'quote': text}])
-        handoff.register(self.state, [report], 'checked', 'v1', self.at, group='links')
-        result = handoff.audit(self.state)
-        self.assertTrue(result['valid'], result['issues'])
-        data = self.data()
-        data['documents'] = [entry for entry in data['documents'] if entry['path'] != source.name]
-        handoff.save(self.state, data)
-        result = handoff.audit(self.state)
-        self.assertFalse(result['valid'])
-        self.assertTrue(any('исходник не зарегистрирован' in issue for issue in result['issues']))
-
-    def test_review_handoff_rechecks_plan_contents(self):
-        _, _, plans = self.review_package()
+        plans = self.plan_package()
+        self.register_plan(plans)
         data = self.data()
         plan = json.loads(plans[0].read_text())
         plan['events'][0]['title'] = 'Подменённое действие'
@@ -1573,7 +1263,7 @@ class HandoffTests(unittest.TestCase):
         self.assertFalse(result['valid'])
         self.assertTrue(any('План' in issue or 'план' in issue for issue in result['issues']))
 
-    def test_archived_received_sources_do_not_require_new_review_or_classification(self):
+    def test_archived_received_sources_keep_bytes_without_reclassification(self):
         old = self.received_pdf()
         handoff.register(self.state, [old], 'received', 'v1', self.at, group='source', document_kind='contract')
         receipt = self.file('receipt.pdf', 'Подтверждение платежа')
@@ -1599,63 +1289,18 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(self.data()['documents'][0]['document_kind'], 'other')
         self.assertEqual(self.data()['documents'][0]['kind_reason'], 'Справочный материал без договорных условий.')
 
-    def test_received_status_suffixes_cannot_bypass_classification_or_review(self):
+    def test_received_status_suffixes_require_classification(self):
         for index, status in enumerate(('received_unsigned', 'received_customer_signed', ' RECEIVED ')):
             path = self.received_pdf(f'received-{index}.pdf')
             with self.subTest(status=status), self.assertRaisesRegex(ValueError, 'document_kind'):
                 handoff.register(self.state, [path], status, 'v1', self.at, group=f'source-{index}')
             handoff.register(self.state, [path], status, 'v1', self.at, group=f'source-{index}', document_kind='contract')
-            result = handoff.audit(self.state)
-            self.assertFalse(result['valid'])
-            self.assertTrue(any('пакет review' in issue for issue in result['issues']))
 
-    def test_docx_received_source_is_covered_only_by_verified_pdf_original_link(self):
-        import review
-        _, folder, _ = self.review_package()
-        original = self.root / 'received.docx'
-        with ZipFile(original, 'w') as archive:
-            archive.writestr('word/document.xml', '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-                             '<w:body><w:p><w:r><w:t>The parties agree on advertising services.</w:t></w:r></w:p></w:body></w:document>')
-        def convert(source, destination, soffice=None):
-            with ZipFile(source) as archive:
-                text = review.word_text(review.ElementTree.fromstring(archive.read('word/document.xml'))).strip()
-            return self.received_pdf(str(destination / (source.stem + '.pdf')), text)
-        conversion = patch.object(review.render_docx, 'convert_to_pdf', side_effect=convert)
-        converter = conversion.start()
-        self.addCleanup(conversion.stop)
-        handoff.register(self.state, [original], 'received', 'v1', self.at, group='docx-source', document_kind='contract')
-        self.assertTrue(any('не охватывает' in issue for issue in handoff.audit(self.state)['issues']))
-        decisions = json.loads((folder / 'review-input.json').read_text())
-        decisions['documents'][0]['original_path'] = original.name
-        source = self.file('decisions-v2.json', json.dumps(decisions))
-        second = self.root / 'review-v2'
-        review.build(source, second, soffice='/chosen/soffice')
-        handoff.register(self.state, [second / name for name in handoff.REVIEW_FILES], 'reviewed', 'v2', self.at, group='review')
-        result = handoff.audit(self.state, soffice='/chosen/soffice')
-        self.assertTrue(result['valid'], result['issues'])
-        self.assertEqual(converter.call_count, 2)
-        self.assertTrue(all(call.args[2] == '/chosen/soffice' for call in converter.call_args_list))
-        # Даже согласованные SHA исходника и реестра не доказывают происхождение PDF.
-        with ZipFile(original) as archive:
-            xml = archive.read('word/document.xml')
-        with ZipFile(original, 'w') as archive:
-            archive.writestr('word/document.xml', xml.replace(b'agree on', b'disagree on'))
-        manifest_path = second / 'manifest.json'
-        manifest = json.loads(manifest_path.read_text())
-        manifest['sources'][0]['original']['sha256'] = handoff.sha(original)
-        manifest_path.write_text(json.dumps(manifest))
-        state = self.data()
-        for path in (original, manifest_path):
-            self.fixture_hash(state, path)
-        handoff.save(self.state, state)
-        result = handoff.audit(self.state, soffice='/chosen/soffice')
-        self.assertFalse(result['valid'])
-        self.assertTrue(any('original_path' in issue and 'PDF страницы 1' in issue for issue in result['issues']), result['issues'])
-        original.write_bytes(original.read_bytes() + b'changed')
-        self.assertFalse(handoff.audit(self.state)['valid'])
-
-    def test_unknown_publication_allows_review_without_a_plan(self):
-        self.review_package()
+    def test_received_contract_without_publication_date_needs_no_plan(self):
+        self.scheduled_state()
+        self.register_plan(self.plan_package())
+        source = self.received_pdf()
+        handoff.register(self.state, [source], 'received', 'v1', self.at, group='source', document_kind='contract')
         state = self.data()
         state['schedule']['publication_at'] = None
         for entry in state['documents']:
@@ -1669,7 +1314,6 @@ class HandoffTests(unittest.TestCase):
         state['schedule']['publication_at'] = '2026-11-09T09:00:00+03:00'
         handoff.save(self.state, state)
         self.assertFalse(handoff.audit(self.state)['valid'])
-
 
 class ContractSignatureRevisionTests(unittest.TestCase):
     def setUp(self):
@@ -1826,7 +1470,6 @@ class ContractSignatureRevisionTests(unittest.TestCase):
         self.assertEqual(state['checks']['contract'], self.proof)
         self.assertEqual(state['history'], [])
 
-
 class ReceivedDocumentStatusTests(unittest.TestCase):
     received_pdf = HandoffTests.received_pdf
 
@@ -1849,11 +1492,6 @@ class ReceivedDocumentStatusTests(unittest.TestCase):
     def snapshot(self):
         return {path.relative_to(self.root): path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
 
-    def assert_review_required(self):
-        result = handoff.audit(self.state)
-        self.assertFalse(result['valid'])
-        self.assertTrue(any('пакет review' in issue for issue in result['issues']), result['issues'])
-
     def test_received_origin_cannot_be_removed_or_partially_register_a_package(self):
         additional = self.received_pdf('new.pdf', 'A new document in the same registration batch.')
         for previous_status in ('received', 'received_unsigned', ' RECEIVED_CUSTOMER_SIGNED '):
@@ -1869,14 +1507,12 @@ class ReceivedDocumentStatusTests(unittest.TestCase):
                     state = handoff.deal.read_json(self.state)
                     self.assertEqual(state['checks']['contract'], self.proof)
                     self.assertEqual(state['documents'][0]['status'], previous_status)
-                    self.assert_review_required()
                     self.assertEqual(self.snapshot(), before)
 
-    def test_exact_received_copy_cannot_bypass_review_or_partially_register_files(self):
+    def test_exact_received_copy_keeps_origin_and_registration_is_atomic(self):
         copied = self.root / 'working-copy.pdf'
         copied.write_bytes(self.original.read_bytes())
         additional = self.received_pdf('new.pdf', 'A different document in the same batch.')
-        self.assert_review_required()
         for status in ('draft', 'reviewed', 'signed'):
             with self.subTest(status=status):
                 before = self.snapshot()
@@ -1884,7 +1520,6 @@ class ReceivedDocumentStatusTests(unittest.TestCase):
                     handoff.register(self.state, [additional, copied], status, 'v2', self.later,
                                      group='source', document_kind='contract')
                 self.assertEqual(self.snapshot(), before)
-                self.assert_review_required()
                 self.assertEqual(self.snapshot(), before)
         handoff.register(self.state, [copied], 'received', 'v2', self.later,
                          group='source', document_kind='contract')
@@ -1893,7 +1528,6 @@ class ReceivedDocumentStatusTests(unittest.TestCase):
         self.assertFalse(by_path[self.original.name]['current'])
         self.assertTrue(by_path[copied.name]['current'])
         self.assertEqual(by_path[copied.name]['status'], 'received')
-        self.assert_review_required()
 
     def test_changed_own_revision_is_allowed_but_historical_received_copy_keeps_origin(self):
         revised = self.received_pdf('own-revision.pdf', 'Our revised advertising contract.')
@@ -1914,9 +1548,8 @@ class ReceivedDocumentStatusTests(unittest.TestCase):
         self.assertEqual(self.snapshot(), before)
         handoff.register(self.state, [copied], 'received_customer_signed', 'v3', self.later,
                          group='source', document_kind='contract')
-        self.assert_review_required()
 
-    def test_received_reregistration_and_status_refinement_keep_origin_and_review(self):
+    def test_received_reregistration_and_status_refinement_keep_origin(self):
         original_bytes = self.original.read_bytes()
         initial = handoff.deal.read_json(self.state)['documents'][0]
         archive = handoff.archive_file(self.root, initial)
@@ -1931,8 +1564,6 @@ class ReceivedDocumentStatusTests(unittest.TestCase):
                 self.assertEqual(state['history'], [])
                 self.assertEqual(self.original.read_bytes(), original_bytes)
                 self.assertEqual(archive.read_bytes(), original_bytes)
-                self.assert_review_required()
-
 
 class HandoffLinkCheckTests(unittest.TestCase):
     def setUp(self):
@@ -2110,7 +1741,6 @@ class HandoffLinkCheckTests(unittest.TestCase):
                 self.assertEqual(data['local_links'], [])
                 self.assertTrue(any('конкретный файл' in issue for issue in data['issues']))
 
-
 class CreativeDocumentBindingTests(unittest.TestCase):
     setUp = HandoffTests.setUp
     file = HandoffTests.file
@@ -2120,7 +1750,6 @@ class CreativeDocumentBindingTests(unittest.TestCase):
     import_post = HandoffTests.import_post
     link_report = HandoffTests.link_report
     register_link_report = HandoffTests.register_link_report
-    creative_review = HandoffTests.creative_review
     received_pdf = HandoffTests.received_pdf
 
     def docx(self, text, post_file=True, status='draft'):
@@ -2177,102 +1806,9 @@ class CreativeDocumentBindingTests(unittest.TestCase):
         saved['output_sha256'] = handoff.sha(path)
         sidecar.write_text(json.dumps(saved))
         with self.assertRaisesRegex(ValueError, 'не найден в самом DOCX'):
-            handoff.check_creative_document(path.resolve(), report, self.registered(), self.data(), self.state)
+            handoff.check_creative_document(path.resolve(), self.registered(), self.data())
 
-    def test_pdf_manual_review_checks_real_quote_and_current_creative_hash(self):
-        text = 'The agreed text.'
-        self.import_post(text)
-        path = self.received_pdf(text=text)
-        handoff.register(self.state, [path], 'draft', 'v1', self.at, group='creative', document_kind='creative')
-        report = self.link_report(path)
-        with self.assertRaisesRegex(ValueError, 'нужна явная creative_review'):
-            handoff.check_creative_document(path.resolve(), report, self.registered(), self.data(), self.state)
-        self.creative_review(report, [{'page': 1, 'quote': text}])
-        original = report.read_bytes()
-        for mutation in ('quote', 'hash', 'reverse', 'duplicate', 'gap'):
-            data = json.loads(original)
-            if mutation == 'hash':
-                data['creative_review']['creative_sha256'] = '0' * 64
-            elif mutation == 'quote':
-                data['creative_review']['citations'][0]['quote'] = 'Wrong post.'
-            else:
-                pages = {'reverse': [2, 1], 'duplicate': [1, 1], 'gap': [1, 3]}[mutation]
-                data['creative_review']['citations'] = [{'page': page, 'quote': text} for page in pages]
-            report.write_text(json.dumps(data))
-            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
-                handoff.check_creative_document(path.resolve(), report, self.registered(), self.data(), self.state)
-        report.write_bytes(original)
-        self.register_link_report(report)
-        self.assert_audit_readonly(True)
-
-    def test_received_docx_requires_explicit_review_even_with_generator_metadata(self):
-        text = 'The agreed text.'
-        self.import_post(text)
-        path, _, report = self.docx(text, status='received')
-        with self.assertRaisesRegex(ValueError, 'нужна явная creative_review'):
-            handoff.check_creative_document(path.resolve(), report, self.registered(), self.data(), self.state)
-        self.creative_review(report, [{'paragraph': 5, 'quote': text}])
-        handoff.check_creative_document(path.resolve(), report, self.registered(), self.data(), self.state)
-        data = json.loads(report.read_text())
-        data['creative_review']['citations'][0]['paragraph'] = 6
-        report.write_text(json.dumps(data))
-        with self.assertRaisesRegex(ValueError, 'не совпадает с указанным абзацем'):
-            handoff.check_creative_document(path.resolve(), report, self.registered(), self.data(), self.state)
-
-    def pdf_with_pages(self, texts, name='creative'):
-        writer = PdfWriter()
-        for index, text in enumerate(texts, 1):
-            source = self.received_pdf(f'{name}-page-{index}.pdf', text)
-            writer.add_page(PdfReader(source).pages[0])
-        path = self.root / f'{name}.pdf'
-        writer.write(path)
-        handoff.register(self.state, [path], 'draft', 'v1', self.at, group='creative', document_kind='creative')
-        return path, self.link_report(path, f'{name}-links.json')
-
-    def test_pdf_uncited_leading_and_trailing_pages_require_explicit_review(self):
-        text = 'The agreed text.'
-        self.import_post(text)
-        cases = ((['An unapproved advertisement.', text], 2),
-                 ([text, 'An unapproved advertisement.'], 1),
-                 (['Another advertisement.', text, 'An extra offer.'], 2))
-        for index, (texts, cited_page) in enumerate(cases, 1):
-            with self.subTest(texts=texts):
-                path, report = self.pdf_with_pages(texts, f'creative-{index}')
-                self.creative_review(report, [{'page': cited_page, 'quote': text}])
-                original = report.read_bytes()
-                for viewed in (None, [cited_page]):
-                    data = json.loads(original)
-                    if viewed is None:
-                        del data['creative_review']['viewed_pages']
-                    else:
-                        data['creative_review']['viewed_pages'] = viewed
-                    report.write_text(json.dumps(data))
-                    with self.subTest(viewed=viewed), self.assertRaisesRegex(ValueError, 'просмотр всех страниц PDF'):
-                        handoff.check_creative_document(path.resolve(), report, self.registered(), self.data(), self.state)
-
-    def test_pdf_all_pages_review_allows_pages_without_post_fragments(self):
-        self.import_post('First part. Second part.')
-        path, report = self.pdf_with_pages(['Appendix title and parties.', 'First part.',
-                                           ' Second part.', 'Signature lines.'])
-        self.creative_review(report, [{'page': 2, 'quote': 'First part.'}, {'page': 3, 'quote': ' Second part.'}])
-        self.register_link_report(report)
-        self.assert_audit_readonly(True)
-
-    def test_pdf_viewed_pages_must_match_actual_count_in_order(self):
-        text = 'The agreed text.'
-        self.import_post(text)
-        path, report = self.pdf_with_pages(['Appendix title.', text, 'Signature lines.'])
-        self.creative_review(report, [{'page': 2, 'quote': text}])
-        original = report.read_bytes()
-        for viewed in ([], [1, 2], [2, 3], [1, 2, 3, 4], [3, 2, 1], [1, 2, 2, 3], [True, 2, 3], '1, 2, 3'):
-            with self.subTest(viewed=viewed):
-                data = json.loads(original)
-                data['creative_review']['viewed_pages'] = viewed
-                report.write_text(json.dumps(data))
-                with self.assertRaisesRegex(ValueError, 'просмотр всех страниц PDF'):
-                    handoff.check_creative_document(path.resolve(), report, self.registered(), self.data(), self.state)
-
-    def test_manual_docx_can_preserve_old_fields_with_explicit_text_review(self):
+    def test_manual_docx_preserves_old_fields_and_requires_date_comparison(self):
         text = 'The agreed text.'
         self.import_post(text)
         original, fields, _ = self.docx(text)
@@ -2288,166 +1824,10 @@ class CreativeDocumentBindingTests(unittest.TestCase):
         handoff.register(self.state, [path, sidecar], 'draft', 'v2', self.at, group='creative', document_kind='creative')
         self.layout(path)
         report = self.link_report(path, 'manual-links.json')
-        self.creative_review(report, [{'paragraph': 5, 'quote': text}])
         self.register_link_report(report)
         result = self.assert_audit_readonly(True)
         self.assertTrue(any(item['path'] == str(path.resolve()) for item in result['contract_date_unchecked']))
         self.assertEqual(sidecar.read_bytes(), fields.read_bytes())
-
-    def test_manual_docx_preserves_blank_paragraph_inside_the_complete_post(self):
-        self.import_post('Первый абзац\n\nВторой абзац')
-        path = self.root / 'manual.docx'
-        with ZipFile(path, 'w') as archive:
-            archive.writestr('word/document.xml',
-                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
-                '<w:p><w:r><w:t>Первый абзац</w:t></w:r></w:p><w:p/>'
-                '<w:p><w:r><w:t>Второй абзац</w:t></w:r></w:p></w:body></w:document>')
-        handoff.register(self.state, [path], 'draft', 'v1', self.at, group='creative', document_kind='creative')
-        self.layout(path)
-        report = self.link_report(path)
-        self.creative_review(report, [{'paragraph': 1, 'quote': 'Первый абзац'},
-                                      {'paragraph': 2, 'quote': ''}, {'paragraph': 3, 'quote': 'Второй абзац'}])
-        self.register_link_report(report)
-        self.assert_audit_readonly(True)
-
-
-class AnchorPairAuditTests(unittest.TestCase):
-    setUp = HandoffTests.setUp
-    file = HandoffTests.file
-    data = HandoffTests.data
-    layout = HandoffTests.layout
-    import_post = HandoffTests.import_post
-    link_report = HandoffTests.link_report
-    creative_review = HandoffTests.creative_review
-    register_link_report = HandoffTests.register_link_report
-    assert_audit_readonly = CreativeDocumentBindingTests.assert_audit_readonly
-
-    def docx_package(self, expected, actual, legacy=False):
-        from xml.sax.saxutils import escape, quoteattr
-        text = 'The agreed post.'
-        self.import_post(text, [row['url'] for row in expected] if legacy else expected)
-        if legacy:
-            data = self.data()
-            data['creative'].pop('link_map')
-            handoff.save(self.state, data)
-        path = self.root / 'creative.docx'
-        paragraphs = [f'<w:p><w:r><w:t>{text}</w:t></w:r></w:p>']
-        relationships = []
-        for index, row in enumerate(actual, 1):
-            paragraphs.append(f'<w:p><w:hyperlink r:id="r{index}"><w:r><w:t xml:space="preserve">'
-                              f'{escape(row["anchor"])}</w:t></w:r></w:hyperlink></w:p>')
-            relationships.append(f'<Relationship Id="r{index}" '
-                'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
-                f'Target={quoteattr(row["url"])} TargetMode="External"/>')
-        with ZipFile(path, 'w') as archive:
-            archive.writestr('word/document.xml',
-                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>'
-                + ''.join(paragraphs) + '</w:body></w:document>')
-            archive.writestr('word/_rels/document.xml.rels',
-                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-                + ''.join(relationships) + '</Relationships>')
-        handoff.register(self.state, [path], 'draft', 'v1', self.at, group='creative', document_kind='creative')
-        self.layout(path)
-        report = self.link_report(path, expected=[row['url'] for row in expected])
-        self.creative_review(report, [{'paragraph': 1, 'quote': text}])
-        self.register_link_report(report)
-        return report
-
-    def pdf_package(self, visible_anchor):
-        import pymupdf
-        text, url, anchor = 'The agreed post.', 'https://example.test/product', 'Product'
-        self.import_post(text, [{'anchor': anchor, 'url': url}])
-        path = self.root / 'creative.pdf'
-        with pymupdf.open() as document:
-            page = document.new_page(width=300, height=300)
-            page.insert_text((20, 30), text)
-            if visible_anchor:
-                page.insert_text((20, 80), anchor)
-            rectangle = pymupdf.Rect(19, 65, 100, 85)
-            page.insert_link({'kind': pymupdf.LINK_URI, 'from': rectangle, 'uri': url})
-            document.save(path)
-        handoff.register(self.state, [path], 'draft', 'v1', self.at, group='creative', document_kind='creative')
-        report = self.link_report(path, expected=[url])
-        self.creative_review(report, [{'page': 1, 'quote': text}])
-        self.register_link_report(report)
-        return report
-
-    def accept_resolution(self, report):
-        note = self.file('anchor-resolution.md', 'Подписи и адреса проверены по исходной карте и самому приложению; различие принято.')
-        handoff.register(self.state, [note], 'reviewed', 'v1', self.at, group='analysis')
-        value = json.loads(report.read_text())
-        value['resolution'] = {'result': 'accepted', 'notes': 'Сопоставлены все пары подпись — адрес в порядке приложения.',
-                               'source': note.name}
-        resolved = report.with_stem(report.stem + '-resolved')
-        resolved.write_text(json.dumps(value))
-        handoff.register(self.state, [resolved], 'checked', 'v2', self.at, group='link-evidence')
-
-    def assert_anchor_resolution_needed(self):
-        result = self.assert_audit_readonly(False)
-        self.assertTrue(any('resolution.result=accepted' in issue for issue in result['issues']), result['issues'])
-
-    def test_exact_ordered_docx_pairs_pass_including_unicode_and_repeated_url(self):
-        pairs = [{'anchor': 'Тариф «Плюс» — 1\u00a0000 ₽', 'url': 'https://example.test/?b=2&a=1'},
-                 {'anchor': 'Условия Café', 'url': 'https://example.test/?b=2&a=1'}]
-        report = self.docx_package(pairs, pairs)
-        self.assertNotIn('resolution', json.loads(report.read_text()))
-        self.assert_audit_readonly(True)
-
-    def test_changed_real_docx_anchor_with_unchanged_url_requires_resolution(self):
-        expected = [{'anchor': 'Условия подписки', 'url': 'https://example.test/product'}]
-        actual = [{'anchor': 'Бесплатный доступ', 'url': expected[0]['url']}]
-        report = self.docx_package(expected, actual)
-        value = json.loads(report.read_text())
-        self.assertTrue(value['comparison']['ordered_lists_equal'])
-        self.assertEqual(value['links'][0]['anchor'], actual[0]['anchor'])
-        self.assert_anchor_resolution_needed()
-        self.accept_resolution(report)
-        self.assert_audit_readonly(True)
-
-    def test_reordered_anchors_on_same_url_are_not_treated_as_equal(self):
-        pairs = [{'anchor': 'Тарифы', 'url': 'https://example.test/product'},
-                 {'anchor': 'Отмена подписки', 'url': 'https://example.test/product'}]
-        self.docx_package(pairs, pairs[::-1])
-        self.assert_anchor_resolution_needed()
-
-    def test_unicode_composition_is_not_silently_normalized(self):
-        expected = [{'anchor': 'Café', 'url': 'https://example.test/product'}]
-        actual = [{'anchor': 'Cafe\u0301', 'url': expected[0]['url']}]
-        self.docx_package(expected, actual)
-        self.assert_anchor_resolution_needed()
-
-    def test_empty_docx_anchor_needs_explicit_resolution(self):
-        expected = [{'anchor': 'Тарифы', 'url': 'https://example.test/product'}]
-        report = self.docx_package(expected, [{'anchor': '', 'url': expected[0]['url']}])
-        self.assertEqual(json.loads(report.read_text())['links'][0]['anchor'], '')
-        self.assert_anchor_resolution_needed()
-        self.accept_resolution(report)
-        self.assert_audit_readonly(True)
-
-    def test_legacy_urls_without_link_map_need_resolution_even_for_visible_url(self):
-        url = 'https://example.test/product'
-        pairs = [{'anchor': url, 'url': url}]
-        report = self.docx_package(pairs, pairs, legacy=True)
-        self.assertNotIn('link_map', self.data()['creative'])
-        self.assert_anchor_resolution_needed()
-        self.accept_resolution(report)
-        self.assert_audit_readonly(True)
-
-    def test_pdf_exact_anchor_hint_still_requires_explicit_resolution(self):
-        report = self.pdf_package(visible_anchor=True)
-        self.assertEqual(json.loads(report.read_text())['links'][0]['anchor_hint'], 'Product')
-        self.assert_anchor_resolution_needed()
-        self.accept_resolution(report)
-        self.assert_audit_readonly(True)
-
-    def test_pdf_missing_anchor_hint_needs_explicit_resolution(self):
-        report = self.pdf_package(visible_anchor=False)
-        self.assertIsNone(json.loads(report.read_text())['links'][0]['anchor_hint'])
-        self.assert_anchor_resolution_needed()
-        self.accept_resolution(report)
-        self.assert_audit_readonly(True)
-
 
 class StateFileDeliveryTests(unittest.TestCase):
     setUp = HandoffTests.setUp
@@ -2513,7 +1893,6 @@ class StateFileDeliveryTests(unittest.TestCase):
         self.assertTrue(data['valid'], data['issues'])
         self.assertEqual(data['local_links'], [str(self.state.resolve())])
         self.assertEqual(before, self.snapshot())
-
 
 if __name__ == '__main__':
     unittest.main()

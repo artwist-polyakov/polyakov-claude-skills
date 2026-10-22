@@ -175,7 +175,6 @@ class LinkInspectionTests(unittest.TestCase):
                     self.assertEqual(len(result["warnings"]), 1)
                     self.assertIn(part, result["warnings"][0])
                     self.assertIn("HYPERLINK", result["warnings"][0])
-                    self.assertIn("resolution", result["warnings"][0])
                     self.assertEqual(path.read_bytes(), before)
 
     def test_docx_other_fields_and_separate_instructions_do_not_warn(self):
@@ -217,46 +216,9 @@ class LinkInspectionTests(unittest.TestCase):
                     if tag != "no_link":
                         self.assertIn(part, result["warnings"][0])
                         self.assertIn("DrawingML", result["warnings"][0])
-                        self.assertIn("resolution", result["warnings"][0])
                     self.assertEqual(path.read_bytes(), before)
 
-    def test_docx_hyperlink_field_requires_registered_resolution(self):
-        sys.path.insert(0, str(ROOT / "scripts"))
-        import handoff
-
-        field = '<w:p><w:fldSimple w:instr=\' HYPERLINK "https://hidden.example.test/" \'>\n'
-        path = self.docx(field + '<w:r><w:t>Другой адрес</w:t></w:r></w:fldSimple></w:p>')
-        expected = ["https://pricing.example.test/?a=1&b=2"] * 2 + ["https://product.example.test/?a=1&b=2"]
-        result = links.inspect_links(path, expected)
-        report = self.base / "links.json"
-        report.write_text(json.dumps(result), encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "resolution.result=accepted"):
-            handoff.check_link_comparison(report, {}, expected)
-        review = self.base / "review.md"
-        review.write_text("Поле HYPERLINK отдельно просмотрено: адрес и видимый якорь проверены.", encoding="utf-8")
-        result["resolution"] = {"result": "accepted", "notes": "Поле проверено отдельно", "source": str(review)}
-        report.write_text(json.dumps(result), encoding="utf-8")
-        handoff.check_link_comparison(report, {
-            review.resolve(): {"group": "review", "current": True, "sha256": handoff.sha(review)}}, expected)
-
-    def test_docx_drawingml_warning_requires_resolution_despite_equal_urls(self):
-        sys.path.insert(0, str(ROOT / "scripts"))
-        import handoff
-
-        path = self.docx('<w:p><w:r><w:drawing xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
-                         '<a:hlinkClick r:id="r1"/></w:drawing></w:r></w:p>')
-        expected = ["https://pricing.example.test/?a=1&b=2"] * 2 + ["https://product.example.test/?a=1&b=2"]
-        result = links.inspect_links(path, expected)
-        self.assertTrue(result["comparison"]["ordered_lists_equal"])
-        report = self.base / "drawing-links.json"
-        report.write_text(json.dumps(result), encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "resolution.result=accepted"):
-            handoff.check_link_comparison(report, {}, expected)
-
-    def test_docx_vml_href_requires_resolution_in_every_word_part(self):
-        sys.path.insert(0, str(ROOT / "scripts"))
-        import handoff
-
+    def test_docx_vml_href_warns_in_every_word_part(self):
         url = "https://example.test/product"
         for tag, attribute in (("shape", "href"), ("image", "o:href"), ("imagedata", "href")):
             for part in ("word/document.xml", "word/header1.xml", "word/drawings/vmlDrawing1.vml"):
@@ -282,7 +244,6 @@ class LinkInspectionTests(unittest.TestCase):
                                 '<Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
                                 f'Target="{url}" TargetMode="External"/></Relationships>')
                         expected = [url] if with_links else []
-                        link_map = [{'anchor': 'Продукт', 'url': url}] if with_links else []
                         before = path.read_bytes()
                         result = links.inspect_links(path, expected)
                         self.assertTrue(result['comparison']['ordered_lists_equal'])
@@ -290,18 +251,6 @@ class LinkInspectionTests(unittest.TestCase):
                         self.assertEqual(len(result['warnings']), 1)
                         self.assertIn(part, result['warnings'][0])
                         self.assertIn('VML (href)', result['warnings'][0])
-                        report = self.base / 'vml-links.json'
-                        report.write_text(json.dumps(result))
-                        with self.assertRaisesRegex(ValueError, 'resolution.result=accepted'):
-                            handoff.check_link_comparison(report, {}, expected, link_map)
-                        review = self.base / 'vml-review.md'
-                        review.write_text('Ссылка на фигуре отдельно просмотрена, её адрес и назначение согласованы.')
-                        result['resolution'] = {'result': 'accepted', 'notes': 'VML-ссылка проверена на фигуре.',
-                                                'source': str(review)}
-                        report.write_text(json.dumps(result))
-                        handoff.check_link_comparison(report, {
-                            review.resolve(): {'group': 'review', 'current': True, 'sha256': handoff.sha(review)}},
-                            expected, link_map)
                         self.assertEqual(path.read_bytes(), before)
 
     def test_docx_vml_without_href_does_not_warn(self):
@@ -404,10 +353,7 @@ class LinkInspectionTests(unittest.TestCase):
         self.assertEqual(len(result["warnings"]), 3)
         self.assertTrue(any("не содержит адреса" in item for item in result["warnings"]))
 
-    def test_pdf_unparsed_actions_require_resolution_even_when_urls_match(self):
-        sys.path.insert(0, str(ROOT / "scripts"))
-        import handoff
-
+    def test_pdf_unparsed_actions_warn_even_when_urls_match(self):
         expected = ["https://example.test/?a=1&b=2"] * 2 + ["https://example.test/?b=2&a=1"]
         for kind in ("/GoToR", "/Launch", "/JavaScript", "/GoTo", "/Next", "/Next-array"):
             with self.subTest(kind=kind):
@@ -433,16 +379,9 @@ class LinkInspectionTests(unittest.TestCase):
                 result = links.inspect_links(path, expected)
                 self.assertTrue(result["comparison"]["ordered_lists_equal"])
                 self.assertTrue(any(("/Next" if kind.startswith("/Next") else kind) in warning for warning in result["warnings"]))
-                report = self.base / "action-links.json"
-                report.write_text(json.dumps(result), encoding="utf-8")
-                with self.assertRaisesRegex(ValueError, "resolution.result=accepted"):
-                    handoff.check_link_comparison(report, {}, expected)
                 self.assertEqual(path.read_bytes(), before)
 
-    def test_pdf_additional_annotation_actions_require_resolution(self):
-        sys.path.insert(0, str(ROOT / "scripts"))
-        import handoff
-
+    def test_pdf_additional_annotation_actions_warn(self):
         expected = ["https://example.test/?a=1&b=2"] * 2 + ["https://example.test/?b=2&a=1"]
         self.assertEqual(links.inspect_links(self.pdf(), expected)["warnings"], [])
         for subtype in ("/Link", "/Text"):
@@ -469,16 +408,9 @@ class LinkInspectionTests(unittest.TestCase):
                     self.assertTrue(result["comparison"]["ordered_lists_equal"])
                     self.assertEqual(len(result["warnings"]), 1)
                     self.assertIn("/AA", result["warnings"][0])
-                    report = self.base / "additional-action-links.json"
-                    report.write_text(json.dumps(result), encoding="utf-8")
-                    with self.assertRaisesRegex(ValueError, "resolution.result=accepted"):
-                        handoff.check_link_comparison(report, {}, expected)
                     self.assertEqual(path.read_bytes(), before)
 
-    def test_pdf_non_link_primary_actions_require_resolution(self):
-        sys.path.insert(0, str(ROOT / "scripts"))
-        import handoff
-
+    def test_pdf_non_link_primary_actions_warn(self):
         expected = ["https://example.test/?a=1&b=2"] * 2 + ["https://example.test/?b=2&a=1"]
         for subtype in ("/Widget", "/Text"):
             for has_action in (False, True):
@@ -501,22 +433,15 @@ class LinkInspectionTests(unittest.TestCase):
                     before = path.read_bytes()
                     result = links.inspect_links(path, expected)
                     self.assertTrue(result["comparison"]["ordered_lists_equal"])
-                    report = self.base / "non-link-action-links.json"
-                    report.write_text(json.dumps(result), encoding="utf-8")
                     if has_action:
                         self.assertEqual(len(result["warnings"]), 1)
                         self.assertIn("/A", result["warnings"][0])
                         self.assertIn(subtype, result["warnings"][0])
-                        with self.assertRaisesRegex(ValueError, "resolution.result=accepted"):
-                            handoff.check_link_comparison(report, {}, expected)
                     else:
                         self.assertEqual(result["warnings"], [])
                     self.assertEqual(path.read_bytes(), before)
 
-    def test_pdf_document_and_page_actions_require_resolution(self):
-        sys.path.insert(0, str(ROOT / "scripts"))
-        import handoff
-
+    def test_pdf_document_and_page_actions_warn(self):
         for kind in ("/OpenAction", "catalog /AA", "page /AA", "/Names/JavaScript"):
             for with_links in (False, True):
                 with self.subTest(kind=kind, with_links=with_links):
@@ -553,13 +478,9 @@ class LinkInspectionTests(unittest.TestCase):
                     self.assertTrue(result["comparison"]["ordered_lists_equal"])
                     self.assertEqual(len(result["warnings"]), 1)
                     self.assertIn("/AA" if kind.endswith("/AA") else kind, result["warnings"][0])
-                    report = self.base / "document-action-links.json"
-                    report.write_text(json.dumps(result), encoding="utf-8")
-                    with self.assertRaisesRegex(ValueError, "resolution.result=accepted"):
-                        handoff.check_link_comparison(report, {}, expected)
                     self.assertEqual(path.read_bytes(), before)
 
-    def test_empty_pdf_without_actions_needs_no_resolution(self):
+    def test_empty_pdf_without_actions_has_no_warnings(self):
         sys.path.insert(0, str(ROOT / "scripts"))
         import handoff
 
@@ -575,7 +496,7 @@ class LinkInspectionTests(unittest.TestCase):
         self.assertTrue(result["comparison"]["ordered_lists_equal"])
         report = self.base / "empty-links.json"
         report.write_text(json.dumps(result), encoding="utf-8")
-        handoff.check_link_comparison(report, {}, [])
+        handoff.check_link_comparison(report, [])
         self.assertEqual(path.read_bytes(), before)
 
 
@@ -620,53 +541,38 @@ class DocxAlternativeFormatTests(unittest.TestCase):
                                  + content + '</Relationships>')
         return path, ([{'anchor': 'Продукт', 'url': url}] if with_links else [])
 
-    def assert_resolution_required(self, path, expected_map):
-        sys.path.insert(0, str(ROOT / 'scripts'))
-        import handoff
+    def assert_import_warning(self, path, expected_map):
         original = path.read_bytes()
         expected = [row['url'] for row in expected_map]
         result = links.inspect_links(path, expected)
         self.assertTrue(result['comparison']['ordered_lists_equal'])
         self.assertEqual([row['target'] for row in result['links']], expected)
         self.assertTrue(result['warnings'])
-        self.assertTrue(all('resolution' in warning for warning in result['warnings']))
-        report = self.base / 'import-links.json'
-        report.write_text(json.dumps(result), encoding='utf-8')
-        with self.assertRaisesRegex(ValueError, 'resolution.result=accepted'):
-            handoff.check_link_comparison(report, {}, expected, expected_map)
-        review = self.base / 'import-review.md'
-        review.write_text('Импорт отдельно проверен: содержимое и все адреса переходов сопоставлены.', encoding='utf-8')
-        result['resolution'] = {'result': 'accepted', 'notes': 'Импорт отдельно проверен.', 'source': str(review)}
-        report.write_text(json.dumps(result), encoding='utf-8')
-        with self.assertRaisesRegex(ValueError, 'resolution.source'):
-            handoff.check_link_comparison(report, {}, expected, expected_map)
-        handoff.check_link_comparison(report, {
-            review.resolve(): {'group': 'analysis', 'current': True, 'sha256': handoff.sha(review)}}, expected, expected_map)
         self.assertEqual(path.read_bytes(), original)
         return result
 
-    def test_internal_and_external_imports_block_even_with_matching_or_empty_urls(self):
+    def test_internal_and_external_imports_warn_even_with_matching_or_empty_urls(self):
         for extension in ('html', 'mht'):
             for external in (False, True):
                 for with_links in (False, True):
                     with self.subTest(extension=extension, external=external, with_links=with_links):
                         path, expected = self.imported_docx(extension=extension, external=external, with_links=with_links)
-                        result = self.assert_resolution_required(path, expected)
+                        result = self.assert_import_warning(path, expected)
                         self.assertTrue(any('w:altChunk' in warning for warning in result['warnings']))
                         self.assertTrue(any('aFChunk' in warning and 'import1' in warning for warning in result['warnings']))
                         if external:
                             self.assertTrue(any('TargetMode=External' in warning for warning in result['warnings']))
 
-    def test_element_without_relationship_still_blocks_in_body_and_header(self):
+    def test_element_without_relationship_still_warns_in_body_and_header(self):
         for part in ('word/document.xml', 'word/header1.xml'):
             with self.subTest(part=part):
                 path, expected = self.imported_docx(relationship=False, part=part)
-                result = self.assert_resolution_required(path, expected)
+                result = self.assert_import_warning(path, expected)
                 self.assertEqual(len(result['warnings']), 1)
                 self.assertIn(part, result['warnings'][0])
                 self.assertIn('w:altChunk', result['warnings'][0])
 
-    def test_import_relationship_without_element_blocks_in_any_relationship_part(self):
+    def test_import_relationship_without_element_warns_in_any_relationship_part(self):
         for rel_path in ('word/_rels/document.xml.rels', 'word/_rels/header1.xml.rels',
                          'customXml/_rels/item1.xml.rels'):
             for prefix in ('http://schemas.openxmlformats.org/officeDocument/2006/relationships/',
@@ -674,12 +580,12 @@ class DocxAlternativeFormatTests(unittest.TestCase):
                 with self.subTest(rel_path=rel_path, prefix=prefix):
                     path, expected = self.imported_docx(element=False, rel_path=rel_path,
                                                         relationship_type=prefix + 'aFChunk')
-                    result = self.assert_resolution_required(path, expected)
+                    result = self.assert_import_warning(path, expected)
                     self.assertEqual(len(result['warnings']), 1)
                     self.assertIn(rel_path, result['warnings'][0])
                     self.assertIn('aFChunk', result['warnings'][0])
 
-    def test_plain_docx_has_no_import_warning_or_resolution_requirement(self):
+    def test_plain_docx_has_no_import_warning(self):
         sys.path.insert(0, str(ROOT / 'scripts'))
         import handoff
         path, expected_map = self.imported_docx(element=False, relationship=False)
@@ -688,7 +594,7 @@ class DocxAlternativeFormatTests(unittest.TestCase):
         self.assertEqual(result['warnings'], [])
         report = self.base / 'plain-docx-links.json'
         report.write_text(json.dumps(result), encoding='utf-8')
-        handoff.check_link_comparison(report, {}, expected, expected_map)
+        handoff.check_link_comparison(report, expected, expected_map)
 
 
 class StrictDocxLinkTests(unittest.TestCase):
@@ -733,18 +639,12 @@ class StrictDocxLinkTests(unittest.TestCase):
                 self.assertEqual([row['target'] for row in strict['links']], expected)
                 self.assertEqual(path.read_bytes(), before)
 
-    def test_strict_external_links_block_an_empty_expected_map(self):
-        sys.path.insert(0, str(ROOT / 'scripts'))
-        import handoff
+    def test_strict_external_links_differ_from_an_empty_expected_map(self):
         path = self.docx()
         self.as_strict(path)
         result = links.inspect_links(path, [])
         self.assertEqual(len(result['links']), 3)
         self.assertFalse(result['comparison']['ordered_lists_equal'])
-        report = self.base / 'strict-links.json'
-        report.write_text(json.dumps(result), encoding='utf-8')
-        with self.assertRaisesRegex(ValueError, 'resolution.result=accepted'):
-            handoff.check_link_comparison(report, {}, [], [])
 
     def test_strict_internal_anchor_and_literal_namespace_urls_are_preserved(self):
         literal = 'http://purl.oclc.org/ooxml/officeDocument/relationships/hyperlink?b=2&a=1&a=2#raw'
@@ -768,9 +668,7 @@ class StrictDocxLinkTests(unittest.TestCase):
         self.assertIsNone(result['links'][-1]['target'])
         self.assertEqual(result['warnings'], [])
 
-    def test_strict_unparsed_features_keep_warnings_and_require_resolution(self):
-        sys.path.insert(0, str(ROOT / 'scripts'))
-        import handoff
+    def test_strict_unparsed_features_keep_warnings(self):
         features = {
             'HYPERLINK': '<w:p><w:fldSimple w:instr=\' HYPERLINK "https://hidden.example.test/" \'> '
                          '<w:r><w:t>Импорт</w:t></w:r></w:fldSimple></w:p>',
@@ -795,10 +693,6 @@ class StrictDocxLinkTests(unittest.TestCase):
                 self.assertEqual(result['warnings'], transitional['warnings'])
                 self.assertTrue(result['warnings'])
                 self.assertTrue(result['comparison']['ordered_lists_equal'])
-                report = self.base / 'strict-warning-links.json'
-                report.write_text(json.dumps(result), encoding='utf-8')
-                with self.assertRaisesRegex(ValueError, 'resolution.result=accepted'):
-                    handoff.check_link_comparison(report, {}, expected, expected_map)
 
 
 class PdfCatalogWarningTests(unittest.TestCase):
@@ -846,9 +740,7 @@ class PdfCatalogWarningTests(unittest.TestCase):
             writer.write(output)
         return path, expected
 
-    def assert_catalog_review_required(self, kind):
-        sys.path.insert(0, str(ROOT / "scripts"))
-        import handoff
+    def assert_catalog_warning(self, kind):
         for with_links in (False, True):
             with self.subTest(with_links=with_links):
                 path, expected = self.catalog_pdf(kind, with_links)
@@ -866,32 +758,13 @@ class PdfCatalogWarningTests(unittest.TestCase):
                 self.assertTrue(result["comparison"]["ordered_lists_equal"])
                 self.assertEqual(len(result["warnings"]), 1)
                 self.assertIn(kind, result["warnings"][0])
-                self.assertIn("resolution", result["warnings"][0])
-                report = self.base / "catalog-links.json"
-                report.write_text(json.dumps(result), encoding="utf-8")
-                expected_map = [{"anchor": url, "url": url} for url in expected]
-                with self.assertRaisesRegex(ValueError, "resolution.result=accepted"):
-                    handoff.check_link_comparison(report, {}, expected, expected_map)
-                self.assertEqual(path.read_bytes(), original)
-                review = self.base / "catalog-review.md"
-                review.write_text("Дополнительные переходы проверены по закладкам и действиям полей формы.", encoding="utf-8")
-                result["resolution"] = {"result": "accepted", "notes": "Переходы и подписи проверены отдельно.",
-                                        "source": str(review)}
-                report.write_text(json.dumps(result), encoding="utf-8")
-                with self.assertRaisesRegex(ValueError, "resolution.source"):
-                    handoff.check_link_comparison(report, {}, expected, expected_map)
-                documents = {review.resolve(): {"group": "analysis", "current": True,
-                                                "sha256": handoff.sha(review)}}
-                before = {item: item.read_bytes() for item in (path, report, review)}
-                handoff.check_link_comparison(report, documents, expected, expected_map)
-                self.assertEqual(before, {item: item.read_bytes() for item in before})
                 self.assertEqual(path.read_bytes(), original)
 
-    def test_uri_outline_requires_resolution_with_empty_or_matching_regular_urls(self):
-        self.assert_catalog_review_required("/Outlines")
+    def test_uri_outline_warns_with_empty_or_matching_regular_urls(self):
+        self.assert_catalog_warning("/Outlines")
 
-    def test_parent_field_action_requires_resolution_with_empty_or_matching_regular_urls(self):
-        self.assert_catalog_review_required("/AcroForm")
+    def test_parent_field_action_warns_with_empty_or_matching_regular_urls(self):
+        self.assert_catalog_warning("/AcroForm")
 
     def test_plain_pdf_does_not_warn_about_absent_catalog_features(self):
         sys.path.insert(0, str(ROOT / "scripts"))
@@ -907,7 +780,7 @@ class PdfCatalogWarningTests(unittest.TestCase):
                 if not with_links:
                     report = self.base / "plain-links.json"
                     report.write_text(json.dumps(result), encoding="utf-8")
-                    handoff.check_link_comparison(report, {}, [], [])
+                    handoff.check_link_comparison(report, [], [])
                 self.assertEqual(path.read_bytes(), original)
 
 

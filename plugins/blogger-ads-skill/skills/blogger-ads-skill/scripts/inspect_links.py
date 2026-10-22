@@ -56,17 +56,17 @@ def pdf_links(raw):
     for key in ("/OpenAction", "/AA", "/Outlines", "/AcroForm"):
         if key in catalog:
             warnings.append(f"Каталог PDF содержит {key}; действия не разобраны. "
-                            "Сверьте их отдельно и сохраните разбор в resolution")
+                            "Сверьте их отдельно")
     names = catalog.get("/Names", {})
     if hasattr(names, "get_object"):
         names = names.get_object()
     if isinstance(names, dict) and "/JavaScript" in names:
         warnings.append("Каталог PDF содержит /Names/JavaScript; действия не разобраны. "
-                        "Сверьте их отдельно и сохраните разбор в resolution")
+                        "Сверьте их отдельно")
     for page_index, page in enumerate(reader.pages, 1):
         if "/AA" in page:
             warnings.append(f"Страница {page_index}: дополнительные действия /AA не разобраны; "
-                            "сверьте их отдельно и сохраните разбор в resolution")
+                            "сверьте их отдельно")
         annotations = page.get("/Annots", [])
         if hasattr(annotations, "get_object"):
             annotations = annotations.get_object()
@@ -85,11 +85,11 @@ def pdf_links(raw):
                 continue
             if "/AA" in annotation:
                 warnings.append(f"{location}: дополнительные действия аннотации /AA не разобраны; "
-                                "сверьте их отдельно и сохраните разбор в resolution")
+                                "сверьте их отдельно")
             if annotation.get("/Subtype") != "/Link":
                 if "/A" in annotation:
                     warnings.append(f"{location}: действие /A аннотации {annotation.get('/Subtype')} не разобрано; "
-                                    "сверьте его отдельно и сохраните разбор в resolution")
+                                    "сверьте его отдельно")
                 continue
             action = annotation.get("/A")
             if action is None:
@@ -101,13 +101,13 @@ def pdf_links(raw):
                 warnings.append(f"{location}: /A не является словарём")
                 continue
             if "/Next" in action:
-                warnings.append(f"{location}: цепочка действий /Next не разобрана; сверьте её отдельно и сохраните разбор в resolution")
+                warnings.append(f"{location}: цепочка действий /Next не разобрана; сверьте её отдельно")
             if "/S" not in action:
                 warnings.append(f"{location}: у действия нет типа /S")
                 continue
             if action.get("/S") != "/URI":
                 warnings.append(f"{location}: неподдерживаемое действие {action.get('/S')}; "
-                                "сверьте переход отдельно и сохраните разбор в resolution")
+                                "сверьте переход отдельно")
                 continue
             if "/URI" not in action:
                 warnings.append(f"{location}: действие /URI не содержит адреса")
@@ -241,7 +241,7 @@ def docx_links(raw):
                     warnings.append(f"{rel_path}: импорт aFChunk {relationship.get('Id')} "
                                     f"(Target={relationship.get('Target')}, TargetMode={relationship.get('TargetMode', 'Internal')}); "
                                     "содержимое и ссылки импортируемого файла не разобраны. "
-                                    "Сверьте их отдельно и сохраните разбор в resolution")
+                                    "Сверьте их отдельно")
         # Тело первым; остальные части (например, колонтитулы) — по имени.
         parts = sorted(name for name in names if name.startswith("word/") and name.endswith((".xml", ".vml")))
         parts.remove("word/document.xml")
@@ -249,17 +249,17 @@ def docx_links(raw):
             root = ooxml_root(archive.read(part))
             if any(node.tag == W + "altChunk" for node in root.iter()):
                 warnings.append(f"{part}: обнаружен w:altChunk; содержимое и ссылки импортируемого файла не разобраны. "
-                                "Сверьте их отдельно и сохраните разбор в resolution")
+                                "Сверьте их отдельно")
             if has_hyperlink_field(root):
                 warnings.append(f"{part}: обнаружено поле HYPERLINK; его адрес и якорь не извлечены. "
-                                "Сверьте их вручную и сохраните разбор в resolution")
+                                "Сверьте их вручную")
             if any(node.tag in (A + "hlinkClick", A + "hlinkHover") for node in root.iter()):
                 warnings.append(f"{part}: обнаружены ссылки DrawingML (hlinkClick/hlinkHover); их адреса и объекты не извлечены. "
-                                "Сверьте их вручную и сохраните разбор в resolution")
+                                "Сверьте их вручную")
             if any(node.tag.startswith(V) and any(key.rsplit("}", 1)[-1] == "href" for key in node.attrib)
                    for node in root.iter()):
                 warnings.append(f"{part}: обнаружены ссылки VML (href); их адреса и объекты не извлечены. "
-                                "Сверьте их вручную и сохраните разбор в resolution")
+                                "Сверьте их вручную")
             rel_path = str(Path(part).parent / "_rels" / (Path(part).name + ".rels"))
             relationships = {}
             if rel_path in names:

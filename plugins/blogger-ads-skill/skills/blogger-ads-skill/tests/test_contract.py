@@ -7,7 +7,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
@@ -587,64 +586,6 @@ class ContractTests(unittest.TestCase):
             after = ET.fromstring(z.read("word/document.xml"))
             self.assertEqual([ET.tostring(e) for e in root.iter(W + "pPr")],
                              [ET.tostring(e) for e in after.iter(W + "pPr")])
-
-    def amendment_review(self):
-        return {"text": "Документ: Договор. Место правки: пункт 5.2.\n"
-                        "Заменить только фрагмент:\nПредоплата.\nна:\nОплата после подписания.\nОстальное условие сохранить.",
-                "review_source": {"directory": str(Path(self.temp.name).resolve()),
-                                  "manifest_sha256": "a" * 64, "input_sha256": "b" * 64}}
-
-    def test_amendment_review_inserts_exact_changes_and_locks_manual_field(self):
-        generated = self.amendment_review()
-        fields = {key: value for key, value in self.fields.items() if key != "AMENDMENT_CHANGES"}
-        before = dict(fields)
-        with patch.object(module, "review_changes", return_value=generated):
-            module.render(ROOT / "assets/templates/amendment.docx", fields, self.output, review_dir=self.temp.name)
-            self.assertIn("1. " + generated["text"], [p["text"] for p in module.inspect_document(self.output)["paragraphs"]])
-            self.assertEqual(module.verify_review_document(self.output), generated["review_source"])
-            saved = json.loads(self.output.with_suffix(".docx.fields.json").read_text())
-            self.assertEqual(saved["review_source"], generated["review_source"])
-            self.assertEqual(saved["output_sha256"], hashlib.sha256(self.output.read_bytes()).hexdigest())
-            changed = self.output.with_name("changed.docx")
-            with self.assertRaisesRegex(ValueError, "Удалите ручной AMENDMENT_CHANGES"):
-                module.render(ROOT / "assets/templates/amendment.docx", self.fields, changed, review_dir=self.temp.name)
-            self.assertFalse(changed.exists())
-            with self.assertRaisesRegex(ValueError, "только к собственному шаблону amendment"):
-                module.render(ROOT / "assets/templates/contract.docx", fields, changed, review_dir=self.temp.name)
-            with self.assertRaisesRegex(ValueError, "уже существует"):
-                module.render(ROOT / "assets/templates/amendment.docx", fields, self.output, force=True, review_dir=self.temp.name)
-        self.assertEqual(fields, before)
-
-    def test_revise_review_amendment_preserves_binding_and_refuses_manual_docx_changes(self):
-        generated = self.amendment_review()
-        fields = {key: value for key, value in self.fields.items() if key != "AMENDMENT_CHANGES"}
-        revised = self.output.with_name("v2.docx")
-        with patch.object(module, "review_changes", return_value=generated):
-            module.render(ROOT / "assets/templates/amendment.docx", fields, self.output, review_dir=self.temp.name)
-            module.revise_document(self.output, {"AMENDMENT_NUMBER": "2"}, revised)
-            self.assertEqual(module.verify_review_document(revised), generated["review_source"])
-            with self.assertRaisesRegex(ValueError, "Удалите ручной AMENDMENT_CHANGES"):
-                module.revise_document(self.output, {"AMENDMENT_CHANGES": "Полностью заменить пункт 5.2."}, self.output.with_name("bad.docx"))
-            self.output.write_bytes(self.output.read_bytes() + b"human-change")
-            before = self.output.read_bytes()
-            with self.assertRaisesRegex(ValueError, "DOCX изменён"):
-                module.revise_document(self.output, {}, self.output.with_name("bad.docx"))
-            self.assertEqual(self.output.read_bytes(), before)
-
-    def test_review_proof_cannot_hide_changed_docx_text_even_if_hash_was_rewritten(self):
-        generated = self.amendment_review()
-        fields = {key: value for key, value in self.fields.items() if key != "AMENDMENT_CHANGES"}
-        with patch.object(module, "review_changes", return_value=generated):
-            module.render(ROOT / "assets/templates/amendment.docx", fields, self.output, review_dir=self.temp.name)
-            changed = self.output.with_name("changed.docx")
-            module.patch_document(self.output, self.patch_data(self.output, [{
-                "find": "1. " + generated["text"], "replace": "1. Полностью заменить пункт 5.2."}]), changed)
-            saved = json.loads(self.output.with_suffix(".docx.fields.json").read_text())
-            saved["output_sha256"] = hashlib.sha256(changed.read_bytes()).hexdigest()
-            changed.with_suffix(".docx.fields.json").write_text(json.dumps(saved))
-            with self.assertRaisesRegex(ValueError, "не содержит точные поправки"):
-                module.verify_review_document(changed)
-
 
 if __name__ == "__main__":
     unittest.main()
