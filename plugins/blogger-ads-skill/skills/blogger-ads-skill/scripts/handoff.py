@@ -438,7 +438,7 @@ def archive_layout_manifests(state, base):
             continue
         source = layout_manifest_source(path)
         if source and source[0] in documents and not documents[source[0]].get('current'):
-            item.update(current=False, archive_reason='DOCX заменён; просмотр вёрстки относится к его исторической версии')
+            item.update(current=False, archive_reason='DOCX заменён; PDF и PNG относятся к его исторической версии')
 
 
 def layout_issues(documents, soffice=None):
@@ -453,7 +453,7 @@ def layout_issues(documents, soffice=None):
                 record = documents.get(original, {})
                 if (not record.get('current') or received_status(record.get('status'))
                         or record.get('sha256') != digest):
-                    raise ValueError(f'{path}: просмотр вёрстки относится к незарегистрированному, полученному '
+                    raise ValueError(f'{path}: PDF и PNG относятся к незарегистрированному, полученному '
                                      'или историческому DOCX; зарегистрируйте текущий собственный исходник')
                 import render_docx
                 render_docx.check(path, soffice=soffice)
@@ -463,10 +463,8 @@ def layout_issues(documents, soffice=None):
     for path, item in documents.items():
         if (item.get('current') and not received_status(item.get('status')) and path.suffix.lower() == '.docx'
                 and (path, item['sha256']) not in covered):
-            issues.append(f'{path}: нет актуального подтверждённого просмотра вёрстки окончательного DOCX. '
-                          'Выполните render_docx.py render в новую папку, просмотрите все PNG, затем confirm '
-                          '--result passed --viewed-pages ... --notes ... и зарегистрируйте manifest.json. '
-                          'needs_changes или просмотр прежней версии не разрешают выдачу')
+            issues.append(f'{path}: нет актуального PDF и PNG окончательного DOCX. '
+                          'Выполните render_docx.py render в новую папку и зарегистрируйте manifest.json')
     return issues
 
 
@@ -597,7 +595,7 @@ def contract_number(value):
     return value if value and not re.fullmatch(r'_+|\{\{[^{}]+\}\}|\[[^\[\]]+\]', value) else None
 
 
-def own_contract_identity(path, documents, base):
+def own_contract_identity(path, documents):
     """Карта относится к точным байтам DOCX, а не к соседней версии."""
     item = documents.get(path, {})
     if path.suffix.lower() != '.docx' or received_status(item.get('status')):
@@ -621,120 +619,22 @@ def own_contract_identity(path, documents, base):
     if saved.get('output_sha256') != sha(path):
         raise ValueError(f'{path}: сохраните точную карту .fields.json; зарегистрированный SHA и output_sha256 должны совпадать с файлами')
     number = contract_number(fields['CONTRACT_NUMBER'])
-    return {'number': number, 'date': contract_date(fields['CONTRACT_DATE']),
-            'document': {'path': relative(base, path), 'sha256': item['sha256']},
-            'fields': {'path': relative(base, sidecar), 'sha256': sha(sidecar)}}
+    value = contract_date(fields['CONTRACT_DATE'])
+    return {'number': number, 'date': value}
 
 
-def validate_contract_date_changes(state, base):
-    changes = state.get('contract_date_changes', [])
-    if not isinstance(changes, list):
-        raise ValueError('contract_date_changes: нужен список подтверждённых изменений')
-    for entry in changes:
-        if not isinstance(entry, dict) or not contract_number(entry.get('number')):
-            raise ValueError('contract_date_changes: нужен номер договора')
-        if not entry.get('from_date') or not entry.get('to_date'):
-            raise ValueError('contract_date_changes: обе даты должны быть известны')
-        if (contract_date(entry['from_date']) != entry['from_date']
-                or contract_date(entry['to_date']) != entry['to_date']
-                or entry['from_date'] == entry['to_date']):
-            raise ValueError('contract_date_changes: нужны разные даты в формате ГГГГ-ММ-ДД')
-        source = resolve(base, entry['source'])
-        if (sha(source) != entry['source_sha256'] or not entry.get('quote')
-                or entry['quote'] not in source.read_text(encoding='utf-8')):
-            raise ValueError('contract_date_changes: изменён источник или нет точной цитаты поручения')
-        deal.stamp(entry['at'])
-    return changes
-
-
-def contract_issue_history(state, documents, base, plan_history):
-    """Старые состояния восстанавливают выдачу по ссылкам сохранённых ответов."""
-    entries = state.get('contract_issues')
-    if entries is None or entries == []:
-        entries = []
-        seen_documents = set()
-        for record, _, _ in plan_history:
-            response = resolve(base, record['response']['path'])
-            links, _ = local_response_links(response.read_text(encoding='utf-8'))
-            for path in dict.fromkeys(links):
-                identity = own_contract_identity(path, documents, base) if path in documents else None
-                if identity:
-                    key = (identity['document']['path'], identity['document']['sha256'])
-                    if key not in seen_documents:
-                        entries.append({name: identity[name] for name in ('document', 'fields')} | {'response': record['response']})
-                        seen_documents.add(key)  # Повторная архивная ссылка не является новой редакцией договора.
-    if not isinstance(entries, list):
-        raise ValueError('contract_issues: нужен список выдач собственных договорных документов')
-    known = {}
-    for entry in entries:
-        for key in ('document', 'fields', 'response'):
-            ref = entry[key]
-            path = resolve(base, ref['path'])
-            if sha(path) != ref['sha256']:
-                raise ValueError(f'contract_issues: изменён выданный {key}: {path}')
-        path = resolve(base, entry['document']['path'])
-        identity = own_contract_identity(path, documents, base)
-        if not identity or any(identity[key] != entry[key] for key in ('document', 'fields')):
-            raise ValueError('contract_issues: карта или собственный документ не соответствуют реестру')
-        response = resolve(base, entry['response']['path'])
-        links, issues = local_response_links(response.read_text(encoding='utf-8'))
-        if issues or path not in links:
-            raise ValueError(f'contract_issues: ответ не подтверждает выдачу документа {path}')
-        if identity['number'] and identity['date']:
-            known[identity['number']] = identity['date']
-    return entries, known
-
-
-def check_contract_dates(state, documents, base, plan_history):
-    changes = validate_contract_date_changes(state, base)
-    entries, known = contract_issue_history(state, documents, base, plan_history)
+def check_contract_dates(documents):
     current = {}
     for path, item in documents.items():
         if item.get('current'):
-            identity = own_contract_identity(path, documents, base)
+            identity = own_contract_identity(path, documents)
             if identity:
                 current[path] = identity
-    problems = []
-    for path, identity in current.items():
-        number, value = identity['number'], identity['date']
-        old = known.get(number)
-        if old and value != old:
-            allowed = value is not None and any(entry['number'] == number and entry['from_date'] == old
-                                                and entry['to_date'] == value for entry in changes)
-            if not allowed:
-                problems.append(f'{path}: CONTRACT_DATE договора № {number} была выдана как {old}, '
-                                 f'теперь {value or "неизвестна"}. Сохраните известную дату документа; фактические даты подписей отдельны. '
-                                 'Для явного изменения пользователем выполните contract-date-change с точным источником и цитатой')
     for number in {item['number'] for item in current.values()} - {None}:
         dates = {item['date'] for item in current.values() if item['number'] == number}
         if len(dates) > 1:
-            problems.append(f'CONTRACT_DATE договора № {number}: текущие собственные документы содержат разные даты; обновите или архивируйте прежнюю редакцию')
-    if problems:
-        raise ValueError('\n'.join(problems))
-    return entries, current
-
-
-def contract_date_change(state_path, number, from_date, to_date, source, quote, at):
-    state_path, source = Path(state_path).resolve(), Path(source).resolve()
-    state = deal.read_json(state_path)
-    number, before, after = contract_number(number), contract_date(from_date), contract_date(to_date)
-    if not number or not before or not after or before == after:
-        raise ValueError('Смена даты требует номер и две разные известные даты; очистка даты запрещена')
-    deal.stamp(at)
-    if not quote.strip() or quote not in source.read_text(encoding='utf-8'):
-        raise ValueError('Нужна точная цитата явного поручения пользователя из указанного источника')
-    documents = {resolve(state_path.parent, item['path']): item for item in state.get('documents', [])}
-    _, known = contract_issue_history(state, documents, state_path.parent, plan_issue_history(state, state_path))
-    if known.get(number) != before:
-        raise ValueError('from-date должна совпадать с последней известной выданной датой этого номера договора')
-    validate_contract_date_changes(state, state_path.parent)
-    entry = {'number': number, 'from_date': before, 'to_date': after,
-             'source': relative(state_path.parent, source), 'source_sha256': sha(source), 'quote': quote, 'at': at}
-    changes = state.setdefault('contract_date_changes', [])
-    if entry not in changes:
-        changes.append(entry)
-        save(state_path, state)
-    return entry
+            raise ValueError(f'CONTRACT_DATE договора № {number}: текущие собственные документы содержат разные даты; обновите или архивируйте прежнюю редакцию')
+    return current
 
 
 def audit(state_path, response=None, historical=(), record_issue=False, soffice=None):
@@ -798,7 +698,7 @@ def audit(state_path, response=None, historical=(), record_issue=False, soffice=
     issues.extend(link_report_issues(documents, state.get('creative', {}).get('links', []), state,
                                     expected_link_map=state.get('creative', {}).get('link_map')))
     issues.extend(layout_issues(documents, soffice=soffice))
-    contract_history, contract_documents = [], {}
+    contract_documents = {}
     unchecked_contract_dates = [
         {'path': str(path), 'reason': 'Нет сохранённой карты .fields.json: дата основного договора автоматически не проверена. '
          'Сверьте её с предыдущей выданной редакцией вручную; не создавайте фиктивную карту и не пересобирайте ручные правки из старых полей.'}
@@ -806,7 +706,7 @@ def audit(state_path, response=None, historical=(), record_issue=False, soffice=
         and path.suffix.lower() == '.docx' and item.get('document_kind') in CONTRACT_KINDS
         and not path.with_suffix(path.suffix + '.fields.json').is_file()]
     try:
-        contract_history, contract_documents = check_contract_dates(state, documents, base, history)
+        contract_documents = check_contract_dates(documents)
     except (ValueError, KeyError, TypeError, OSError) as error:
         issues.append(f'Дата договора: {error}')
     unchecked_contract_dates += [
@@ -873,7 +773,6 @@ def audit(state_path, response=None, historical=(), record_issue=False, soffice=
                     issues.append(f'Ссылка на заменённую версию: {path}. Для явно архивной ссылки укажите --historical')
     recorded = False
     state_changed = False
-    contract_recorded = False
     if record_issue and not issues and plan_path is not None:
         entry = {'plan': {'path': relative(base, plan_path), 'sha256': documents[plan_path]['sha256']}, 'response': response_ref}
         if not links_plan_package(response_links, plan_path):
@@ -891,33 +790,18 @@ def audit(state_path, response=None, historical=(), record_issue=False, soffice=
                 state.setdefault('plan_issues', []).append(entry)
                 state_changed = True
                 recorded = True
-    if record_issue and not issues:
-        new_contract_history = list(contract_history)
-        for path in dict.fromkeys(response_links):
-            identity = contract_documents.get(path)
-            if identity and identity['number']:
-                entry = {key: identity[key] for key in ('document', 'fields')} | {'response': response_ref}
-                if entry not in new_contract_history:
-                    new_contract_history.append(entry)
-        if new_contract_history != contract_history:
-            state['contract_issues'] = new_contract_history
-            state_changed = True
-            contract_recorded = True
-        if state_changed:
-            if state_path.read_bytes() != original_state or sha(resolve(base, response_ref['path'])) != response_ref['sha256']:
-                issues.append('Состояние или ответ изменились во время проверки; выдача не записана')
-                recorded = False
-                contract_recorded = False
-            else:
-                save(state_path, state)
+    if state_changed:
+        if state_path.read_bytes() != original_state or sha(resolve(base, response_ref['path'])) != response_ref['sha256']:
+            issues.append('Состояние или ответ изменились во время проверки; выдача не записана')
+            recorded = False
+        else:
+            save(state_path, state)
     result = {'valid': not issues, 'issues': issues,
             'contract_date_unchecked': unchecked_contract_dates,
             'checks': {key: {field: value.get(field) for field in ('status', 'source', 'checked_at')}
                        for key, value in state.get('checks', {}).items() if isinstance(value, dict)},
-            'note': 'Проверены ссылки, контрольные суммы, дословность поручений и схема. Это не проверка подписей, права, внешних фактов или готовности публикации.'}
+            'note': 'Проверены ссылки, контрольные суммы, даты и схема. Это не проверка подписей, права, внешних фактов или готовности публикации.'}
     if record_issue:
-        result['contract_issue_recorded'] = contract_recorded
-        result['contract_issue_count'] = len(state.get('contract_issues', [])) if isinstance(state.get('contract_issues', []), list) else 0
         result['plan_issue_recorded'] = recorded
         result['plan_issue_count'] = len(state.get('plan_issues', [])) if isinstance(state.get('plan_issues', []), list) else 0
     return result
@@ -935,17 +819,10 @@ def main():
     reg.add_argument('--supersedes', nargs='*', default=[], type=Path)
     reg.add_argument('--document-kind', choices=sorted(DOCUMENT_KINDS), help='Вид PDF/DOCX по содержанию; обязателен для собственных и полученных документов')
     reg.add_argument('--kind-reason', help='Обоснование document-kind=other')
-    change_date = sub.add_parser('contract-date-change', help='Подтверждённая пользователем смена известной даты основного договора')
-    change_date.add_argument('--number', required=True)
-    change_date.add_argument('--from-date', required=True)
-    change_date.add_argument('--to-date', required=True)
-    change_date.add_argument('--source', type=Path, required=True)
-    change_date.add_argument('--quote', required=True)
-    change_date.add_argument('--at', required=True)
     check = sub.add_parser('check')
     check.add_argument('--response', type=Path)
     check.add_argument('--historical', nargs='*', default=[], type=Path)
-    check.add_argument('--record-issue', action='store_true', help='После всех успешных проверок зафиксировать выдачу плана и собственных договорных DOCX с окончательным ответом по SHA')
+    check.add_argument('--record-issue', action='store_true', help='После всех успешных проверок зафиксировать выдачу плана с окончательным ответом по SHA')
     check.add_argument('--soffice', help='LibreOffice для проверки вёрстки DOCX и PDF исходного договора; иначе поиск в PATH')
     links = sub.add_parser('check-links', help='Проверить локальные ссылки ответа без состояния и записи выдачи')
     links.add_argument('--response', type=Path, required=True)
@@ -954,16 +831,13 @@ def main():
     restore_cmd.add_argument('--save-current', type=Path, help='Новый файл для сохранения текущих правок перед восстановлением; обязателен, если исходник изменён')
     refresh_cmd = sub.add_parser('refresh')
     refresh_cmd.add_argument('--at', required=True)
-    for command in (reg, check, refresh_cmd, restore_cmd, change_date):
+    for command in (reg, check, refresh_cmd, restore_cmd):
         command.add_argument('--state', type=Path, required=True)
     args = parser.parse_args()
     try:
         if args.command == 'register':
             result = register(args.state, args.files, args.status, args.version, args.at, args.supersedes, args.group,
                               args.document_kind, args.kind_reason)
-        elif args.command == 'contract-date-change':
-            result = contract_date_change(args.state, args.number, args.from_date, args.to_date,
-                                          args.source, args.quote, args.at)
         elif args.command == 'refresh':
             result = refresh(args.state, args.at)
         elif args.command == 'check-links':

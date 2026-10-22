@@ -1432,123 +1432,7 @@ class DealTests(unittest.TestCase):
         fee = {"applicability": applicability, "payer": "ИП Учебный" if applicability == "applicable" else None,
                "source": "Учебный прямой договор и подтверждённый доход за квартал; ст.18.2 и ПП №1224",
                "quarters": ["2026-Q4"] if quarters is None else quarters, "reminder_time": "09:00"}
-        if self.state["checks"].get("payment", {}).get("status") == "confirmed":
-            fee["payment_basis_sha256"] = deal.fee_payment_basis(self.state)["sha256"]
         return fee
-
-    def record_fee_payment(self):
-        self.state["checks"]["payment"] = {
-            "status": "confirmed", "source": "Выписка и сообщение о зачислении", "amount": "50000.00",
-            "checked_at": "2026-11-01T10:00:00+03:00"}
-        self.state["completed_events"]["payment"] = {
-            "completed_at": "2026-09-30T21:15:00+03:00", "source": "Сообщение о фактическом зачислении",
-            "checked_at": "2026-11-01T10:00:00+03:00"}
-
-    def test_fee_source_requires_review_when_payment_is_confirmed(self):
-        self.state["schedule"]["fee_obligation"] = self.fee_settings("unknown")
-        previous = deal.plan(self.state, self.now)
-        self.record_fee_payment()
-        before = copy.deepcopy(self.state)
-        with self.assertRaisesRegex(ValueError, "payment_basis_sha256.*Пересмотрите прежнее основание"):
-            deal.plan(self.state, self.now, previous=previous)
-        self.assertEqual(self.state, before)
-        fee = self.state["schedule"]["fee_obligation"]
-        fee["source"] = "Зачисление подтверждено выпиской; квартал предварительный, правовой период и плательщик проверяются"
-        fee["payment_basis_sha256"] = deal.fee_payment_basis(self.state)["sha256"]
-        self.state["schedule"]["revision"] += 1
-        current = deal.plan(self.state, self.now, previous=previous)
-        events = self.fee_events(current)
-        self.assertEqual(len(events), 3)
-        self.assertTrue(all(event["obligation_source"] == fee["source"] for event in events.values()))
-        self.assertTrue(all(event["payment_basis_sha256"] == fee["payment_basis_sha256"] for event in events.values()))
-        self.assertTrue({event["uid"] for event in events.values()} <= set(deal.changes(previous, current)["update"]))
-
-    def test_fee_basis_detects_changes_in_both_payment_sources_and_actual_date(self):
-        self.record_fee_payment()
-        self.state["schedule"]["fee_obligation"] = self.fee_settings("unknown")
-        baseline = copy.deepcopy(self.state)
-        for section, field, value in (("checks", "source", "Исправленная выписка"),
-                                      ("checks", "amount", "45000.00"),
-                                      ("completed_events", "source", "Уточнённое сообщение"),
-                                      ("completed_events", "completed_at", "2026-10-01T00:15:00+03:00")):
-            with self.subTest(section=section, field=field):
-                self.state = copy.deepcopy(baseline)
-                self.state[section]["payment"][field] = value
-                before = copy.deepcopy(self.state)
-                with self.assertRaisesRegex(ValueError, "payment_basis_sha256.*прежнему свидетельству"):
-                    deal.plan(self.state, self.now)
-                self.assertEqual(self.state, before)
-
-    def test_fee_basis_is_invalidated_by_payment_rollback_or_removed_evidence(self):
-        self.record_fee_payment()
-        self.state["schedule"]["fee_obligation"] = self.fee_settings("unknown")
-        baseline = copy.deepcopy(self.state)
-        for change in ("pending", "remove_check", "remove_completion"):
-            with self.subTest(change=change):
-                self.state = copy.deepcopy(baseline)
-                if change == "pending":
-                    self.state["checks"]["payment"]["status"] = "pending"
-                elif change == "remove_check":
-                    del self.state["checks"]["payment"]
-                else:
-                    del self.state["completed_events"]["payment"]
-                with self.assertRaisesRegex(ValueError, "payment_basis_sha256.*отзыва"):
-                    deal.plan(self.state, self.now)
-
-    def test_fee_basis_ignores_recheck_clock_and_preserves_event_sequence(self):
-        self.record_fee_payment()
-        self.state["schedule"]["fee_obligation"] = self.fee_settings("unknown")
-        previous = deal.plan(self.state, self.now)
-        basis = deal.fee_payment_basis(self.state)
-        self.state["checks"]["payment"]["checked_at"] = "2026-11-01T11:00:00+03:00"
-        self.state["completed_events"]["payment"]["checked_at"] = "2026-11-01T11:15:00+03:00"
-        self.assertEqual(deal.fee_payment_basis(self.state), basis)
-        current = deal.plan(self.state, deal.hours(self.now, 1), previous=previous)
-        self.assertEqual(self.fee_events(current), self.fee_events(previous))
-        self.assertEqual(deal.changes(previous, current), {"create": [], "update": [], "cancel": []})
-
-    def test_fee_payment_basis_does_not_convert_payment_date_into_income_quarter(self):
-        self.record_fee_payment()  # Зачисление в Q3, выбранный период Q4 остаётся предварительным.
-        self.state["schedule"]["fee_obligation"] = self.fee_settings("unknown")
-        before = copy.deepcopy(self.state)
-        events = self.fee_events(deal.plan(self.state, self.now))
-        self.assertEqual(len(events), 3)
-        self.assertTrue(all(event["quarter"] == "2026-Q4" and event["applicability"] == "unknown"
-                            and event["payer"] is None for event in events.values()))
-        self.assertEqual(self.state, before)
-        self.state["schedule"]["fee_obligation"]["quarters"] = []
-        result = deal.plan(self.state, self.now)
-        self.assertEqual(self.fee_events(result), {})
-
-    def test_fee_payment_basis_cli_reads_stale_state_without_modifying_it(self):
-        self.record_fee_payment()
-        self.state["schedule"]["fee_obligation"] = self.fee_settings("unknown")
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "state.json"
-            for saved in (None, "0" * 64):
-                with self.subTest(saved=saved):
-                    self.state["schedule"]["fee_obligation"]["payment_basis_sha256"] = saved
-                    path.write_text(json.dumps(self.state, ensure_ascii=False), encoding="utf-8")
-                    original = path.read_bytes()
-                    with self.assertRaisesRegex(ValueError, "payment_basis_sha256"):
-                        deal.validate(self.state)
-                    command = [sys.executable, "-B", str(ROOT / "scripts/deal.py"), "fee-payment-basis", "--state", str(path)]
-                    result = subprocess.run(command, capture_output=True, text=True)
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertEqual(json.loads(result.stdout), deal.fee_payment_basis(self.state))
-                    self.assertEqual(path.read_bytes(), original)
-                    self.assertEqual(list(path.parent.iterdir()), [path])
-
-    def test_fee_payment_basis_rejects_invalid_hash_but_allows_no_source_without_binding(self):
-        self.record_fee_payment()
-        fee = self.state["schedule"]["fee_obligation"]
-        self.assertIsNone(fee["source"])
-        deal.validate(self.state)
-        for value in (False, 1, [], {}, "", "abc", "A" * 64):
-            with self.subTest(value=value):
-                fee["payment_basis_sha256"] = value
-                with self.assertRaisesRegex(ValueError, "payment_basis_sha256.*SHA-256"):
-                    deal.validate(self.state)
 
     def monthly_events(self, result):
         return {event["id"]: event for event in result["events"] if event["id"].startswith("ord-")}
@@ -1675,7 +1559,7 @@ class DealTests(unittest.TestCase):
             self.assertIn(event["legal_date"], event["note"])
             self.assertIn(event["uid"], deal.ics(result, self.now))
 
-    def test_fee_quarters_are_explicit_and_do_not_follow_publication_or_upd(self):
+    def test_fee_quarters_are_explicit_and_do_not_follow_other_dates(self):
         self.state["schedule"]["fee_obligation"] = self.fee_settings(quarters=["2026-Q4", "2026-Q3"])
         before = self.fee_events(deal.plan(self.state, self.now))
         self.assertEqual(before["fee-2026-Q3-assessment"]["at"], "2026-11-15T09:00:00+03:00")
@@ -1685,6 +1569,11 @@ class DealTests(unittest.TestCase):
         self.state["schedule"]["publication_at"] = "2027-01-04T09:00:00+03:00"
         self.state["publication"]["actual_at"] = "2027-01-05T10:00:00+03:00"
         self.state["documents"] = [{"type": "upd", "date": "2027-01-10"}]
+        self.state["checks"]["payment"] = {
+            "status": "confirmed", "source": "Выписка о поступлении оплаты",
+            "checked_at": "2026-11-01T10:00:00+03:00"}
+        self.state["completed_events"]["payment"] = {
+            "completed_at": "2026-09-30T21:15:00+03:00", "source": "Выписка о поступлении оплаты"}
         self.assertEqual(before, self.fee_events(deal.plan(self.state, self.now)))
 
     def test_fee_completion_removes_only_one_step_and_preserves_other_uids(self):
@@ -1724,6 +1613,7 @@ class DealTests(unittest.TestCase):
         self.assertEqual(len(deal.changes(result, new)["update"]), 3)
 
     def test_unknown_and_legacy_fee_settings_do_not_invent_period_or_payer(self):
+        self.relative_payment()
         for role in ("blogger", "advertiser", "agency"):
             for legacy in (False, True):
                 with self.subTest(role=role, legacy=legacy):
@@ -1736,118 +1626,8 @@ class DealTests(unittest.TestCase):
                     before = copy.deepcopy(self.state)
                     result = deal.plan(self.state, self.now)
                     self.assertEqual(self.fee_events(result), {})
-                    self.assertTrue(any("три контрольные даты не рассчитаны" in warning for warning in result["warnings"]))
+                    self.assertTrue(any("контрольные даты отчислений пока не рассчитаны" in warning for warning in result["warnings"]))
                     self.assertEqual(self.state, before)
-
-    def test_computable_payment_keeps_three_preliminary_fee_dates_without_changing_state(self):
-        self.relative_payment()
-        for role in ("blogger", "advertiser", "agency"):
-            for legacy in (False, True):
-                with self.subTest(role=role, legacy=legacy):
-                    self.state["user_role"] = role
-                    if legacy:
-                        self.state["schedule"].pop("fee_obligation", None)
-                    else:
-                        self.state["schedule"]["fee_obligation"] = self.fee_settings("unknown", [])
-                    before = copy.deepcopy(self.state)
-                    result = deal.plan(self.state, self.now)
-                    events = self.fee_events(result)
-                    self.assertEqual({key: event["at"] for key, event in events.items()}, {
-                        "fee-2026-Q4-assessment": "2027-02-15T09:00:00+03:00",
-                        "fee-2026-Q4-review": "2027-02-25T09:00:00+03:00",
-                        "fee-2026-Q4-payment": "2027-03-05T09:00:00+03:00"})
-                    for event in events.values():
-                        self.assertEqual(event["period_basis"], "contractual_payment_deadline")
-                        self.assertEqual(event["payment_due_on"], "2026-10-16")
-                        self.assertEqual(event["applicability"], "unknown")
-                        self.assertIsNone(event["payer"])
-                        self.assertIn("Предварительный контроль", event["title"])
-                        self.assertIn("не фактическая дата поступления", event["note"])
-                        self.assertIn("не считать этот план обязанностью", event["note"])
-                        self.assertIn(before["schedule"]["deadline_terms"]["payment"]["source"], event["obligation_source"])
-                        self.assertIn(deal.escape_ics(event["note"]), deal.ics(result, self.now).replace("\r\n ", ""))
-                    self.assertFalse(any("три контрольные даты не рассчитаны" in warning for warning in result["warnings"]))
-                    self.assertTrue(any("договорной дате платежа 2026-10-16" in warning for warning in result["warnings"]))
-                    self.assertNotIn("payment", {event["id"] for event in result["events"]})
-                    self.assertEqual(before, self.state)
-
-    def exact_payment(self, at):
-        self.state["schedule"]["payment_due_at"] = at
-        self.state["schedule"]["deadline_terms"]["payment"] = {
-            "precision": "datetime", "condition": "Предоплата в согласованный день и час", "source": "Договор, пункт об оплате"}
-
-    def test_preliminary_fee_uses_payment_timezone_not_confirmation_or_actual_publication(self):
-        self.exact_payment("2026-09-30T22:00:00+00:00")
-        first = deal.plan(self.state, self.now)
-        events = self.fee_events(first)
-        self.assertEqual(len(events), 3)
-        self.assertTrue(all(event["payment_due_on"] == "2026-10-01" and event["quarter"] == "2026-Q4"
-                            for event in events.values()))
-        self.state["checks"]["payment"] = {
-            "status": "confirmed", "source": "Банковская выписка проверена; дата поступления отдельно не установлена",
-            "checked_at": "2026-07-01T10:00:00+03:00"}
-        self.state["publication"]["actual_at"] = "2027-01-01T10:00:00+03:00"
-        self.state["stage"] = "closing"
-        current = deal.plan(self.state, deal.hours(self.now, 24), previous=first)
-        self.assertEqual(events, self.fee_events(current))
-
-    def test_preliminary_fee_does_not_replace_explicit_quarters_or_non_applicability(self):
-        self.exact_payment("2026-10-16T18:00:00+03:00")
-        for applicability in ("unknown", "applicable"):
-            with self.subTest(applicability=applicability):
-                self.state["schedule"]["fee_obligation"] = self.fee_settings(applicability, ["2026-Q3"])
-                events = self.fee_events(deal.plan(self.state, self.now))
-                self.assertEqual(len(events), 3)
-                self.assertTrue(all(event["quarter"] == "2026-Q3" and "payment_due_on" not in event for event in events.values()))
-        self.state["schedule"]["fee_obligation"] = self.fee_settings("not_applicable", [])
-        self.assertEqual(self.fee_events(deal.plan(self.state, self.now)), {})
-
-    def test_uncomputed_payment_and_confirmation_date_do_not_invent_fee_quarter(self):
-        self.relative_payment()
-        self.state["schedule"]["deadline_terms"]["payment"]["calculation"] = {
-            "kind": "uncomputed", "reason": "Неизвестна дата получения счёта", "review_on": "2026-10-16"}
-        self.state["checks"]["payment"] = {
-            "status": "confirmed", "source": "Проверено поступление без записи фактической даты", "checked_at": self.now.isoformat()}
-        for term in (self.state["schedule"]["deadline_terms"]["payment"],
-                     {"precision": "unspecified", "condition": None, "source": None}):
-            with self.subTest(term=term):
-                self.state["schedule"]["deadline_terms"]["payment"] = term
-                result = deal.plan(self.state, self.now)
-                self.assertEqual(self.fee_events(result), {})
-
-    def test_preliminary_fee_keeps_past_dates_and_moves_only_after_payment_deadline_changes(self):
-        self.relative_payment(requires=[])
-        self.state["schedule"]["publication_at"] = "2026-10-01T09:25:00+03:00"
-        self.now = deal.stamp("2027-01-01T12:00:00+03:00")
-        previous = deal.plan(self.state, self.now)
-        old_events = self.fee_events(previous)
-        self.assertEqual(len(old_events), 3)
-        self.assertTrue(all(event["quarter"] == "2026-Q3" and event["payment_due_on"] == "2026-09-30" and event["overdue"]
-                            for event in old_events.values()))
-        later = deal.plan(self.state, deal.hours(self.now, 24), previous=previous)
-        self.assertEqual(old_events, self.fee_events(later))
-        self.assertEqual(deal.changes(previous, later), {"create": [], "update": [], "cancel": []})
-        self.state["schedule"]["publication_at"] = "2026-10-02T09:25:00+03:00"
-        self.state["schedule"]["revision"] += 1
-        current = deal.plan(self.state, self.now, previous=previous)
-        new_events = self.fee_events(current)
-        self.assertTrue(all(event["quarter"] == "2026-Q4" and event["payment_due_on"] == "2026-10-01" for event in new_events.values()))
-        changes = deal.changes(previous, current)
-        self.assertTrue({event["uid"] for event in old_events.values()} <= set(changes["cancel"]))
-        self.assertTrue({event["uid"] for event in new_events.values()} <= set(changes["create"]))
-        self.assertFalse(any(event["id"] in old_events for event in current["completed"]))
-
-    def test_preliminary_fee_respects_work_calendar_and_supported_periods(self):
-        self.relative_payment(requires=[])
-        self.state["schedule"].update(publication_at="2026-10-02T09:25:00+03:00", holidays=["2026-10-01"])
-        events = self.fee_events(deal.plan(self.state, self.now))
-        self.assertTrue(all(event["payment_due_on"] == "2026-09-30" and event["quarter"] == "2026-Q3" for event in events.values()))
-        for at in ("2025-03-31T23:00:00+03:00", "9999-01-01T00:00:00+03:00"):
-            with self.subTest(at=at):
-                self.exact_payment(at)
-                result = deal.plan(self.state, self.now)
-                self.assertEqual(self.fee_events(result), {})
-
 
     def test_fee_period_action_is_independent_of_publication_readiness_and_keeps_its_time(self):
         self.confirm_readiness()
@@ -1913,7 +1693,7 @@ class DealTests(unittest.TestCase):
 
     def test_fee_rejects_bad_periods_duplicate_periods_and_missing_basis(self):
         cases = [("quarters", ["2026-Q5"]), ("quarters", ["2026-10"]), ("quarters", ["2025-Q1"]),
-                 ("quarters", [True]), ("quarters", ["2026-Q4", "2026-Q4"]), ("quarters", []),
+                 ("quarters", [True]), ("quarters", ["2026-Q4", "2026-Q4"]),
                  ("quarters", "2026-Q4"), ("reminder_time", "25:00"), ("reminder_time", "09:60"),
                  ("reminder_time", "09:00:00"), ("source", None), ("source", {}), ("payer", None),
                  ("payer", 1), ("applicability", True)]
@@ -2444,195 +2224,6 @@ class CreativeImportTests(unittest.TestCase):
             "token": self.state["checks"]["erid"]["token"]}
         self.save_state()
 
-    def approval_message(self):
-        source = self.folder / "user-message.txt"
-        source.write_bytes("Пост уже согласовали.\r\nТокен ещё уточняем.\r\n".encode("utf-8"))
-        return source
-
-    def test_approve_records_full_version_and_does_not_confirm_erid_or_publication(self):
-        self.import_source([self.media_file()])
-        self.state["checks"]["erid"] = {"status": "pending", "token": "one", "reason": "Получены разные токены"}
-        self.state["checks"]["ord_creative"] = {"status": "pending", "token": "another"}
-        self.save_state()
-        before = copy.deepcopy(self.state)
-        source = self.approval_message()
-        original = source.read_bytes()
-        result = deal.approve_creative(self.state_path, source, "Пост уже согласовали.", self.now)
-        current = deal.read_json(self.state_path)
-        proof = current["checks"]["creative_approval"]
-        self.assertEqual(proof, result["creative_approval"])
-        self.assertEqual(proof["status"], "confirmed")
-        self.assertEqual(proof["checked_at"], self.now.isoformat())
-        self.assertEqual(proof["creative_sha256"], deal.fingerprint(before, self.state_path))
-        self.assertEqual(proof["quote"], "Пост уже согласовали.")
-        self.assertEqual(proof["source_sha256"], hashlib.sha256(original).hexdigest())
-        self.assertEqual(proof["original_path"], str(source.resolve()))
-        self.assertEqual((self.folder / proof["source"]).read_bytes(), original)
-        self.assertEqual(source.read_bytes(), original)
-        self.assertNotIn("creative_approval", deal.readiness_issues(current, self.now))
-        self.assertIn("erid", deal.readiness_issues(current, self.now))
-        self.assertFalse(deal.check(current, self.now, self.state_path)["ready"])
-        self.assertEqual(current["history"][-1]["action"], "approve_creative")
-        current["checks"]["creative_approval"] = before["checks"]["creative_approval"]
-        current["history"] = before["history"]
-        self.assertEqual(current, before)
-
-    def test_approve_cli_uses_supplied_time_and_state_relative_snapshot(self):
-        self.import_source()
-        source = self.approval_message()
-        result = subprocess.run(
-            [sys.executable, str(ROOT / "scripts/deal.py"), "approve-creative", "--state", str(self.state_path),
-             "--source", str(source), "--quote", "Пост уже согласовали.", "--now", self.now.isoformat()],
-            cwd=self.folder.parent, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        proof = json.loads(result.stdout)["creative_approval"]
-        self.assertEqual(proof["checked_at"], self.now.isoformat())
-        self.assertFalse(Path(proof["source"]).is_absolute())
-        self.assertTrue((self.folder / proof["source"]).is_file())
-        deal.validate(deal.read_json(self.state_path), self.state_path)
-
-    def test_repeated_approval_preserves_first_proof_and_all_files(self):
-        self.import_source()
-        source = self.approval_message()
-        first = deal.approve_creative(self.state_path, source, "Пост уже согласовали.", self.now)
-        self.assertTrue(first["changed"])
-        source.write_text("Пост я вчера поставил в очередь.", encoding="utf-8")
-        files = {path.relative_to(self.folder): path.read_bytes()
-                 for path in self.folder.rglob("*") if path.is_file()}
-        later = deal.stamp("2026-11-02T11:30:00+03:00")
-        repeated = deal.approve_creative(self.state_path, source, "Пост я вчера поставил в очередь.", later)
-        self.assertFalse(repeated["changed"])
-        self.assertEqual(repeated["creative_approval"], first["creative_approval"])
-        self.assertEqual(files, {path.relative_to(self.folder): path.read_bytes()
-                                 for path in self.folder.rglob("*") if path.is_file()})
-
-    def test_new_version_gets_new_approval_but_old_proof_stays_in_history(self):
-        self.import_source()
-        source = self.approval_message()
-        first = deal.approve_creative(self.state_path, source, "Пост уже согласовали.", self.now)
-        self.text_path.write_bytes(self.raw_text + "Новая версия.".encode("utf-8"))
-        self.import_source()
-        later = deal.stamp("2026-11-02T11:30:00+03:00")
-        second = deal.approve_creative(self.state_path, source, "Пост уже согласовали.", later)
-        self.assertTrue(second["changed"])
-        self.assertNotEqual(second["creative_approval"]["creative_sha256"], first["creative_approval"]["creative_sha256"])
-        self.assertEqual(second["creative_approval"]["checked_at"], later.isoformat())
-        history = deal.read_json(self.state_path)["history"]
-        approvals = [entry for entry in history if entry["action"] == "approve_creative"]
-        self.assertEqual([entry["checked_at"] for entry in approvals], [self.now.isoformat(), later.isoformat()])
-
-    def test_exact_technical_approval_copy_is_rejected_without_rewriting_history(self):
-        self.import_source()
-        source = self.approval_message()
-        deal.approve_creative(self.state_path, source, "Пост уже согласовали.", self.now)
-        self.state = deal.read_json(self.state_path)
-        original = copy.deepcopy(self.state["history"][-1])
-        self.state["history"] += [{"event": "Получены новые сведения по очереди"}, copy.deepcopy(original)]
-        self.save_state()
-        before = self.state_path.read_bytes()
-        with self.assertRaisesRegex(ValueError, "точную копию approve_creative"):
-            deal.validate(self.state, self.state_path)
-        with self.assertRaisesRegex(ValueError, "точную копию approve_creative"):
-            deal.approve_creative(self.state_path, source, "Пост уже согласовали.", self.now)
-        self.assertEqual(self.state_path.read_bytes(), before)
-        self.state["history"].pop()
-        deal.validate(self.state, self.state_path)
-        self.assertEqual(self.state["history"][-2], original)
-
-    def test_approval_copy_guard_does_not_confuse_notes_with_technical_records(self):
-        self.import_source()
-        source = self.approval_message()
-        deal.approve_creative(self.state_path, source, "Пост уже согласовали.", self.now)
-        self.state = deal.read_json(self.state_path)
-        note = {"event": "Согласование учтено; ОРД пока проверяется", "at": self.now.isoformat()}
-        self.state["history"] += [note, copy.deepcopy(note)]
-        deal.validate(self.state, self.state_path)
-
-    def test_approve_rejects_absent_or_empty_quote_without_writes(self):
-        self.import_source()
-        source = self.approval_message()
-        before = self.state_path.read_bytes()
-        for quote in (None, "", "  ", "Пост согласовали", "пост уже согласовали."):
-            with self.subTest(quote=quote):
-                with self.assertRaisesRegex(ValueError, "дословная цитата"):
-                    deal.approve_creative(self.state_path, source, quote, self.now)
-                self.assertEqual(self.state_path.read_bytes(), before)
-                self.assertFalse((self.folder / "creative/approvals").exists())
-        with self.assertRaises(FileNotFoundError):
-            deal.approve_creative(self.state_path, self.folder / "missing.txt", "Пост уже согласовали.", self.now)
-        with self.assertRaisesRegex(ValueError, "часовой пояс"):
-            deal.approve_creative(self.state_path, source, "Пост уже согласовали.", self.now.replace(tzinfo=None))
-        self.assertEqual(self.state_path.read_bytes(), before)
-
-    def test_approve_rejects_unimported_or_empty_creative(self):
-        source = self.approval_message()
-        self.state["creative"]["text"] = "Текст вручную, без сохранённого источника"
-        self.save_state()
-        for imported in (False, True):
-            with self.subTest(imported=imported):
-                if imported:
-                    self.text_path.write_bytes(b" \r\n\t")
-                    self.import_source()
-                before = self.state_path.read_bytes()
-                with self.assertRaisesRegex(ValueError, "непустой креатив из import-creative"):
-                    deal.approve_creative(self.state_path, source, "Пост уже согласовали.", self.now)
-                self.assertEqual(self.state_path.read_bytes(), before)
-                self.assertFalse((self.folder / "creative/approvals").exists())
-
-    def test_approve_validates_imported_sources_before_writing(self):
-        self.import_source()
-        self.state["creative"]["text"] += " Самовольная правка"
-        self.save_state()
-        before = self.state_path.read_bytes()
-        with self.assertRaisesRegex(ValueError, "creative.text не совпадает"):
-            deal.approve_creative(self.state_path, self.approval_message(), "Пост уже согласовали.", self.now)
-        self.assertEqual(self.state_path.read_bytes(), before)
-        self.assertFalse((self.folder / "creative/approvals").exists())
-
-    def test_approval_source_copy_survives_original_changes_and_detects_tampering(self):
-        self.import_source()
-        source = self.approval_message()
-        result = deal.approve_creative(self.state_path, source, "Пост уже согласовали.", self.now)
-        proof = result["creative_approval"]
-        saved = self.folder / proof["source"]
-        original = saved.read_bytes()
-        source.write_text("Редактированная исходная переписка", encoding="utf-8")
-        current = deal.read_json(self.state_path)
-        deal.validate(current, self.state_path)
-        current["checks"]["creative_approval"]["quote"] = "Несуществующая цитата"
-        with self.assertRaisesRegex(ValueError, "Цитата согласования отсутствует"):
-            deal.validate(current, self.state_path)
-        saved.write_bytes(b"changed snapshot")
-        current = deal.read_json(self.state_path)
-        with self.assertRaisesRegex(ValueError, "Источник согласования изменён"):
-            deal.check(current, self.now, self.state_path)
-        # Даже если запись подтверждения снята, существующая копия не перезаписывается.
-        current["checks"]["creative_approval"] = {"status": "pending"}
-        self.state_path.write_text(json.dumps(current, ensure_ascii=False), encoding="utf-8")
-        source.write_bytes(original)
-        before = self.state_path.read_bytes()
-        with self.assertRaisesRegex(ValueError, "не будет перезаписан"):
-            deal.approve_creative(self.state_path, source, "Пост уже согласовали.", self.now)
-        self.assertEqual(saved.read_bytes(), b"changed snapshot")
-        self.assertEqual(self.state_path.read_bytes(), before)
-
-    def test_new_text_links_or_media_invalidates_command_approval(self):
-        self.import_source()
-        source = self.approval_message()
-        result = deal.approve_creative(self.state_path, source, "Пост уже согласовали.", self.now)
-        approved = deal.read_json(self.state_path)
-        for key in ("text", "links", "media_sha256"):
-            with self.subTest(changed=key):
-                self.state = copy.deepcopy(approved)
-                self.text_path.write_bytes(self.raw_text + (b"new" if key == "text" else b""))
-                self.links_path.write_text(json.dumps(self.links + (["https://example.org/new"] if key == "links" else [])), encoding="utf-8")
-                self.save_state()
-                self.import_source([self.media_file()] if key == "media_sha256" else None)
-                self.assertEqual(self.state["checks"]["creative_approval"]["status"], "pending")
-                self.assertEqual(self.state["checks"]["creative_approval"]["source_sha256"], result["creative_approval"]["source_sha256"])
-                self.assertIn("creative_approval", deal.readiness_issues(self.state, self.now))
-                self.assertIsNone(deal.completion(self.state, "creative", self.now))
-
     def test_import_preserves_every_byte_and_does_not_confirm(self):
         result = self.import_source()
         creative = self.state["creative"]
@@ -3038,7 +2629,7 @@ class CreativeImportTests(unittest.TestCase):
 
     def test_recorded_source_rejects_non_urls_but_legacy_state_remains_compatible(self):
         self.import_source()
-        links = [["Якорь", "URL"], ["https://example.org/", "видимая ссылка в тексте"]]
+        links = [["Якорь", "URL"], ["видимая ссылка в тексте", "https://example.org/"]]
         raw = json.dumps(links, ensure_ascii=False).encode("utf-8")
         source = self.state["creative"]["provenance"]["links"]
         (self.folder / source["path"]).write_bytes(raw)

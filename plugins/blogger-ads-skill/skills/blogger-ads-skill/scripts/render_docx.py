@@ -3,9 +3,8 @@
 # requires-python = ">=3.11"
 # dependencies = ["pypdf>=5,<7", "pymupdf>=1.26,<2"]
 # ///
-"""Отрисовка собственного DOCX и отдельная фиксация просмотра всех страниц."""
+"""Отрисовка DOCX в PDF и PNG с проверкой соответствия исходнику."""
 import argparse
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -53,8 +52,8 @@ def checked_file(base, item, label):
     return path
 
 
-def _check_files(manifest_path, require_review=True):
-    """Проверить сохранённые файлы и полноту записи о просмотре."""
+def _check_files(manifest_path):
+    """Проверить сохранённые файлы и полноту набора страниц."""
     manifest_path = Path(manifest_path).resolve()
     value = read_manifest(manifest_path)
     base = manifest_path.parent
@@ -79,14 +78,6 @@ def _check_files(manifest_path, require_review=True):
         if path in seen or path.read_bytes()[:8] != b'\x89PNG\r\n\x1a\n':
             raise ValueError(f'Страница {number}: нужен отдельный PNG-файл')
         seen.add(path)
-    if require_review:
-        review = value.get('review')
-        if (not isinstance(review, dict) or review.get('result') != 'passed'
-                or review.get('viewed_pages') != list(range(1, count + 1))
-                or any(type(x) is not int for x in review.get('viewed_pages', []))
-                or not isinstance(review.get('notes'), str) or not review['notes'].strip()
-                or not review.get('confirmed_at')):
-            raise ValueError('Нет положительного результата просмотра всех страниц: выполните confirm после осмотра; needs_changes не разрешает выдачу')
     return value
 
 
@@ -147,9 +138,9 @@ def verify_rendered_pages(source, pdf, pages=None, soffice=None):
             raise ValueError(f'Не удалось сверить отрисовку DOCX: {error}') from error
 
 
-def check(manifest_path, require_review=True, soffice=None):
-    """Сверить файлы с текущим DOCX; качество и смысл оценивает человек или агент."""
-    value = _check_files(manifest_path, require_review)
+def check(manifest_path, soffice=None):
+    """Сверить сохранённые файлы с повторной отрисовкой текущего DOCX."""
+    value = _check_files(manifest_path)
     base = Path(manifest_path).resolve().parent
     source = resolve(base, value['source']['path'])
     verify_rendered_pages(source, resolve(base, value['pdf']['path']),
@@ -178,43 +169,16 @@ def render(input_path, output_dir, soffice=None):
             page_pixels(page).save(path)
             pages.append({'number': number, 'path': path.name, 'sha256': sha(path)})
     if not pages or sha(source) != digest:
-        raise ValueError('DOCX изменён во время отрисовки либо PDF пуст; подтвердить этот результат нельзя. Повторите в новой папке')
+        raise ValueError('DOCX изменён во время отрисовки либо PDF пуст. Повторите в новой папке')
     value = {'kind': KIND, 'format_version': 1,
              'source': {'path': Path(os.path.relpath(source, destination)).as_posix(), 'sha256': digest},
              'pdf': {'path': pdf.name, 'sha256': sha(pdf)}, 'page_count': len(pages), 'pages': pages,
-             'render': {'engine': 'LibreOffice', 'executable': executable, 'dpi': DPI}, 'review': None}
+             'render': {'engine': 'LibreOffice', 'executable': executable, 'dpi': DPI}}
     manifest = destination / 'manifest.json'
     with manifest.open('x', encoding='utf-8') as stream:
         stream.write(json.dumps(value, ensure_ascii=False, indent=2) + '\n')
-    _check_files(manifest, require_review=False)
+    _check_files(manifest)
     return manifest
-
-
-def confirm(manifest_path, viewed_pages, result, notes, soffice=None):
-    path = Path(manifest_path).resolve()
-    before = path.read_bytes()
-    value = check(path, require_review=False, soffice=soffice)
-    if value.get('review') is not None:
-        raise ValueError('Просмотр уже зафиксирован; не перезаписывайте его. Для нового результата нужна новая папка отрисовки')
-    if (viewed_pages != list(range(1, value['page_count'] + 1))
-            or any(type(x) is not int for x in viewed_pages)):
-        raise ValueError('Укажите все действительно просмотренные страницы по порядку, без повторов и пропусков')
-    if result not in {'passed', 'needs_changes'} or not isinstance(notes, str) or not notes.strip():
-        raise ValueError('Нужны result=passed/needs_changes и notes: что осмотрено, какие замечания обнаружены')
-    value['review'] = {'result': result, 'viewed_pages': viewed_pages, 'notes': notes.strip(),
-                       'confirmed_at': datetime.now(timezone.utc).isoformat(timespec='seconds')}
-    if path.read_bytes() != before:
-        raise ValueError('Manifest изменён во время подтверждения; повторите проверку')
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=path.parent, prefix='.layout-', suffix='.tmp', delete=False) as stream:
-            temporary = Path(stream.name)
-            stream.write(json.dumps(value, ensure_ascii=False, indent=2) + '\n')
-        temporary.replace(path)
-    finally:
-        if temporary:
-            temporary.unlink(missing_ok=True)
-    return value
 
 
 def main():
@@ -224,12 +188,6 @@ def main():
     command.add_argument('--input', required=True)
     command.add_argument('--output-dir', required=True)
     command.add_argument('--soffice', help='Явный путь к исполняемому файлу LibreOffice; иначе поиск в PATH')
-    command = commands.add_parser('confirm', help='Только после действительного просмотра каждого PNG')
-    command.add_argument('--manifest', required=True)
-    command.add_argument('--viewed-pages', nargs='+', type=int, required=True)
-    command.add_argument('--result', choices=['passed', 'needs_changes'], required=True)
-    command.add_argument('--notes', required=True, help='Что осмотрено и какие замечания обнаружены')
-    command.add_argument('--soffice', help='Явный путь к LibreOffice для повторной отрисовки; иначе поиск в PATH')
     command = commands.add_parser('check')
     command.add_argument('--manifest', required=True)
     command.add_argument('--soffice', help='Явный путь к LibreOffice для повторной отрисовки; иначе поиск в PATH')
@@ -237,10 +195,7 @@ def main():
     try:
         if args.command == 'render':
             manifest = render(args.input, args.output_dir, args.soffice)
-            value = {'manifest': str(manifest), 'page_count': read_manifest(manifest)['page_count'],
-                     'note': 'Просмотрите все PNG, затем отдельно выполните confirm; SHA не заменяет визуальный вердикт'}
-        elif args.command == 'confirm':
-            value = confirm(args.manifest, args.viewed_pages, args.result, args.notes, args.soffice)['review']
+            value = {'manifest': str(manifest), 'page_count': read_manifest(manifest)['page_count']}
         else:
             value = {'valid': True, 'source': check(args.manifest, soffice=args.soffice)['source']}
     except (ValueError, OSError, subprocess.SubprocessError) as error:

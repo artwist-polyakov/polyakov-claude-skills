@@ -36,7 +36,7 @@ def fake_convert_to_pdf(source, destination, soffice=None):
 
 
 def make_layout_fixture(source, destination, count=2):
-    """Синтетический комплект для проверок связности, не визуальный вердикт о реальном документе."""
+    """Синтетический комплект для проверки соответствия файлов исходнику."""
     destination.mkdir()
     pdf = destination / 'document.pdf'
     write_test_pdf(source, pdf, count)
@@ -50,7 +50,7 @@ def make_layout_fixture(source, destination, count=2):
     data = {'kind': 'docx_layout', 'format_version': 1,
             'source': {'path': str(source), 'sha256': render_docx.sha(source)},
             'pdf': {'path': pdf.name, 'sha256': render_docx.sha(pdf)},
-            'page_count': count, 'pages': pages, 'review': None}
+            'page_count': count, 'pages': pages}
     manifest = destination / 'manifest.json'
     manifest.write_text(json.dumps(data))
     return manifest
@@ -73,13 +73,10 @@ class DocxLayoutTests(unittest.TestCase):
     def package(self, name='layout', source=None):
         return make_layout_fixture(source or self.source, self.root / name)
 
-    def confirm(self, manifest, result='passed'):
-        return render_docx.confirm(manifest, [1, 2], result, 'Тестовый вердикт: проверены обе страницы, колонки и переносы')
-
     def register(self, files, group='contract', version='v1', status='draft', kind=None):
         return handoff.register(self.state, files, status, version, self.at, group=group, document_kind=kind)
 
-    def test_render_creates_every_page_and_does_not_confirm_it(self):
+    def test_render_creates_every_page(self):
         def conversion(command, **kwargs):
             destination = Path(command[command.index('--outdir') + 1])
             write_test_pdf(self.source, destination / 'final.pdf')
@@ -89,12 +86,9 @@ class DocxLayoutTests(unittest.TestCase):
         with patch.object(render_docx, 'convert_to_pdf', side_effect=REAL_CONVERT_TO_PDF):
             with patch.object(render_docx.subprocess, 'run', side_effect=conversion):
                 manifest = render_docx.render(self.source, self.root / 'rendered', sys.executable)
-        data = render_docx.check(manifest, require_review=False)
-        self.assertIsNone(data['review'])
+        data = render_docx.check(manifest)
         self.assertEqual([page['number'] for page in data['pages']], [1, 2])
         self.assertEqual(data['source']['sha256'], render_docx.sha(self.source))
-        with self.assertRaisesRegex(ValueError, 'Нет положительного'):
-            render_docx.check(manifest)
 
     def test_render_never_overwrites_existing_directory(self):
         folder = self.root / 'existing'
@@ -137,7 +131,7 @@ class DocxLayoutTests(unittest.TestCase):
             writer.write(stream)
         render_docx.verify_rendered_pages(self.source, pdf)
 
-    def test_changed_docx_pdf_or_png_cannot_be_confirmed_or_reused(self):
+    def test_changed_docx_pdf_or_png_cannot_be_reused(self):
         for label in ('DOCX', 'PDF', 'PNG'):
             with self.subTest(label=label):
                 source = self.root / (label + '.docx')
@@ -150,17 +144,13 @@ class DocxLayoutTests(unittest.TestCase):
                 target.write_bytes(original + b'changed')
                 before = manifest.read_bytes()
                 with self.assertRaisesRegex(ValueError, 'изменён'):
-                    self.confirm(manifest)
+                    render_docx.check(manifest)
                 self.assertEqual(manifest.read_bytes(), before)
                 target.write_bytes(original)
-                self.confirm(manifest)
-                target.write_bytes(original + b'changed')
-                with self.assertRaisesRegex(ValueError, 'изменён'):
-                    render_docx.check(manifest)
+                render_docx.check(manifest)
 
     def test_rebinding_preview_to_another_docx_fails_even_with_updated_hashes(self):
         manifest = self.package()
-        self.confirm(manifest)
         different = self.root / 'different.docx'
         different.write_bytes(b'changed DOCX with different layout')
         data = json.loads(manifest.read_text())
@@ -169,11 +159,6 @@ class DocxLayoutTests(unittest.TestCase):
         before = {path: path.read_bytes() for path in manifest.parent.iterdir()}
         with self.assertRaisesRegex(ValueError, 'PDF страницы 1 не совпадает'):
             render_docx.check(manifest)
-        data['review'] = None
-        manifest.write_text(json.dumps(data))
-        with self.assertRaisesRegex(ValueError, 'PDF страницы 1 не совпадает'):
-            self.confirm(manifest)
-        self.assertIsNone(json.loads(manifest.read_text())['review'])
         for path, contents in before.items():
             if path != manifest:
                 self.assertEqual(path.read_bytes(), contents)
@@ -201,7 +186,7 @@ class DocxLayoutTests(unittest.TestCase):
                 item['sha256'] = render_docx.sha(path)
                 manifest.write_text(json.dumps(data))
                 with self.assertRaisesRegex(ValueError, target.upper() + ' страницы 1 не совпадает'):
-                    self.confirm(manifest)
+                    render_docx.check(manifest)
 
     def test_pdf_metadata_changes_do_not_break_visual_binding(self):
         manifest = self.package()
@@ -213,7 +198,6 @@ class DocxLayoutTests(unittest.TestCase):
             writer.write(stream)
         data['pdf']['sha256'] = render_docx.sha(pdf)
         manifest.write_text(json.dumps(data))
-        self.confirm(manifest)
         render_docx.check(manifest)
 
     def test_page_count_and_dimensions_must_match_fresh_conversion(self):
@@ -235,16 +219,16 @@ class DocxLayoutTests(unittest.TestCase):
                 data['pdf']['sha256'] = render_docx.sha(pdf)
                 manifest.write_text(json.dumps(data))
                 with self.assertRaisesRegex(ValueError, 'не совпадает'):
-                    render_docx.check(manifest, require_review=False)
+                    render_docx.check(manifest)
 
     def test_converter_comes_from_caller_not_manifest(self):
         manifest = self.package()
         data = json.loads(manifest.read_text())
         data['render'] = {'executable': '/untrusted/manifest/command', 'dpi': 1}
         manifest.write_text(json.dumps(data))
-        render_docx.check(manifest, require_review=False, soffice='/caller/converter')
+        render_docx.check(manifest, soffice='/caller/converter')
         self.assertEqual(self.converter.call_args.args[2], '/caller/converter')
-        render_docx.check(manifest, require_review=False)
+        render_docx.check(manifest)
         self.assertIsNone(self.converter.call_args.args[2])
 
     def test_missing_converter_and_timeout_are_actionable_failures(self):
@@ -252,10 +236,10 @@ class DocxLayoutTests(unittest.TestCase):
         with patch.object(render_docx, 'convert_to_pdf', side_effect=REAL_CONVERT_TO_PDF):
             with patch.object(render_docx.shutil, 'which', return_value=None):
                 with self.assertRaisesRegex(ValueError, 'LibreOffice не найден'):
-                    render_docx.check(manifest, require_review=False)
+                    render_docx.check(manifest)
             with patch.object(render_docx.subprocess, 'run', side_effect=subprocess.TimeoutExpired('soffice', 180)):
                 with self.assertRaisesRegex(ValueError, 'Не удалось отрисовать DOCX'):
-                    render_docx.check(manifest, require_review=False, soffice=sys.executable)
+                    render_docx.check(manifest, soffice=sys.executable)
 
     def test_pages_must_cover_actual_pdf_once_in_order(self):
         manifest = self.package()
@@ -279,31 +263,13 @@ class DocxLayoutTests(unittest.TestCase):
                 manifest.write_text(json.dumps(data))
                 before = manifest.read_bytes()
                 with self.assertRaises(ValueError):
-                    self.confirm(manifest)
+                    render_docx.check(manifest)
                 self.assertEqual(manifest.read_bytes(), before)
 
-    def test_confirmation_needs_all_viewed_pages_notes_and_explicit_verdict(self):
-        manifest = self.package()
-        before = manifest.read_bytes()
-        for pages, result, notes in [([1], 'passed', 'Просмотрено'), ([1, 1], 'passed', 'Просмотрено'),
-                                     ([2, 1], 'passed', 'Просмотрено'), ([1, 2], 'passed', ' '),
-                                     ([1, 2], 'unknown', 'Просмотрено')]:
-            with self.assertRaises(ValueError):
-                render_docx.confirm(manifest, pages, result, notes)
-            self.assertEqual(manifest.read_bytes(), before)
-        self.confirm(manifest, result='needs_changes')
-        with self.assertRaisesRegex(ValueError, 'needs_changes'):
-            render_docx.check(manifest)
-        confirmed = manifest.read_bytes()
-        with self.assertRaisesRegex(ValueError, 'уже зафиксирован'):
-            self.confirm(manifest)
-        self.assertEqual(manifest.read_bytes(), confirmed)
-
-    def test_handoff_requires_registered_passed_layout_for_own_docx(self):
+    def test_handoff_requires_registered_layout_for_own_docx(self):
         self.register([self.source], kind='contract')
         manifest = self.package()
-        self.confirm(manifest)
-        self.assertFalse(handoff.audit(self.state)['valid'])  # Незарегистрированное подтверждение не используется.
+        self.assertFalse(handoff.audit(self.state)['valid'])
         self.register([manifest], group='layout')
         before = self.state.read_bytes()
         result = handoff.audit(self.state)
@@ -315,18 +281,6 @@ class DocxLayoutTests(unittest.TestCase):
         self.assertTrue(any('PDF' in issue and 'изменён' in issue for issue in result['issues']))
         self.assertEqual(self.state.read_bytes(), before)
 
-    def test_handoff_rejects_pending_and_needs_changes(self):
-        self.register([self.source], kind='contract')
-        for name, verdict in [('pending', None), ('rejected', 'needs_changes')]:
-            with self.subTest(verdict=verdict):
-                manifest = self.package(name)
-                if verdict:
-                    self.confirm(manifest, verdict)
-                self.register([manifest], group='layout', version=name)
-                result = handoff.audit(self.state)
-                self.assertFalse(result['valid'])
-                self.assertTrue(any('Нет положительного' in issue for issue in result['issues']))
-
     def test_received_original_and_historical_own_docx_need_no_layout(self):
         self.register([self.source], status='received', kind='payment')
         result = handoff.audit(self.state)
@@ -337,10 +291,9 @@ class DocxLayoutTests(unittest.TestCase):
         result = handoff.audit(self.state)
         self.assertTrue(result['valid'], result['issues'])
 
-    def test_replacing_docx_archives_layout_and_new_source_requires_new_view(self):
+    def test_replacing_docx_archives_layout_and_new_source_requires_new_render(self):
         self.register([self.source], kind='contract')
         manifest = self.package()
-        self.confirm(manifest)
         self.register([manifest], group='layout')
         newer = self.root / 'final-v2.docx'
         newer.write_bytes(b'new final source')
@@ -349,7 +302,7 @@ class DocxLayoutTests(unittest.TestCase):
         self.assertFalse(records['layout/manifest.json']['current'])
         result = handoff.audit(self.state)
         self.assertFalse(result['valid'])
-        self.assertTrue(any(str(newer) in issue and 'просмотра' in issue for issue in result['issues']))
+        self.assertTrue(any(str(newer) in issue and 'PDF и PNG' in issue for issue in result['issues']))
 
     def test_module_import_without_optional_dependencies(self):
         code = """

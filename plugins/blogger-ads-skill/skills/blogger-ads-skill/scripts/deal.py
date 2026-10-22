@@ -193,53 +193,6 @@ def inspect_creative(state, state_path=None, expect_literal=None):
                     "Скобки и пунктуация не обрезаны, значения query не декодированы."}
 
 
-def verify_creative_approval(proof, state_path=None):
-    """Согласование из команды привязано к дословной сохранённой реплике."""
-    if not isinstance(proof, dict) or "source_sha256" not in proof:
-        return  # Старые записи с обычным source остаются совместимыми.
-    if any(not isinstance(proof.get(key), str) or not proof[key].strip()
-           for key in ("source", "source_sha256", "quote")):
-        raise ValueError("creative_approval: нужны source, source_sha256 и дословная quote")
-    path = Path(proof["source"])
-    if not path.is_absolute():
-        if state_path is None:
-            raise ValueError("Для относительного пути согласования нужен путь файла состояния")
-        path = Path(state_path).resolve().parent / path
-    raw = path.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != proof["source_sha256"]:
-        raise ValueError(f"Источник согласования изменён: {path}; восстановите сохранённую копию")
-    if proof["quote"] not in raw.decode("utf-8"):
-        raise ValueError("Цитата согласования отсутствует в сохранённом источнике")
-
-
-def approve_creative(state_path, source_path, quote, now=None):
-    """Записать согласование текущей версии, не подтверждая маркировку и выход."""
-    state_path = Path(state_path).resolve()
-    state = validate(read_json(state_path), state_path)
-    checked_at = current_time(now).isoformat()
-    creative = state.get("creative", {})
-    if not creative.get("provenance") or not isinstance(creative.get("text"), str) or not creative["text"].strip():
-        raise ValueError("Для согласования нужен непустой креатив из import-creative")
-    creative_sha256 = fingerprint(state, state_path)
-    raw = Path(source_path).read_bytes()
-    if not isinstance(quote, str) or not quote.strip() or quote not in raw.decode("utf-8"):
-        raise ValueError("Нужна непустая дословная цитата согласования из файла реплики пользователя")
-    previous = state["checks"].get("creative_approval", {})
-    if previous.get("status") == "confirmed" and previous.get("creative_sha256") == creative_sha256:
-        # Повторное чтение того же согласованного материала не является новым
-        # событием. Сохраняем первоначальное доказательство и время выполнения.
-        return {"state": str(state_path), "creative_approval": previous, "changed": False}
-    source = save_source_copy(state_path, raw, "approvals", ".txt", source_path)
-    proof = {"status": "confirmed", "checked_at": checked_at, "creative_sha256": creative_sha256,
-             "source": source["path"], "source_sha256": source["sha256"],
-             "original_path": source["original_path"], "quote": quote}
-    state["checks"]["creative_approval"] = proof
-    state.setdefault("history", []).append({"at": checked_at, "action": "approve_creative", **proof})
-    validate(state, state_path)
-    write_state(state_path, state)
-    return {"state": str(state_path), "creative_approval": proof, "changed": True}
-
-
 def import_creative(state_path, text_path, links_path, now=None, media_paths=None):
     """Импортировать исходники без правки текста и без подтверждения согласования."""
     state_path = Path(state_path).resolve()
@@ -415,8 +368,6 @@ def fee_obligation(schedule):
         if quarter in seen:
             raise ValueError(f"fee_obligation.quarters: повторяется квартал {quarter}")
         seen.add(quarter)
-    if fee["applicability"] == "applicable" and not quarters:
-        raise ValueError("fee_obligation.quarters: для применимой обязанности нужны платёжные кварталы")
     if quarters and not fee.get("source"):
         raise ValueError("fee_obligation.source: укажите основание выбора платёжных кварталов, даже предварительных")
     if not isinstance(fee.get("reminder_time"), str) or not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", fee["reminder_time"]):
@@ -424,61 +375,7 @@ def fee_obligation(schedule):
     return fee
 
 
-def fee_payment_basis(state):
-    """Содержательные свидетельства оплаты; время повторной сверки не меняет SHA."""
-    evidence = {}
-    for section in ("checks", "completed_events"):
-        records = state.get(section, {})
-        if not isinstance(records, dict):
-            raise ValueError(f"{section}: требуется объект")
-        proof = records.get("payment")
-        if proof is not None and not isinstance(proof, dict):
-            raise ValueError(f"{section}.payment: требуется объект свидетельства оплаты")
-        evidence[section + ".payment"] = ({key: value for key, value in proof.items() if key != "checked_at"}
-                                          if proof is not None else None)
-    raw = json.dumps(evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return {"sha256": hashlib.sha256(raw).hexdigest(), "evidence": evidence}
-
-
-def validate_fee_payment_basis(state, fee):
-    saved = fee.get("payment_basis_sha256")
-    if saved is not None and (not isinstance(saved, str) or not re.fullmatch(r"[0-9a-f]{64}", saved)):
-        raise ValueError("fee_obligation.payment_basis_sha256: нужен SHA-256 из fee-payment-basis")
-    payment = state.get("checks", {}).get("payment", {})
-    required = fee.get("source") is not None and isinstance(payment, dict) and payment.get("status") == "confirmed"
-    if (required or saved is not None) and saved != fee_payment_basis(state)["sha256"]:
-        raise ValueError("fee_obligation.payment_basis_sha256 отсутствует или относится к прежнему свидетельству оплаты. "
-                         "Пересмотрите прежнее основание source, кварталы и оставшиеся действия с учётом полученного платежа "
-                         "или изменения/отзыва его подтверждения; затем запишите актуальный SHA из fee-payment-basis. "
-                         "Не заменяйте проверку основания одним новым хешем. Дата оплаты сама по себе не устанавливает юридический период дохода")
-
-
-def fee_for_plan(schedule, controls, zone):
-    """Пустой период: предварительный квартал только из договорной даты оплаты."""
-    fee = fee_obligation(schedule)
-    if fee["applicability"] != "unknown" or fee.get("quarters"):
-        return fee, None
-    due_at = schedule.get("payment_due_at")
-    due_on = stamp(due_at).astimezone(zone).date() if due_at else None
-    if due_on is None:
-        control = next((item for item in controls if item["check"] == "payment"
-                        and item["kind"] == "business_days_before_publication"), None)
-        if control:
-            due_on = date.fromisoformat(control["date"])
-    if due_on is None:
-        return fee, None
-    quarter = f"{due_on.year:04d}-Q{(due_on.month - 1) // 3 + 1}"
-    if not "2025-Q2" <= quarter <= "9998-Q4":
-        return fee, None
-    term = schedule["deadline_terms"]["payment"]
-    source = (f"Предварительный квартал по договорному сроку платежа {due_on.isoformat()}. "
-              + sentence(f"Условие: {term['condition']}") + " " + sentence(f"Источник: {term['source']}"))
-    if fee.get("source"):
-        source += " " + sentence(f"Сохранённое основание проверки отчислений: {fee['source']}")
-    return dict(fee, quarters=[quarter], source=source), due_on.isoformat()
-
-
-def fee_events(fee, zone, payment_due_on=None):
+def fee_events(fee, zone):
     """Три контрольные даты по ПП № 1224; суммы и УИН не рассчитываются."""
     if fee["applicability"] == "not_applicable":
         return []
@@ -504,21 +401,13 @@ def fee_events(fee, zone, payment_due_on=None):
                 note += "Применимость и плательщик ещё не установлены: уточнить их до окна проверки; не считать этот план обязанностью пользователя платить."
             else:
                 note += f"Установленный плательщик: {fee['payer']}."
-            metadata = {}
-            if fee.get("payment_basis_sha256") is not None:
-                metadata["payment_basis_sha256"] = fee["payment_basis_sha256"]
-            if payment_due_on:
-                note += (f" Квартал предварительно выбран по договорной дате платежа {payment_due_on}, "
-                         "это не фактическая дата поступления дохода. Дата проверки оплаты не устанавливает дату поступления; "
-                         "уточнить настоящий период по выписке и обновить кварталы с источником.")
-                metadata.update(period_basis="contractual_payment_deadline", payment_due_on=payment_due_on)
             if step == "assessment":
                 note += " Если расчёт ещё не появился утром 15-го, проверить повторно после его формирования; отсутствие утром не означает просрочку РКН."
             result.append({"id": f"fee-{quarter}-{step}", "title": f"{title} за {quarter}",
                            "at": local_datetime(deadline, fee["reminder_time"], zone, "fee_obligation.reminder_time"),
                            "note": note, "quarter": quarter, "legal_date": deadline.isoformat(),
                            "legal_source": FEE_RULE_SOURCE, "obligation_source": fee["source"],
-                           "applicability": fee["applicability"], "payer": fee.get("payer"), **metadata})
+                           "applicability": fee["applicability"], "payer": fee.get("payer")})
     return result
 
 
@@ -556,7 +445,7 @@ def validate(state, state_path=None):
     if isinstance(state.get("commercial"), dict) and "payment_received" in state["commercial"]:
         raise ValueError("commercial.payment_received дублирует статус оплаты: удалите этот флаг и используйте только checks.payment. "
                          "Сумму, дату поступления и источник подтверждения можно сохранить отдельно; не создавайте второй статус оплаты")
-    validate_fee_payment_basis(state, fee_obligation(schedule))
+    fee_obligation(schedule)
     ord_reporting(schedule)
     terms = schedule.get("deadline_terms", {})
     if not isinstance(terms, dict):
@@ -602,17 +491,6 @@ def validate(state, state_path=None):
     if creative.get("provenance") is None:
         validate_creative_links(creative.get("links", []))
     verify_creative_source(creative, state_path)
-    verify_creative_approval(state.get("checks", {}).get("creative_approval"), state_path)
-    approvals = set()
-    for entry in state.get("history", []):
-        if not isinstance(entry, dict) or entry.get("action") != "approve_creative" or "source_sha256" not in entry:
-            continue
-        identity = json.dumps(entry, ensure_ascii=False, sort_keys=True)
-        if identity in approvals:
-            raise ValueError("История содержит точную копию approve_creative. Сохраните первоначальную запись и доказательство, "
-                             "удалите только повтор этой записи; новую реплику описывайте отдельным событием. "
-                             "Не сбрасывайте подтверждение неизменного креатива ради повторного согласования")
-        approvals.add(identity)
     return state
 
 
@@ -895,8 +773,8 @@ def _plan(state, now=None, state_path=None, strict_deadlines=False):
             kind="service_recovery", service="edo", recovery_expected_on=recovery.get("recovery_expected_on"),
             recovery_check_on=recovery_check_on,
             source=recovery["recovery_source"])
-    fee, preliminary_payment_day = fee_for_plan(schedule, controls, zone)
-    for event in fee_events(fee, zone, preliminary_payment_day):
+    fee = fee_obligation(schedule)
+    for event in fee_events(fee, zone):
         add(event.pop("id"), **event)
     monthly = ord_reporting(schedule)
     for event in ord_events(monthly, base, end, zone):
@@ -911,13 +789,9 @@ def _plan(state, now=None, state_path=None, strict_deadlines=False):
     if (actual or not inactive) and monthly["applicability"] != "not_applicable" and not monthly.get("distribution_end_at"):
         warnings.append("Месяцы ОРД пока рассчитаны по договорной длительности. Фактическое удаление/окончание распространения не подтверждено; если пост сохраняется, проверьте период дальнейшей отчётности и обновите его границу с источником.")
     if fee["applicability"] == "unknown":
-        warnings.append("Применимость отчислений и законный плательщик не установлены. " +
-                        (f"Созданы три предварительные проверки по договорной дате платежа {preliminary_payment_day}; "
-                         "это не подтверждение доходного периода и не требование уплаты. Предварительные даты не заменяют уточнение фактического периода и плательщика."
-                         if preliminary_payment_day else
-                         "Созданы предварительные проверки по указанным кварталам; это не требование уплаты."
-                         if fee.get("quarters") else
-                         "Внесите предварительные кварталы и их основание в schedule.fee_obligation: без них три контрольные даты не рассчитаны."))
+        warnings.append("Применимость отчислений и законный плательщик не установлены. Уточните их по условиям сделки.")
+    if fee["applicability"] != "not_applicable" and not fee.get("quarters"):
+        warnings.append("Квартал поступления дохода не установлен. Уточните период (fee_period) и внесите quarters в schedule.fee_obligation: контрольные даты отчислений пока не рассчитаны.")
     if claims is None:
         warnings.append("Срок замечаний в часах от окончания размещения не установлен. Событие claims не создано: уточните срок и начало отсчёта по договору; внутреннюю проверку можно добавить отдельно.")
     if not schedule.get("payment_due_at") or not schedule.get("erid_due_at"):
@@ -1186,15 +1060,10 @@ def main():
     importer.add_argument("--media", nargs="*", type=Path,
                           help="Полный список медиа в порядке публикации; без путей — удалить медиа; без аргумента — сохранить прежние копии")
     importer.add_argument("--now", help="Время импорта с часовым поясом; по умолчанию текущее")
-    approver = sub.add_parser("approve-creative", help="Согласовать текущий импортированный креатив по дословной реплике пользователя; ОРД и публикация не подтверждаются")
-    approver.add_argument("--state", required=True, type=Path)
-    approver.add_argument("--source", required=True, type=Path, help="Существующий UTF-8 файл реплики пользователя")
-    approver.add_argument("--quote", required=True, help="Дословная цитата о согласовании текущей версии")
-    approver.add_argument("--now", help="Время фиксации с часовым поясом; по умолчанию текущее")
-    for name in ("check", "plan", "fingerprint", "inspect-creative", "fee-payment-basis"):
+    for name in ("check", "plan", "fingerprint", "inspect-creative"):
         cmd = sub.add_parser(name)
         cmd.add_argument("--state", required=True, type=Path)
-        if name not in ("fingerprint", "inspect-creative", "fee-payment-basis"):
+        if name not in ("fingerprint", "inspect-creative"):
             cmd.add_argument("--now", help="Текущее время с часовым поясом; в обычной работе не требуется")
         if name == "inspect-creative":
             cmd.add_argument("--expect-literal", help="Точный ожидаемый фрагмент среди упоминаний в creative.text")
@@ -1213,14 +1082,8 @@ def main():
         if args.command == "import-creative":
             print(json.dumps(import_creative(args.state, args.text, args.links, args.now, args.media), ensure_ascii=False, indent=2))
             return
-        if args.command == "approve-creative":
-            print(json.dumps(approve_creative(args.state, args.source, args.quote, args.now), ensure_ascii=False, indent=2))
-            return
         state = read_json(args.state)
         validate_state_objects(state)
-        if args.command == "fee-payment-basis":
-            print(json.dumps(fee_payment_basis(state), ensure_ascii=False, indent=2))
-            return
         if args.command == "fingerprint":
             print(fingerprint(state, args.state))
             return

@@ -25,8 +25,8 @@ def header(row):
 
 
 def parse_links(value):
-    """URL-список, объекты anchor/url или таблица [номер?, якорь, URL/пояснение]."""
-    message = "Карта ссылок: нужен JSON-список URL, объектов anchor/url или строк таблицы [номер?, якорь, URL]; передайте исходный файл без ручного преобразования"
+    """URL-список, объекты anchor/url или таблица [номер?, якорь, URL]."""
+    message = "Карта ссылок: нужен JSON-список URL, объектов anchor/url или строк таблицы [номер?, якорь, URL]"
     if not isinstance(value, list):
         raise ValueError(message)
     if not value:
@@ -48,12 +48,8 @@ def parse_links(value):
             anchor, address = row[-2:]
             if is_url(address):
                 url = address
-            elif is_url(anchor) and isinstance(address, str) and address.strip() and not any(mark in address.casefold() for mark in ("http:", "https:", "://")):
-                # В таблице видимый URL может стоять в ячейке якоря,
-                # а соседняя ячейка — лишь пояснять отсутствие скрытого перехода.
-                url = anchor
             else:
-                raise ValueError(f"Карта ссылок, строка {index}: адрес неоднозначен; нужен URL в адресной ячейке либо отдельный видимый URL в якоре и пояснение рядом")
+                raise ValueError(f"Карта ссылок, строка {index}: нужен абсолютный http/https URL в адресной ячейке")
         else:
             raise ValueError(message + f"; неподдерживаемая строка {index}")
         if not isinstance(anchor, str) or not anchor.strip():

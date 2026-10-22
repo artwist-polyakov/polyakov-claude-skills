@@ -43,10 +43,9 @@ class CreativeLinkMapTests(unittest.TestCase):
             ["3", "«Провайдер» (абзац о тарифах)", "https://provider.test/pricing"],
             ["4", "«Сервис» (абзац с расчётом)", "https://Example.test/?b=2&a=1&a=2#top"],
             ["5", "«Сервис» (призыв в конце)", "https://Example.test/?b=2&a=1&a=2#top"],
-            ["6", "https://t.me/example", "видимая ссылка в тексте, без якоря"],
+            ["6", "https://t.me/example", "https://t.me/example"],
         ]
-        self.expected = [{"anchor": row[1], "url": row[2] if index < 6 else row[1]}
-                         for index, row in enumerate(self.table[1:], 1)]
+        self.expected = [{"anchor": row[1], "url": row[2]} for row in self.table[1:]]
         self.save(self.table)
         schema = json.loads((ROOT / "assets/template-fields.json").read_text())
         self.fields = {key: item["example"] for key, item in schema["fields"].items()
@@ -96,13 +95,14 @@ class CreativeLinkMapTests(unittest.TestCase):
                 self.save(rows)
                 self.import_map()
                 self.assertEqual(json.loads(self.state.read_text())["creative"]["link_map"], expected)
-        with self.assertRaisesRegex(ValueError, "адрес неоднозначен"):
+        with self.assertRaisesRegex(ValueError, "URL в адресной ячейке"):
             links.parse_links([["anchor", "documentation url"]])
 
     def test_ambiguous_or_malformed_rows_fail_before_state_or_sources_are_written(self):
         before = self.state.read_bytes()
         invalid = [
             [["№", "Якорь", "URL"], ["1", "Название", "Ссылка в тексте"]],
+            [["1", "https://example.test", "видимая ссылка в тексте"]],
             [["№", "Якорь", "URL"], ["1", "https://example.test", "см. https://other.test"]],
             [["1", "https://example.test", "https://broken address"]],
             [["1", "https://example.test", ""]],

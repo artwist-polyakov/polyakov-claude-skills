@@ -37,9 +37,7 @@ class HandoffTests(unittest.TestCase):
 
     def layout(self, source):
         from test_docx_layout import make_layout_fixture
-        import render_docx
         manifest = make_layout_fixture(source, self.root / ('layout-' + source.stem))
-        render_docx.confirm(manifest, [1, 2], 'passed', 'Синтетический просмотр для проверки реестра')
         handoff.register(self.state, [manifest], 'checked', 'v1', self.at, group='layout-' + source.stem)
         return manifest
 
