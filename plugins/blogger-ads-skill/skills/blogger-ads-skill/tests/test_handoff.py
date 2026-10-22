@@ -780,16 +780,15 @@ class HandoffTests(unittest.TestCase):
         self.assertTrue(any('document_kind' in issue for issue in result['issues']))
         self.assertEqual(own.read_text(), 'Проект документа')
 
-    def test_known_date_requires_a_registered_plan_but_unknown_date_does_not(self):
-        self.assertTrue(handoff.audit(self.state)['valid'])
+    def test_scheduled_deal_can_deliver_documents_without_calendar_export(self):
         self.scheduled_state()
-        result = handoff.audit(self.state)
-        self.assertFalse(result['valid'])
-        self.assertTrue(any('локальный план' in issue for issue in result['issues']))
-        files = self.plan_package()
-        self.assertFalse(handoff.audit(self.state)['valid'])
-        handoff.register(self.state, files, 'prepared', 'v1', self.at, group='plan')
-        self.assertTrue(handoff.audit(self.state)['valid'])
+        document = self.file('terms.txt', 'Согласованные условия размещения')
+        handoff.register(self.state, [document], 'prepared', 'v1', self.at, group='terms')
+        response = self.file('reply.txt', f'[Условия](<{document}>)')
+        before = self.state.read_bytes()
+        result = handoff.audit(self.state, response)
+        self.assertTrue(result['valid'], result['issues'])
+        self.assertEqual(self.state.read_bytes(), before)
 
     def test_handoff_cli_rejects_malformed_creative_and_related_containers_without_writes(self):
         original = self.data()
@@ -833,6 +832,11 @@ class HandoffTests(unittest.TestCase):
     def test_plan_package_must_contain_only_json_readable_plan_and_calendar(self):
         self.scheduled_state()
         files = self.plan_package()
+        handoff.register(self.state, files[1:], 'prepared', 'partial', self.at, group='plan')
+        result = handoff.audit(self.state)
+        self.assertFalse(result['valid'])
+        self.assertTrue(any('plan.md и reminders.ics' in issue for issue in result['issues']))
+
         handoff.register(self.state, files[:1], 'prepared', 'v1', self.at, group='plan')
         result = handoff.audit(self.state)
         self.assertFalse(result['valid'])
@@ -1131,17 +1135,17 @@ class HandoffTests(unittest.TestCase):
         handoff.deal.import_creative(self.state, text, links, handoff.deal.stamp(self.at))
         self.assertTrue(handoff.audit(self.state)['valid'])
 
-    def test_group_replaces_a_plan_even_when_paths_and_file_names_differ(self):
-        old = self.file('old-plan.md')
-        old_calendar = self.file('old-calendar.ics')
-        new = self.file('new-plan.md')
+    def test_group_replaces_documents_even_when_paths_and_file_names_differ(self):
+        old = self.file('old-summary.md')
+        old_sources = self.file('old-sources.txt')
+        new = self.file('new-summary.md')
         contract = self.file('contract.docx')
         handoff.register(self.state, [contract], 'draft', 'v1', self.at, group='contract', document_kind='contract')
-        handoff.register(self.state, [old, old_calendar], 'draft', 'v1', self.at, group='plan')
-        handoff.register(self.state, [new], 'draft', 'v2', '2026-11-02T12:00:00+03:00', group='plan')
+        handoff.register(self.state, [old, old_sources], 'draft', 'v1', self.at, group='analysis')
+        handoff.register(self.state, [new], 'draft', 'v2', '2026-11-02T12:00:00+03:00', group='analysis')
         docs = {item['path']: item for item in self.data()['documents']}
         self.assertFalse(docs[old.name]['current'])
-        self.assertFalse(docs[old_calendar.name]['current'])
+        self.assertFalse(docs[old_sources.name]['current'])
         self.assertEqual(docs[old.name]['delivered_at'], self.at)
         self.assertTrue(docs[contract.name]['current'])
         self.assertTrue(handoff.audit(self.state)['valid'])
@@ -1250,7 +1254,7 @@ class HandoffTests(unittest.TestCase):
         plan = json.loads(plans[0].read_text())
         plan['events'][0]['title'] = 'Подменённое действие'
         plans[0].write_text(json.dumps(plan))
-        next(item for item in data['documents'] if item['path'] == 'plan-v1/plan.json')['sha256'] = handoff.sha(plans[0])
+        self.fixture_hash(data, plans[0])
         handoff.save(self.state, data)
         result = handoff.audit(self.state)
         self.assertFalse(result['valid'])
@@ -1289,7 +1293,7 @@ class HandoffTests(unittest.TestCase):
                 handoff.register(self.state, [path], status, 'v1', self.at, group=f'source-{index}')
             handoff.register(self.state, [path], status, 'v1', self.at, group=f'source-{index}', document_kind='contract')
 
-    def test_received_contract_without_publication_date_needs_no_plan(self):
+    def test_received_contract_allows_historical_plan_with_or_without_publication_date(self):
         self.scheduled_state()
         self.register_plan(self.plan_package())
         source = self.received_pdf()
@@ -1306,7 +1310,8 @@ class HandoffTests(unittest.TestCase):
         state = self.data()
         state['schedule']['publication_at'] = '2026-11-09T09:00:00+03:00'
         handoff.save(self.state, state)
-        self.assertFalse(handoff.audit(self.state)['valid'])
+        result = handoff.audit(self.state)
+        self.assertTrue(result['valid'], result['issues'])
 
 class ContractSignatureRevisionTests(unittest.TestCase):
     def setUp(self):

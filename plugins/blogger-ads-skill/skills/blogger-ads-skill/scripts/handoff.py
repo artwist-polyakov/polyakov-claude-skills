@@ -599,9 +599,7 @@ def audit(state_path, response=None, historical=(), record_issue=False):
     plan_path = None
     plan_files = {path for path, item in documents.items()
                   if item.get('current') and item.get('group') == 'plan' and item.get('delivered_at')}
-    plan_required = state.get('schedule', {}).get('publication_at') and (
-        state.get('stage') not in ('closed', 'cancelled', 'paused'))
-    if plan_required or any(path.suffix.lower() == '.json' for path in plan_files):
+    if plan_files:
         candidates = []
         for path in plan_files:
             if path.suffix.lower() == '.json':
@@ -612,7 +610,7 @@ def audit(state_path, response=None, historical=(), record_issue=False):
                 except (ValueError, OSError) as error:
                     issues.append(f'План {path}: {error}')
         if len(candidates) != 1:
-            issues.append('Дата размещения известна: нужен один актуальный локальный план JSON, Markdown и ICS в группе plan. Постройте deal.py plan и зарегистрируйте пакет; подготовка не устанавливает напоминания')
+            issues.append('План: в группе plan нужен один актуальный пакет — JSON, plan.md и reminders.ics. Пересоберите и зарегистрируйте пакет через deal.py plan')
         else:
             path, plan_data = candidates[0]
             try:
