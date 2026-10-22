@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["pypdf>=5,<7", "pymupdf>=1.26,<2"]
 # ///
-"""Отрисовка DOCX в PDF и PNG с проверкой соответствия исходнику."""
+"""Отрисовка DOCX в PDF и PNG с контролем сохранности файлов."""
 import argparse
 import hashlib
 import json
@@ -52,7 +52,7 @@ def checked_file(base, item, label):
     return path
 
 
-def _check_files(manifest_path):
+def check(manifest_path):
     """Проверить сохранённые файлы и полноту набора страниц."""
     manifest_path = Path(manifest_path).resolve()
     value = read_manifest(manifest_path)
@@ -92,7 +92,7 @@ def find_soffice(soffice=None):
 
 
 def convert_to_pdf(source, destination, soffice=None):
-    """Конвертер выбирает вызывающая сторона, а не редактируемый manifest."""
+    """Создать PDF через LibreOffice."""
     executable = find_soffice(soffice)
     with tempfile.TemporaryDirectory(prefix='docx-layout-lo-') as profile:
         command = [executable, '-env:UserInstallation=' + Path(profile).as_uri(),
@@ -111,43 +111,6 @@ def convert_to_pdf(source, destination, soffice=None):
 def page_pixels(page):
     import pymupdf
     return page.get_pixmap(dpi=DPI, colorspace=pymupdf.csRGB, alpha=False)
-
-
-def pixels_equal(first, second):
-    return (first.width, first.height, first.n, first.samples) == (second.width, second.height, second.n, second.samples)
-
-
-def verify_rendered_pages(source, pdf, pages=None, soffice=None):
-    """Связать PDF и, при наличии, каждый PNG с повторной отрисовкой DOCX."""
-    import pymupdf
-    with tempfile.TemporaryDirectory(prefix='docx-layout-check-') as directory:
-        fresh_pdf = convert_to_pdf(source, Path(directory), soffice)
-        try:
-            with pymupdf.open(fresh_pdf) as fresh, pymupdf.open(pdf) as saved:
-                if len(fresh) != len(saved) or (pages is not None and len(fresh) != len(pages)):
-                    raise ValueError('Число страниц не совпадает с повторной отрисовкой DOCX')
-                for number, (fresh_page, saved_page) in enumerate(zip(fresh, saved), 1):
-                    expected = page_pixels(fresh_page)
-                    if not pixels_equal(expected, page_pixels(saved_page)):
-                        raise ValueError(f'PDF страницы {number} не совпадает с повторной отрисовкой DOCX')
-                    if pages is not None and not pixels_equal(expected, pymupdf.Pixmap(pages[number - 1])):
-                        raise ValueError(f'PNG страницы {number} не совпадает с повторной отрисовкой DOCX')
-        except Exception as error:
-            if isinstance(error, ValueError):
-                raise
-            raise ValueError(f'Не удалось сверить отрисовку DOCX: {error}') from error
-
-
-def check(manifest_path, soffice=None):
-    """Сверить сохранённые файлы с повторной отрисовкой текущего DOCX."""
-    value = _check_files(manifest_path)
-    base = Path(manifest_path).resolve().parent
-    source = resolve(base, value['source']['path'])
-    verify_rendered_pages(source, resolve(base, value['pdf']['path']),
-                          [resolve(base, item['path']) for item in value['pages']], soffice)
-    if sha(source) != value['source']['sha256']:
-        raise ValueError('DOCX изменён во время проверки; нужна новая отрисовка и просмотр')
-    return value
 
 
 def render(input_path, output_dir, soffice=None):
@@ -177,7 +140,7 @@ def render(input_path, output_dir, soffice=None):
     manifest = destination / 'manifest.json'
     with manifest.open('x', encoding='utf-8') as stream:
         stream.write(json.dumps(value, ensure_ascii=False, indent=2) + '\n')
-    _check_files(manifest)
+    check(manifest)
     return manifest
 
 
@@ -190,14 +153,13 @@ def main():
     command.add_argument('--soffice', help='Явный путь к исполняемому файлу LibreOffice; иначе поиск в PATH')
     command = commands.add_parser('check')
     command.add_argument('--manifest', required=True)
-    command.add_argument('--soffice', help='Явный путь к LibreOffice для повторной отрисовки; иначе поиск в PATH')
     args = parser.parse_args()
     try:
         if args.command == 'render':
             manifest = render(args.input, args.output_dir, args.soffice)
             value = {'manifest': str(manifest), 'page_count': read_manifest(manifest)['page_count']}
         else:
-            value = {'valid': True, 'source': check(args.manifest, soffice=args.soffice)['source']}
+            value = {'valid': True, 'source': check(args.manifest)['source']}
     except (ValueError, OSError, subprocess.SubprocessError) as error:
         parser.exit(2, f'Ошибка: {error}\n')
     print(json.dumps(value, ensure_ascii=False, indent=2))

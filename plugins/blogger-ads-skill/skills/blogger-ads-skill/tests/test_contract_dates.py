@@ -3,7 +3,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 from pathlib import Path
 from zipfile import ZipFile
 import xml.etree.ElementTree as ET
@@ -11,14 +10,11 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import handoff
-from test_docx_layout import fake_convert_to_pdf, make_layout_fixture
+from test_docx_layout import make_layout_fixture
 
 
 class ContractDateTests(unittest.TestCase):
     def setUp(self):
-        self.converter = patch('render_docx.convert_to_pdf', side_effect=fake_convert_to_pdf)
-        self.converter.start()
-        self.addCleanup(self.converter.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()

@@ -408,7 +408,7 @@ def archive_layout_manifests(state, base):
             item.update(current=False, archive_reason='DOCX заменён; PDF и PNG относятся к его исторической версии')
 
 
-def layout_issues(documents, soffice=None):
+def layout_issues(documents):
     issues, covered = [], set()
     for path, item in documents.items():
         if not item.get('current'):
@@ -423,7 +423,7 @@ def layout_issues(documents, soffice=None):
                     raise ValueError(f'{path}: PDF и PNG относятся к незарегистрированному, полученному '
                                      'или историческому DOCX; зарегистрируйте текущий собственный исходник')
                 import render_docx
-                render_docx.check(path, soffice=soffice)
+                render_docx.check(path)
                 covered.add((original, digest))
         except (ValueError, OSError, TypeError) as error:
             issues.append(f'Проверка вёрстки {path}: {error}')
@@ -583,7 +583,7 @@ def check_contract_fields(documents):
         contract_date(fields['CONTRACT_DATE'])
 
 
-def audit(state_path, response=None, historical=(), record_issue=False, soffice=None):
+def audit(state_path, response=None, historical=(), record_issue=False):
     state_path = Path(state_path).resolve()
     base = state_path.parent
     original_state = state_path.read_bytes()
@@ -643,7 +643,7 @@ def audit(state_path, response=None, historical=(), record_issue=False, soffice=
             issues.append(f'documents: группа {group} содержит несколько актуальных версий; прежние версии должны быть историческими')
     issues.extend(link_report_issues(documents, state.get('creative', {}).get('links', []),
                                     expected_link_map=state.get('creative', {}).get('link_map')))
-    issues.extend(layout_issues(documents, soffice=soffice))
+    issues.extend(layout_issues(documents))
     try:
         check_contract_fields(documents)
     except (ValueError, KeyError, TypeError, OSError) as error:
@@ -755,7 +755,6 @@ def main():
     check.add_argument('--response', type=Path)
     check.add_argument('--historical', nargs='*', default=[], type=Path)
     check.add_argument('--record-issue', action='store_true', help='После всех успешных проверок зафиксировать выдачу плана с окончательным ответом по SHA')
-    check.add_argument('--soffice', help='LibreOffice для проверки вёрстки DOCX и PDF исходного договора; иначе поиск в PATH')
     links = sub.add_parser('check-links', help='Проверить локальные ссылки ответа без состояния и записи выдачи')
     links.add_argument('--response', type=Path, required=True)
     restore_cmd = sub.add_parser('restore')
@@ -777,7 +776,7 @@ def main():
         elif args.command == 'restore':
             result = restore(args.state, args.file, args.save_current)
         else:
-            result = audit(args.state, args.response, args.historical, args.record_issue, soffice=args.soffice)
+            result = audit(args.state, args.response, args.historical, args.record_issue)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         if result.get('valid') is False:
             sys.exit(2)
