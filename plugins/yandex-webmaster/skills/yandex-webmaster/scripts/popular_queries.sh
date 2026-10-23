@@ -33,7 +33,7 @@ _curl_args="--data-urlencode order_by=$ORDER_BY"
 # Compute cache path BEFORE API call
 _host_dir=$(cache_host_dir)
 mkdir -p "$_host_dir/queries"
-_hash=$(cache_key "popular_${ORDER_BY}_${DEVICE}_${DATE_FROM}_${DATE_TO}")
+_hash=$(cache_key "popular_v2_${ORDER_BY}_${DEVICE}_${DATE_FROM}_${DATE_TO}_${LIMIT}")
 _out_file="$_host_dir/queries/popular_${_hash}.tsv"
 
 # TTL cache check (24h)
