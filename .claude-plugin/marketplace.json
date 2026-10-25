@@ -50,6 +50,12 @@
       "category": "development"
     },
     {
+      "name": "agent-qa-testing",
+      "description": "Веб-тесты agent-qa на естественном языке: продвинутая память memidex, самоулучшение и проверяемые результаты.",
+      "source": "./plugins/agent-qa-testing",
+      "category": "development"
+    },
+    {
       "name": "fal-ai-image",
       "description": "Generate and edit images via fal.ai Nano Banana Pro or OpenAI GPT Image 2",
       "source": "./plugins/fal-ai-image",
