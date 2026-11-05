@@ -18,6 +18,8 @@ sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(SCRIPTS / "lib"))
 
 import cache as cache_module  # noqa: E402
+import campaign_fields  # noqa: E402
+import diff  # noqa: E402
 import money  # noqa: E402
 import phrases  # noqa: E402
 import policy as policies  # noqa: E402
@@ -163,8 +165,7 @@ PLACEMENTS_WRITABLE = ("SearchResults", "ProductGallery", "Maps",
 PLACEMENTS_READ = (*PLACEMENTS_WRITABLE, "DynamicPlaces")
 TEXT_PLACEMENTS = ("SearchResults", "ProductGallery")
 
-# Настройка, которую команда пишет, и единственная. Почему она одна — в
-# док-строке модуля.
+# Мониторинг проверяет счётчик Метрики отдельным предметным действием.
 MONITORING = "ENABLE_SITE_MONITORING"
 
 # Модели атрибуции. Устаревшие Директ конвертирует молча, с предупреждением
@@ -1575,7 +1576,7 @@ def tracking_task(client, account, accounts, args):
 
 
 def monitoring_task(client, account, accounts, args):
-    """Мониторинг сайта — единственная настройка, которую команда пишет."""
+    """Мониторинг сайта с проверкой привязанного счётчика Метрики."""
     record = one_campaign(client, account, accounts, args.campaign,
                           read_any_type(typed=["Settings", "CounterIds"]))
     kind = writable_type(record)
@@ -1600,6 +1601,48 @@ def monitoring_task(client, account, accounts, args):
         full=(f"{prefix}.Settings",))
     return (f"мониторинг сайта у кампании {args.campaign}", [operation],
             rule_notes(args, operations=[operation]), [], None)
+
+
+def fields_task(client, account, accounts, args):
+    """Читаемые поля без готового действия, через обычную запись кампании."""
+    patch = campaign_fields.patch_from(assignments=args.set or (), body=args.body)
+    record = one_campaign(client, account, accounts, args.campaign, read_any_type())
+    kind = writable_type(record)
+    prefix = campaign_command.TYPE_BODY[kind]
+    if any(name in patch and name != prefix for name in campaign_fields.BODIES):
+        raise DirectFailure(f"Кампания {args.campaign} имеет структуру {prefix}; правка другого типа не применяется.")
+    common = {name: value for name, value in patch.items() if name != prefix}
+    typed = patch.get(prefix, {})
+    read = read_params(kind, common=common,
+                       typed=[*typed, "PackageBiddingStrategy"])
+    record = one_campaign(client, account, accounts, args.campaign, read)
+    if writable_type(record) != kind:
+        raise DirectFailure("Тип кампании изменился между чтениями; повторите команду.")
+    merged = campaign_fields.merge_patch(record, patch)
+    # Корневое поле читается целиком: это сохраняет неназванные части вложенных
+    # настроек и замечает конкурентную правку перед отправкой.
+    before = {name: record[name] for name in common}
+    before.update({f"{prefix}.{name}": record[prefix][name] for name in typed})
+    settings_path = f"{prefix}.Settings"
+    full = (settings_path,) if "Settings" in typed else ()
+
+    def verify(number, actual):
+        # В update уходят только выбранные опции: get содержит также опции
+        # только для чтения. Сохранённый состав проверяется отдельно целиком.
+        return diff.compare(
+            _at(merged, settings_path), phrases._dig(actual, settings_path),
+            path=settings_path).findings
+
+    operation = update_operation(
+        args.campaign, kind, record=record,
+        common=common, typed=typed,
+        what={path: (f"{path}: выбранные опции; остальные сохраняются"
+                     if path in full else path)
+              for path in campaign_fields.changed_fields(patch)},
+        read=read, guard_also=unchanged_at(before), full=full,
+        verify=verify if full else None)
+    return (f"campaigns.update: поля кампании {args.campaign}",
+            [operation], [], [], None)
 
 
 def change_said(said: str, before: list, after: list) -> str:
@@ -2143,6 +2186,15 @@ def build_parser() -> Parser:
     switch.add_argument("--off", dest="on", action="store_false",
                         help="выключить")
 
+    fields = actions.add_parser("fields", parents=[common],
+                                help="другие читаемые поля кампании и опции Settings")
+    fields.add_argument("--campaign", type=whole, required=True)
+    source = fields.add_mutually_exclusive_group(required=True)
+    source.add_argument("--set", action="append", metavar="ПУТЬ=ЗНАЧЕНИЕ",
+                        help="поле или Settings.ИМЯ_ОПЦИИ; можно повторять")
+    source.add_argument("--body", metavar="ФАЙЛ",
+                        help="JSON с частичными полями одной кампании без Id")
+
     ips = actions.add_parser("ips", parents=[common], help="запрещённые IP")
     ips.add_argument("--campaign", type=whole, required=True)
     ips.add_argument("--ip", action="append", default=[], metavar="АДРЕС")
@@ -2225,6 +2277,7 @@ TASKS = {
     "strategy": strategy_task,
     "tracking": tracking_task,
     "monitoring": monitoring_task,
+    "fields": fields_task,
     "schedule": schedule_task,
 }
 
