@@ -36,6 +36,81 @@
 
 `--json` отдаёт машиночитаемый результат в stdout, а пояснения — в stderr. Поле `preview` содержит полный план, `written` — проверенные изменения, `accepted` — элементы, принятые API. Успешный ответ API без успешного перечитывания не считается проверенной записью.
 
+## Дополнительные поля кампании
+
+`campaign_write.py fields` меняет читаемые поля `Campaigns.update`, для которых
+нет отдельного действия. Поддерживаются существующие ЕПК (`UnifiedCampaign`)
+и текстовые кампании (`TextCampaign`) без пакетной стратегии.
+
+Имена полей, структуры и описания берите из официального справочника:
+
+| Поля | Чтение | Запись |
+|---|---|---|
+| Общие поля кампании | [Campaigns.get](https://yandex.ru/dev/direct/doc/ru/campaigns/get) | [Campaigns.update](https://yandex.ru/dev/direct/doc/ru/campaigns/update) |
+| ЕПК | [get: UnifiedCampaign](https://yandex.ru/dev/direct/doc/ru/campaigns/get-unified-campaign) | [update: UnifiedCampaign](https://yandex.ru/dev/direct/doc/ru/campaigns/update-unified-campaign) |
+| Текстовая кампания | [get: TextCampaign](https://yandex.ru/dev/direct/doc/ru/campaigns/get-text-campaign) | [update: TextCampaign](https://yandex.ru/dev/direct/doc/ru/campaigns/update-text-campaign) |
+
+Сначала проверьте в `update` тип значения, допустимые варианты, единицы,
+обязательные соседние поля и ограничения типа кампании. Затем найдите поле
+в `get`: наличие в ответе чтения само по себе не означает возможность записи.
+Команда запрашивает нужные поля автоматически; поле или опция должны вернуться
+в свежем ответе API. Новые поля не требуют добавления отдельного действия.
+
+Путь `--set` повторяет вложенность JSON: общие поля идут от корня, типовые —
+через `UnifiedCampaign` или `TextCampaign`. Например, изменить адрес почты
+для уведомлений кампании:
+
+```bash
+uv run scripts/campaign_write.py fields --account example --campaign 123456 \
+  --set 'Notification.EmailSettings.Email="ads@example.com"'
+```
+
+`--set` можно повторять для нескольких полей одной кампании. Значение после `=`
+читается как JSON, а обычный текст — как строка: `123` задаёт число, `true` —
+логическое значение, `YES` и `NO` — строки. Для строки из цифр или слова `true`
+сохраните кавычки JSON: `"123"` или `"true"` внутри аргумента `--set`.
+Числа передаются в единицах API без пересчёта. Даже если справочник помечает
+поле как `nillable`, очистка через `null` этим режимом не поддерживается.
+
+Вместо `--set` передайте `--body request.json` с частичной структурой одной
+кампании. Для того же изменения содержимое файла:
+
+```json
+{
+  "Notification": {
+    "EmailSettings": {"Email": "ads@example.com"}
+  }
+}
+```
+
+```bash
+uv run scripts/campaign_write.py fields --account example --campaign 123456 \
+  --body request.json
+```
+
+Идентификатор задаётся через `--campaign`; `Id` и обёртки `Campaigns`, `method`,
+`params` в файл не включайте. Оба варианта показывают план без записи;
+для выполнения добавьте `--apply`.
+
+У массива `Settings` путь выбирает элемент по имени `Option`:
+`--set 'UnifiedCampaign.Settings.ADD_TO_FAVORITES=YES'`. В JSON эта же правка
+сохраняет форму API:
+
+```json
+{"UnifiedCampaign": {"Settings": [{"Option": "ADD_TO_FAVORITES", "Value": "YES"}]}}
+```
+
+Для текстовой кампании замените `UnifiedCampaign` на `TextCampaign` и выберите
+опцию из её справочника. Неназванные настройки сохраняются; после записи
+проверяется весь состав `Settings`, включая параметры только для чтения.
+
+Стратегии, цели, бюджеты, места показа, состояния, мониторинг и остальные поля
+с готовыми действиями меняйте их предметными командами. `fields` направляет
+к ним и не заменяет их проверки. Остальные массивы этот режим не меняет,
+произвольные методы API не вызывает. Запись использует общий журнал и повторное чтение;
+отказ API, частичное применение и неизвестный исход остаются отдельными
+результатами.
+
 ## Месяц и цена в объявлении
 
 Товарные объявления `ShoppingAd` получают товары, цены и изображения из фида.
