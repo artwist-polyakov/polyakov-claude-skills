@@ -80,7 +80,7 @@ TG_CHANNELS_CRYPTO=channel1,channel2
    ```bash
    bash scripts/fetch_posts.sh --channel countwithsasha --limit 50
    ```
-   Выведет последние 50 постов в TSV (id, date, views, reactions, fwd_from, fwd_link, text, media_url).
+   Сохранит до 50 последних постов в TSV (id, date, views, reactions, fwd_from, fwd_link, text, media_url), от новых к старым. Если постов больше 30, в терминале покажет первые 30 и путь к полному файлу.
 
 2. **Инфо о канале:**
    ```bash

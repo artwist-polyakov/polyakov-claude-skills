@@ -57,7 +57,9 @@ tg_fetch() {
 parse_posts_from_html() {
     local html_file="$1"
     local out_file="$2"
-    awk -f "$SCRIPT_DIR/parse_tg_posts.awk" "$html_file" > "$out_file"
+    awk -f "$SCRIPT_DIR/parse_tg_posts.awk" "$html_file" > "$out_file" || return 1
+    # Newest first: the limit takes the head, the next page starts before the tail.
+    LC_ALL=C sort -k1,1nr -o "$out_file" "$out_file"
 }
 
 parse_channel_info_from_html() {
@@ -65,13 +67,13 @@ parse_channel_info_from_html() {
     local title desc subs
 
     # Title is inside <span dir="auto"> within header_title div
-    title=$(grep 'tgme_channel_info_header_title' "$html_file" 2>/dev/null | grep -oP '<span[^>]*>\K[^<]+' | head -1 || true)
+    title=$(grep 'tgme_channel_info_header_title' "$html_file" 2>/dev/null | grep -oE '<span[^>]*>[^<]+' | head -1 | cut -d '>' -f2- || true)
     # Description
     desc=$(grep 'tgme_channel_info_description' "$html_file" 2>/dev/null | sed 's/<[^>]*>//g;s/^[[:space:]]*//' | head -1 || true)
     # Subscribers from tgme_header_counter or counter_value
-    subs=$(grep 'tgme_header_counter' "$html_file" 2>/dev/null | grep -oE '[0-9][0-9.]*K?' | head -1 || true)
+    subs=$(grep 'tgme_header_counter' "$html_file" 2>/dev/null | grep -oE '[0-9][0-9.]*[KM]?' | head -1 || true)
     if [ -z "$subs" ]; then
-        subs=$(grep 'counter_value' "$html_file" 2>/dev/null | grep -oP 'counter_value[^>]*>\K[^<]+' | head -1 || true)
+        subs=$(grep -oE 'counter_value[^>]*>[^<]+' "$html_file" 2>/dev/null | head -1 | cut -d '>' -f2- || true)
     fi
 
     title="${title//\"/\\\"}"
@@ -109,7 +111,7 @@ fetch_channel_pages() {
         fi
 
         local page_tsv="$cache_dir/raw/page_${before:-latest}.tsv"
-        parse_posts_from_html "$page_file" "$page_tsv"
+        parse_posts_from_html "$page_file" "$page_tsv" || return 1
 
         local page_count
         page_count=$(wc -l < "$page_tsv" | tr -d ' ')

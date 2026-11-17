@@ -10,7 +10,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 # Изолируем и конфигурацию, и сохранённые страницы; подменяем только сеть.
 mkdir -p "$TMP_DIR/scripts" "$TMP_DIR/fixtures"
 cp "$SCRIPT_DIR/common.sh" "$SCRIPT_DIR/parse_tg_posts.awk" \
-    "$SCRIPT_DIR/digest_json.sh" "$SCRIPT_DIR/compare_channels.sh" "$TMP_DIR/scripts/"
+    "$SCRIPT_DIR/digest_json.sh" "$SCRIPT_DIR/compare_channels.sh" "$SCRIPT_DIR/fetch_posts.sh" "$TMP_DIR/scripts/"
 export TG_TEST_FIXTURES="$TMP_DIR/fixtures"
 export TG_TEST_REQUESTS="$TMP_DIR/requests"
 cat >> "$TMP_DIR/scripts/common.sh" <<'EOF'
@@ -72,12 +72,35 @@ expect_subscribers() {
 today="$(date +%Y-%m-%d)T12:00:00+00:00"
 old="2000-01-01T12:00:00+00:00"
 
+expect_fetch_ids() {
+    local expected="$1" ids
+    shift
+    : > "$TG_TEST_REQUESTS"
+    bash "$TMP_DIR/scripts/fetch_posts.sh" --channel history "$@" > "$TMP_DIR/result"
+    ids=$(awk -F '\t' 'NR > 1 { print $1 }' "$TMP_DIR/result" | paste -sd ' ' -)
+    [ "$ids" = "$expected" ] || fail "ожидались ID [$expected], получены [$ids]"
+}
+
+# В веб-превью каждая страница идёт от старых постов к новым, ID бывают с пропусками.
+command=fetch_posts
+for id in 98 103 106; do post history "$id" "$today" 100 text; done
+post 'history?before=98' 89 "$old" 100 text
+post 'history?before=98' 93 "$old" 100 text
+post 'history?before=98' 96 "$today" 100 text
+
+expect_fetch_ids '106 103' --limit 2
+expect_requests history
+expect_fetch_ids '106 103 98 96 93' --limit 5
+expect_requests history 'history?before=98'
+expect_fetch_ids '106 103 98 96' --limit 9 --after-date "${today%%T*}"
+expect_requests history 'history?before=98'
+
 for command in digest_json compare_channels; do
     # Два канала, достаточно первой страницы: по одному запросу на каждый.
     for channel in alpha beta; do
         page "$channel" 100
-        post "$channel" 30 "$today" 300 first
         post "$channel" 29 "$old" 100 old
+        post "$channel" 30 "$today" 300 first
     done
     run_command alpha,beta
     expect_requests alpha beta
@@ -86,8 +109,8 @@ for command in digest_json compare_channels; do
 
     # Следующий запуск получает обновлённые сведения и посты.
     page alpha 101
-    post alpha 30 "$today" 321 refreshed
     post alpha 29 "$old" 100 old
+    post alpha 30 "$today" 321 refreshed
     run_command alpha
     expect_requests alpha
     expect_subscribers alpha 101
@@ -101,8 +124,8 @@ for command in digest_json compare_channels; do
     page alpha 102
     post alpha 30 "$today" 300 latest
     page 'alpha?before=30' 999
-    post 'alpha?before=30' 20 "$today" 100 previous
     post 'alpha?before=30' 19 "$old" 50 old
+    post 'alpha?before=30' 20 "$today" 100 previous
     run_command alpha 2
     expect_requests alpha 'alpha?before=30'
     expect_subscribers alpha 102
