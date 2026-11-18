@@ -17,6 +17,7 @@
   - [ssh-remote-connection](#ssh-remote-connection) — SSH подключение к серверам
   - [yandex-wordstat](#yandex-wordstat) — анализ поискового спроса
   - [codex-review](#codex-review) — кросс-агентное ревью
+  - [agent-qa-testing](#agent-qa-testing) — веб-тесты с результатами и памятью memidex
   - [fal-ai-image](#fal-ai-image) — генерация изображений
   - [yandex-search-api](#yandex-search-api) — парсинг выдачи Яндекса
   - [yandex-direct](#yandex-direct) — статистика и управление Яндекс Директом
@@ -55,6 +56,7 @@
 /plugin install yandex-direct
 /plugin install yandex-metrika
 /plugin install codex-review
+/plugin install agent-qa-testing
 /plugin install fal-ai-image
 /plugin install yandex-webmaster
 /plugin install zoomkit
@@ -239,6 +241,23 @@ SSH подключение к удалённым серверам по ключ�
 - "with codex review"
 - "codex review workflow"
 - "start codex review"
+
+---
+
+### [agent-qa-testing](plugins/agent-qa-testing/skills/agent-qa-testing)
+
+Проверка выбранного веб-сценария через [agent-qa](https://github.com/vostride/agent-qa): тесты на естественном языке, продвинутая память memidex и самоулучшение.
+
+- Проверяет структуру и выбор существующих тестов перед запуском
+- Запускает только согласованный сценарий, читает результат и использованную память
+- Отличает dry run от выполнения и сохраняет неопределённость при неполных данных
+- Возвращает вердикт, ID запуска, пути к доказательствам и оставшиеся проверки
+
+Нужна установленная CLI agent-qa; реальный запуск также требует настроенного браузера и провайдера модели.
+
+**Триггеры (RU):** "проверь сценарий через agent-qa", "разбери результат agent-qa".
+
+**Triggers (EN):** "verify this flow with agent-qa", "inspect the agent-qa run".
 
 ---
 
@@ -614,6 +633,7 @@ polyakov-claude-skills/
 │   ├── ssh-remote-connection/# Плагин для SSH
 │   ├── yandex-wordstat/      # Плагин для Wordstat API
 │   ├── codex-review/         # Плагин для кросс-агентного ревью
+│   ├── agent-qa-testing/     # Веб-тесты, результаты и память agent-qa
 │   ├── fal-ai-image/         # Плагин для генерации изображений
 │   ├── yandex-search-api/    # Плагин для Yandex Search API
 │   ├── yandex-direct/        # Статистика и управление Яндекс Директом

@@ -1,0 +1,8 @@
+{
+  "name": "agent-qa-testing",
+  "version": "1.0.0",
+  "description": "Выбор и запуск веб-тестов agent-qa, проверка результатов и памяти memidex с отчётом по выбранному сценарию.",
+  "author": {
+    "name": "vostride"
+  }
+}
