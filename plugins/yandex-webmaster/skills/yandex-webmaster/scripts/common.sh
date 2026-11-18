@@ -142,19 +142,36 @@ _refresh_hosts_cache() {
 
 # --------------- API helpers ---------------
 
+# write_webmaster_headers <private_file>
+# Keep OAuth out of curl argv and reject control characters before writing a
+# header file (otherwise a malformed token could inject additional headers).
+write_webmaster_headers() {
+    if [ -z "${YANDEX_WEBMASTER_TOKEN:-}" ] ||
+        [ "$(printf '%s' "$YANDEX_WEBMASTER_TOKEN" | LC_ALL=C tr -d '[:cntrl:]')" != "$YANDEX_WEBMASTER_TOKEN" ]; then
+        echo "Error: OAuth token must be non-empty and contain no control characters." >&2
+        return 1
+    fi
+    printf 'Authorization: OAuth %s\n' "$YANDEX_WEBMASTER_TOKEN" > "$1"
+}
+
 # webmaster_raw_get <full_path> [extra_curl_args...]
 # Low-level GET with OAuth, 429 retry, error handling
-webmaster_raw_get() {
+webmaster_raw_get() (
     _wrg_path="$1"
     shift
     _wrg_url="${WEBMASTER_API}${_wrg_path}"
-    _wrg_headers="${WM_TMPDIR}/wm_headers_$$.txt"
+    _wrg_headers=$(mktemp "${WM_TMPDIR}/wm_headers.XXXXXX") || return 1
+    # Scope cleanup to this request without replacing the caller's EXIT trap.
+    trap 'rm -f "$_wrg_headers" "${_wrg_auth_headers:-}"' 0
+    trap 'exit 1' HUP INT TERM
+    _wrg_auth_headers=$(mktemp "${WM_TMPDIR}/wm_auth.XXXXXX") || return 1
+    write_webmaster_headers "$_wrg_auth_headers" || return 1
 
-    _wrg_body=$(curl -s -G -D "$_wrg_headers" \
-        -H "Authorization: OAuth $YANDEX_WEBMASTER_TOKEN" \
+    _wrg_body=$(YANDEX_WEBMASTER_TOKEN= curl -q --silent --show-error -G -D "$_wrg_headers" \
+        -H "@$_wrg_auth_headers" \
         "$@" \
         "$_wrg_url") || {
-        rm -f "$_wrg_headers"
+        rm -f "$_wrg_headers" "$_wrg_auth_headers"
         echo "Error: curl failed for $_wrg_url" >&2
         return 1
     }
@@ -164,7 +181,7 @@ webmaster_raw_get() {
     # 429 retry
     if [ "$_wrg_status" = "429" ]; then
         _wrg_retry=$(grep -i 'Retry-After' "$_wrg_headers" | sed 's/[^0-9]//g' | head -1)
-        rm -f "$_wrg_headers"
+        rm -f "$_wrg_headers" "$_wrg_auth_headers"
         if [ -z "${_WM_RETRY_DONE:-}" ] && [ -n "$_wrg_retry" ] && [ "$_wrg_retry" -le 60 ] 2>/dev/null; then
             _wrg_jitter=$(awk 'BEGIN{srand(); printf "%d", rand()*3}')
             _wrg_wait=$(( _wrg_retry + _wrg_jitter ))
@@ -180,7 +197,7 @@ webmaster_raw_get() {
 
     # HTTP errors
     if [ -n "$_wrg_status" ] && [ "$_wrg_status" -ge 400 ] 2>/dev/null; then
-        rm -f "$_wrg_headers"
+        rm -f "$_wrg_headers" "$_wrg_auth_headers"
         _wrg_err_code=$(json_extract_field_raw "$_wrg_body" "error_code")
         _wrg_err_msg=$(json_extract_field_raw "$_wrg_body" "error_message")
         if [ -n "$_wrg_err_code" ]; then
@@ -192,24 +209,28 @@ webmaster_raw_get() {
         return 1
     fi
 
-    rm -f "$_wrg_headers"
+    rm -f "$_wrg_headers" "$_wrg_auth_headers"
     printf '%s' "$_wrg_body"
-}
+)
 
 # webmaster_raw_post <full_path> <json_body>
 # Low-level POST with OAuth
-webmaster_raw_post() {
+webmaster_raw_post() (
     _wrp_path="$1"
     _wrp_body_data="$2"
     _wrp_url="${WEBMASTER_API}${_wrp_path}"
-    _wrp_headers="${WM_TMPDIR}/wm_headers_$$.txt"
+    _wrp_headers=$(mktemp "${WM_TMPDIR}/wm_headers.XXXXXX") || return 1
+    trap 'rm -f "$_wrp_headers" "${_wrp_auth_headers:-}"' 0
+    trap 'exit 1' HUP INT TERM
+    _wrp_auth_headers=$(mktemp "${WM_TMPDIR}/wm_auth.XXXXXX") || return 1
+    write_webmaster_headers "$_wrp_auth_headers" || return 1
 
-    _wrp_resp=$(curl -s -X POST -D "$_wrp_headers" \
-        -H "Authorization: OAuth $YANDEX_WEBMASTER_TOKEN" \
+    _wrp_resp=$(YANDEX_WEBMASTER_TOKEN= curl -q --silent --show-error -X POST -D "$_wrp_headers" \
+        -H "@$_wrp_auth_headers" \
         -H "Content-Type: application/json; charset=UTF-8" \
         -d "$_wrp_body_data" \
         "$_wrp_url") || {
-        rm -f "$_wrp_headers"
+        rm -f "$_wrp_headers" "$_wrp_auth_headers"
         echo "Error: curl failed for $_wrp_url" >&2
         return 1
     }
@@ -218,7 +239,7 @@ webmaster_raw_post() {
 
     if [ "$_wrp_status" = "429" ]; then
         _wrp_retry=$(grep -i 'Retry-After' "$_wrp_headers" | sed 's/[^0-9]//g' | head -1)
-        rm -f "$_wrp_headers"
+        rm -f "$_wrp_headers" "$_wrp_auth_headers"
         if [ -z "${_WM_RETRY_DONE:-}" ] && [ -n "$_wrp_retry" ] && [ "$_wrp_retry" -le 60 ] 2>/dev/null; then
             _wrp_jitter=$(awk 'BEGIN{srand(); printf "%d", rand()*3}')
             _wrp_wait=$(( _wrp_retry + _wrp_jitter ))
@@ -233,7 +254,7 @@ webmaster_raw_post() {
     fi
 
     if [ -n "$_wrp_status" ] && [ "$_wrp_status" -ge 400 ] 2>/dev/null; then
-        rm -f "$_wrp_headers"
+        rm -f "$_wrp_headers" "$_wrp_auth_headers"
         _wrp_err_code=$(json_extract_field_raw "$_wrp_resp" "error_code")
         _wrp_err_msg=$(json_extract_field_raw "$_wrp_resp" "error_message")
         if [ -n "$_wrp_err_code" ]; then
@@ -245,9 +266,9 @@ webmaster_raw_post() {
         return 1
     fi
 
-    rm -f "$_wrp_headers"
+    rm -f "$_wrp_headers" "$_wrp_auth_headers"
     printf '%s' "$_wrp_resp"
-}
+)
 
 # webmaster_get <host_subpath> [extra_curl_args...]
 # GET /v4/user/{USER_ID}/hosts/{HOST_ID}/<subpath>
