@@ -123,7 +123,9 @@ _json="$_json}"
 # Compute cache path BEFORE API call
 _host_dir=$(cache_host_dir)
 mkdir -p "$_host_dir/queries"
-_hash=$(cache_key "analytics_${TEXT_INDICATOR}_${FILTER_TEXT}_${DEVICE_QA}")
+# Hash the exact payload sent below, including pagination and every filter.
+# The versioned prefix also prevents reuse of legacy partial-key cache entries.
+_hash=$(cache_key "analytics_v2_${_json}")
 _out_file="$_host_dir/queries/analytics_${_hash}.tsv"
 
 # TTL cache check (24h)
