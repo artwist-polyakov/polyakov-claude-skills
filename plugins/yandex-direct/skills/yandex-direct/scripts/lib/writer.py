@@ -459,7 +459,9 @@ class Operation:
     search — пара (поле, отбор) для поиска после сбоя создания; None явно
     указывает, что найти такой объект нельзя. WHOLE_ACCOUNT убирает отбор
     SelectionCriteria, когда сервис не принимает пустой словарь.
-    guard проверяет дополнительные условия до показа и перед записью."""
+    guard проверяет дополнительные условия до показа и перед записью.
+    verify(number, record) добавляет diff.Difference к сверке результата,
+    например проверяет сохранность неназванных элементов коллекции."""
 
     def __init__(self, service: str, method: str, *, items, changes,
                  read=None, params_key: str = "", selection: str = "", expect=None,
@@ -467,7 +469,8 @@ class Operation:
                  results_key=None, batch_limit=None,
                  texts=None, collections=None, steps=None, full=(), phrases=(),
                  derived=(), clears=(), unread=(), labels=None, search=UNSAID,
-                 expect_gone: bool = False, read_required=(), guard=None):
+                 expect_gone: bool = False, read_required=(), guard=None,
+                 verify=None):
         self.service = protocol.service_key(service)
         self.method = method
         self.items = [dict(item) for item in items]
@@ -492,6 +495,7 @@ class Operation:
         self.params_key = params_key
         self.selection = selection
         self.guard = guard
+        self.verify = verify
         self.expect_gone = expect_gone or self.method.casefold() in GONE_METHODS
         self.expect = [dict(one) for one in expect] if expect is not None else None
         self.check()
@@ -963,6 +967,14 @@ class Operation:
 
     def wanted(self, number: int) -> dict:
         return self.expect[number] if self.expect is not None else self.items[number]
+
+    def compare(self, number: int, actual: dict, *, where=""):
+        """Общая сверка и дополнительные условия сохранности прочитанных данных."""
+        found = diff.compare(self.wanted(number), actual,
+                             rules=self.rules, where=where)
+        if self.verify is not None:
+            found.findings.extend(self.verify(number, actual))
+        return found
 
     def __repr__(self) -> str:
         return f"<Operation {self.where}: элементов {len(self.items)}>"
@@ -1862,7 +1874,7 @@ class Writer:
                 "перечитыванием нечем — проверьте кабинет, прежде чем "
                 "повторять"
             )
-        if diff.compare(operation.wanted(number), seen, rules=operation.rules).ok:
+        if operation.compare(number, seen).ok:
             if untouched:
                 return UNVERIFIED, (
                     "вызов отказал, а в кабинете то, что просили, — но так "
@@ -1916,8 +1928,7 @@ class Writer:
                     "Что легло в кабинет — неизвестно: перечитайте, прежде чем "
                     "повторять",
                     diff.Comparison([missing], where=where))
-        found = diff.compare(operation.wanted(number), after[identifier],
-                             rules=operation.rules, where=where)
+        found = operation.compare(number, after[identifier], where=where)
         for path, sent, strange in operation.unread_returned(
                 number, after[identifier]):
             found.findings.append(diff.Difference(

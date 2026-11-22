@@ -5,6 +5,7 @@ set -e
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 bash "$TEST_DIR/test_config_loader.sh"
+bash "$TEST_DIR/test_channel_info.sh"
 bash "$TEST_DIR/test_reuse_latest.sh"
 bash "$TEST_DIR/test_parse_tg_posts.sh"
 
