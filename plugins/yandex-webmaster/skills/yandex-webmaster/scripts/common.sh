@@ -142,6 +142,11 @@ _refresh_hosts_cache() {
 
 # --------------- API helpers ---------------
 
+# curl can dump proxy CONNECT and interim responses before the API response.
+webmaster_http_status() {
+    awk -F '[[:space:]]+' '/^HTTP\// {status = $2} END {print status}' "$1"
+}
+
 # webmaster_raw_get <full_path> [extra_curl_args...]
 # Low-level GET with OAuth, 429 retry, error handling
 webmaster_raw_get() {
@@ -159,7 +164,7 @@ webmaster_raw_get() {
         return 1
     }
 
-    _wrg_status=$(head -1 "$_wrg_headers" | grep -o '[0-9][0-9][0-9]' | head -1)
+    _wrg_status=$(webmaster_http_status "$_wrg_headers")
 
     # 429 retry
     if [ "$_wrg_status" = "429" ]; then
@@ -214,7 +219,7 @@ webmaster_raw_post() {
         return 1
     }
 
-    _wrp_status=$(head -1 "$_wrp_headers" | grep -o '[0-9][0-9][0-9]' | head -1)
+    _wrp_status=$(webmaster_http_status "$_wrp_headers")
 
     if [ "$_wrp_status" = "429" ]; then
         _wrp_retry=$(grep -i 'Retry-After' "$_wrp_headers" | sed 's/[^0-9]//g' | head -1)
