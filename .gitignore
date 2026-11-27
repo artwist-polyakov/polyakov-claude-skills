@@ -2,6 +2,7 @@ token.txt
 .env
 .DS_Store
 .claude/
+.codex
 .claude/settings*
 __pycache__/
 
